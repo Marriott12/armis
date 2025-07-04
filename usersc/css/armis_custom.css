@@ -1,0 +1,25 @@
+.armis-navbar {
+  background-color: #355E3B !important;
+}
+.armis-brand {
+  color: #FFD700 !important;
+  font-weight: bold;
+  letter-spacing: 1px;
+  font-size: 1.2rem;
+}
+.navbar .nav-link, .navbar .dropdown-item {
+  color: #fff !important;
+  font-weight: 500;
+  transition: color .18s,background .18s;
+}
+.navbar .nav-link.active, .navbar .dropdown-item.active,
+.navbar .nav-link:hover, .navbar .dropdown-item:hover {
+  color: #FFD700 !important;
+  background: #355E3B !important;
+  border-radius: 5px;
+}
+.navbar .dropdown-menu {
+  background: #f7f7f7;
+  border-radius: 8px;
+  min-width: 180px;
+}

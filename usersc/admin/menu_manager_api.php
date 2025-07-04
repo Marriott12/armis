@@ -1,0 +1,6 @@
+<?php
+// /api/menus?user_id=... or ?role_id=...
+// Returns JSON tree as visible to that user/role
+// Secure with token/auth
+// ...
+?>

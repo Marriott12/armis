@@ -1,0 +1,23 @@
+Array
+(
+    [0] => stdClass Object
+        (
+            [svcNo] => 007414
+            [fname] => Marriott Gift
+            [lname] => Mumba
+            [rankID] => 12
+            [unitID] => 
+            [rankIndex] => 12
+        )
+
+    [1] => stdClass Object
+        (
+            [svcNo] => 007417
+            [fname] => David
+            [lname] => Chanda
+            [rankID] => 28
+            [unitID] => 
+            [rankIndex] => 28
+        )
+
+)
