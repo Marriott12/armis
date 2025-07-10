@@ -1,14 +1,38 @@
 <?php
 // filepath: users/admin_branch.php
 
-require_once '../users/init.php';
-require_once $abs_us_root . $us_url_root . 'users/includes/template/prep.php';
-
-if (!securePage($_SERVER['PHP_SELF'])) { die(); }
+require_once '../auth.php';
+requireAdmin();
 ?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARMIS - Admin Branch Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="stylesheet" href="css/armis_custom.css">
+    <style>
+        :root {
+            --primary: #355E3B;
+            --yellow: #f1c40f;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg armis-navbar">
+        <div class="container">
+            <a class="navbar-brand armis-brand" href="../">ARMIS</a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="admin.php">Dashboard</a>
+                <a class="nav-link" href="../logout.php">Logout</a>
+            </div>
+        </div>
+    </nav>
 
 <div class="container mt-4 mb-4" style="background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); padding: 32px;">
-  <h2 class="mb-4" style="color:#355E3B;"><i class="fa fa-cogs"></i> Admin Branch Dashboard</h2>
+  <h2 class="mb-4" style="color:var(--primary);"><i class="fa fa-cogs"></i> Admin Branch Dashboard</h2>
 
   <!-- Quick Actions -->
   <div class="row mb-4">
@@ -39,7 +63,7 @@ if (!securePage($_SERVER['PHP_SELF'])) { die(); }
     </div>
   </div>
 
-  <hr class="my-4" style="border-top: 3px solid #355E3B; opacity: 1;">
+  <hr class="my-4" style="border-top: 3px solid var(--primary); opacity: 1;">
 
 <!-- Reports Section -->
 <div class="row mb-4">
@@ -105,5 +129,9 @@ document.getElementById('reportSearch').addEventListener('keyup', function() {
   });
 });
 </script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
 
 <?php require_once $abs_us_root . $us_url_root . 'users/includes/html_footer.php'; ?>
