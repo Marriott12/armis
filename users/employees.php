@@ -9,9 +9,14 @@
 	$userId = getCurrentUser()['id'];
 	$y = date("d-M-Y");
 	
-	// Get staff data using PDO
-	$stmt = $pdo->query("SELECT * FROM staff");
-	$cp = $stmt->fetchAll();
+	// Get staff data using PDO with error handling
+	try {
+		$stmt = $pdo->query("SELECT * FROM staff");
+		$cp = $stmt->fetchAll();
+	} catch (Exception $e) {
+		$cp = [];
+		error_log("Database error in employees.php: " . $e->getMessage());
+	}
 	
 	function confirm($servNo,$rank,$sname,$fname,$nrc,$dob,$gender,$marital,$addr,$prvnc,$dist,$attdate,$unit)
 	{
