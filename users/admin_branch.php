@@ -1,6 +1,4 @@
 <?php
-// filepath: users/admin_branch.php
-
 require_once '../auth.php';
 requireAdmin();
 ?>
@@ -13,125 +11,220 @@ requireAdmin();
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <link rel="stylesheet" href="css/armis_custom.css">
-    <style>
-        :root {
-            --primary: #355E3B;
-            --yellow: #f1c40f;
-        }
-    </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg armis-navbar">
-        <div class="container">
-            <a class="navbar-brand armis-brand" href="../">ARMIS</a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="admin.php">Dashboard</a>
-                <a class="nav-link" href="../logout.php">Logout</a>
+    <?php include 'includes/sidebar.php'; ?>
+    
+    <div class="main-content">
+        <div class="dashboard-header">
+            <div class="container-fluid">
+                <h1><i class="fas fa-cogs"></i> Admin Branch Dashboard</h1>
+                <p class="mb-0">Comprehensive staff management and reporting system</p>
             </div>
         </div>
-    </nav>
 
-<div class="container mt-4 mb-4" style="background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); padding: 32px;">
-  <h2 class="mb-4" style="color:var(--primary);"><i class="fa fa-cogs"></i> Admin Branch Dashboard</h2>
+        <div class="container-fluid">
+            <?php displayMessages(); ?>
+            
+            <!-- Staff Management Section -->
+            <div class="dashboard-card">
+                <h3><i class="fas fa-users-cog"></i> Staff Management</h3>
+                <div class="row">
+                    <div class="col-md-3 col-sm-6 mb-3">
+                        <a href="admin_branch/create_staff.php" class="btn btn-success w-100 py-3">
+                            <i class="fas fa-user-plus"></i><br>Create Staff Member
+                        </a>
+                    </div>
+                    <div class="col-md-3 col-sm-6 mb-3">
+                        <a href="admin_branch/edit_staff.php" class="btn btn-primary w-100 py-3">
+                            <i class="fas fa-edit"></i><br>Edit Staff Details
+                        </a>
+                    </div>
+                    <div class="col-md-3 col-sm-6 mb-3">
+                        <a href="admin_branch/delete_staff.php" class="btn btn-danger w-100 py-3">
+                            <i class="fas fa-trash"></i><br>Delete Staff Member
+                        </a>
+                    </div>
+                    <div class="col-md-3 col-sm-6 mb-3">
+                        <a href="admin_branch/promote_staff.php" class="btn btn-warning w-100 py-3">
+                            <i class="fas fa-arrow-up"></i><br>Promote Staff
+                        </a>
+                    </div>
+                </div>
+            </div>
 
-  <!-- Quick Actions -->
-  <div class="row mb-4">
-    <div class="col-md-3 col-sm-6 mb-3">
-      <a href="admin_branch/create_staff.php" class="btn btn-success w-100 py-3"><i class="fa fa-user-plus"></i> Create Staff Member</a>
-    </div>
-    <div class="col-md-3 col-sm-6 mb-3">
-      <a href="admin_branch/edit_staff.php" class="btn btn-primary w-100 py-3"><i class="fa fa-edit"></i> Edit Staff Details</a>
-    </div>
-    <div class="col-md-3 col-sm-6 mb-3">
-      <a href="admin_branch/delete_staff.php" class="btn btn-danger w-100 py-3"><i class="fa fa-trash"></i> Delete Staff Member</a>
-    </div>
-    <div class="col-md-3 col-sm-6 mb-3">
-      <a href="admin_branch/promote_staff.php" class="btn btn-warning w-100 py-3"><i class="fa fa-arrow-up"></i> Promote Staff</a>
-    </div>
-  </div>
+            <!-- Awards and Recognition -->
+            <div class="dashboard-card">
+                <h3><i class="fas fa-medal"></i> Awards & Recognition</h3>
+                <div class="row">
+                    <div class="col-md-4 col-sm-6 mb-3">
+                        <a href="admin_branch/medals.php" class="btn btn-outline-info w-100 py-3">
+                            <i class="fas fa-medal"></i><br>Create Medals
+                        </a>
+                    </div>
+                    <div class="col-md-4 col-sm-6 mb-3">
+                        <a href="admin_branch/assign_medal.php" class="btn btn-outline-success w-100 py-3">
+                            <i class="fas fa-award"></i><br>Assign Medals
+                        </a>
+                    </div>
+                    <div class="col-md-4 col-sm-6 mb-3">
+                        <a href="admin_branch/appointments.php" class="btn btn-outline-dark w-100 py-3">
+                            <i class="fas fa-briefcase"></i><br>Appointments
+                        </a>
+                    </div>
+                </div>
+            </div>
 
-  <!-- Staff Management -->
-  <div class="row mb-4">
-    <div class="col-md-3 col-sm-6 mb-3">
-      <a href="admin_branch/medals.php" class="btn btn-outline-info w-100 py-3"><i class="fa fa-medal"></i> Create Medals</a>
-    </div>
-    <div class="col-md-3 col-sm-6 mb-3">
-      <a href="admin_branch/assign_medal.php" class="btn btn-outline-success w-100 py-3"><i class="fa fa-award"></i> Assign Medals</a>
-    </div>
-    <div class="col-md-3 col-sm-6 mb-3">
-      <a href="admin_branch/appointments.php" class="btn btn-outline-dark w-100 py-3"><i class="fa fa-briefcase"></i> Appointments</a>
-    </div>
-  </div>
+            <!-- Reports and Analytics -->
+            <div class="dashboard-card">
+                <h3><i class="fas fa-chart-bar"></i> Reports & Analytics</h3>
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-search"></i></span>
+                            <input type="text" id="reportSearch" class="form-control" placeholder="Search reports...">
+                        </div>
+                    </div>
+                </div>
+                <div id="reportsGrid" class="row">
+                    <div class="col-md-2 col-sm-4 mb-3">
+                        <a href="admin_branch/reports_seniority.php" class="btn btn-light w-100 py-3 report-btn">
+                            <i class="fas fa-list-ol"></i><br><small>Seniority Roll</small>
+                        </a>
+                    </div>
+                    <div class="col-md-2 col-sm-4 mb-3">
+                        <a href="admin_branch/reports_units.php" class="btn btn-light w-100 py-3 report-btn">
+                            <i class="fas fa-building"></i><br><small>Unit List</small>
+                        </a>
+                    </div>
+                    <div class="col-md-2 col-sm-4 mb-3">
+                        <a href="admin_branch/reports_rank.php" class="btn btn-light w-100 py-3 report-btn">
+                            <i class="fas fa-medal"></i><br><small>By Ranks</small>
+                        </a>
+                    </div>
+                    <div class="col-md-2 col-sm-4 mb-3">
+                        <a href="admin_branch/reports_corps.php" class="btn btn-light w-100 py-3 report-btn">
+                            <i class="fas fa-shield-alt"></i><br><small>By Corps</small>
+                        </a>
+                    </div>
+                    <div class="col-md-2 col-sm-4 mb-3">
+                        <a href="admin_branch/reports_gender.php" class="btn btn-light w-100 py-3 report-btn">
+                            <i class="fas fa-venus-mars"></i><br><small>By Gender</small>
+                        </a>
+                    </div>
+                    <div class="col-md-2 col-sm-4 mb-3">
+                        <a href="admin_branch/reports_appointment.php" class="btn btn-light w-100 py-3 report-btn">
+                            <i class="fas fa-briefcase"></i><br><small>By Appointment</small>
+                        </a>
+                    </div>
+                    <div class="col-md-2 col-sm-4 mb-3">
+                        <a href="admin_branch/reports_courses.php" class="btn btn-light w-100 py-3 report-btn">
+                            <i class="fas fa-graduation-cap"></i><br><small>Courses Done</small>
+                        </a>
+                    </div>
+                    <div class="col-md-2 col-sm-4 mb-3">
+                        <a href="admin_branch/reports_retired.php" class="btn btn-light w-100 py-3 report-btn">
+                            <i class="fas fa-user-times"></i><br><small>Retired Staff</small>
+                        </a>
+                    </div>
+                    <div class="col-md-2 col-sm-4 mb-3">
+                        <a href="admin_branch/reports_contract.php" class="btn btn-light w-100 py-3 report-btn">
+                            <i class="fas fa-file-contract"></i><br><small>Contract Staff</small>
+                        </a>
+                    </div>
+                    <div class="col-md-2 col-sm-4 mb-3">
+                        <a href="admin_branch/reports_deceased.php" class="btn btn-light w-100 py-3 report-btn">
+                            <i class="fas fa-user-slash"></i><br><small>Deceased Staff</small>
+                        </a>
+                    </div>
+                    <div class="col-md-2 col-sm-4 mb-3">
+                        <a href="admin_branch/reports_marital.php" class="btn btn-light w-100 py-3 report-btn">
+                            <i class="fas fa-ring"></i><br><small>Marital Status</small>
+                        </a>
+                    </div>
+                    <div class="col-md-2 col-sm-4 mb-3">
+                        <a href="admin_branch/reports_trade.php" class="btn btn-light w-100 py-3 report-btn">
+                            <i class="fas fa-tools"></i><br><small>By Trade</small>
+                        </a>
+                    </div>
+                </div>
+            </div>
 
-  <hr class="my-4" style="border-top: 3px solid var(--primary); opacity: 1;">
+            <!-- Quick Statistics -->
+            <div class="dashboard-card">
+                <h3><i class="fas fa-chart-pie"></i> Quick Statistics</h3>
+                <div class="row">
+                    <div class="col-md-3 col-sm-6">
+                        <div class="stat-card">
+                            <div class="stat-number"><?php echo getActiveStaff(); ?></div>
+                            <div class="stat-label">Active Staff</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6">
+                        <div class="stat-card">
+                            <div class="stat-number"><?php echo getPendingPromotions(); ?></div>
+                            <div class="stat-label">Pending Promotions</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6">
+                        <div class="stat-card">
+                            <div class="stat-number"><?php echo getRecentMedals(); ?></div>
+                            <div class="stat-label">Recent Medals</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6">
+                        <div class="stat-card">
+                            <div class="stat-number"><?php echo getNewAppointments(); ?></div>
+                            <div class="stat-label">New Appointments</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-<!-- Reports Section -->
-<div class="row mb-4">
-  <div class="col-12 mb-3">
-    <input type="text" id="reportSearch" class="form-control" placeholder="Type to filter reports...">
-  </div>
-  <div id="reportsLinks" class="row">
-    <div class="col-md-2 col-sm-4 mb-3">
-      <a href="admin_branch/reports_seniority.php" class="btn btn-light w-100 py-3"><i class="fa fa-list-ol"></i> Seniority Roll</a>
+            <!-- Help and Information -->
+            <div class="dashboard-card">
+                <h3><i class="fas fa-info-circle"></i> Information</h3>
+                <div class="alert alert-info">
+                    <strong>Admin Branch Management:</strong> Use the tools above to manage all aspects of staff administration, including creation, editing, promotion, postings, medals, and comprehensive reporting. The search functionality helps you quickly find specific reports.
+                </div>
+            </div>
+        </div>
     </div>
-    <div class="col-md-2 col-sm-4 mb-3">
-      <a href="admin_branch/reports_units.php" class="btn btn-light w-100 py-3"><i class="fa fa-building"></i> Unit List</a>
-    </div>
-    <div class="col-md-2 col-sm-4 mb-3">
-      <a href="admin_branch/reports_rank.php" class="btn btn-light w-100 py-3"><i class="fa fa-medal"></i> List by Ranks</a>
-    </div>
-    <div class="col-md-2 col-sm-4 mb-3">
-      <a href="admin_branch/reports_corps.php" class="btn btn-light w-100 py-3"><i class="fa fa-shield-alt"></i> List by Corps</a>
-    </div>
-    <div class="col-md-2 col-sm-4 mb-3">
-      <a href="admin_branch/reports_gender.php" class="btn btn-light w-100 py-3"><i class="fa fa-venus-mars"></i> List by Gender</a>
-    </div>
-    <div class="col-md-2 col-sm-4 mb-3">
-      <a href="admin_branch/reports_appointment.php" class="btn btn-light w-100 py-3"><i class="fa fa-briefcase"></i> List by Appointment</a>
-    </div>
-    <div class="col-md-2 col-sm-4 mb-3">
-      <a href="admin_branch/reports_courses.php" class="btn btn-light w-100 py-3"><i class="fa fa-graduation-cap"></i> List by Courses Done</a>
-    </div>
-    <div class="col-md-2 col-sm-4 mb-3">
-      <a href="admin_branch/reports_retired.php" class="btn btn-light w-100 py-3"><i class="fa fa-user-times"></i> Retired Staff</a>
-    </div>
-    <div class="col-md-2 col-sm-4 mb-3">
-      <a href="admin_branch/reports_contract.php" class="btn btn-light w-100 py-3"><i class="fa fa-file-contract"></i> Contract Staff</a>
-    </div>
-    <div class="col-md-2 col-sm-4 mb-3">
-      <a href="admin_branch/reports_deceased.php" class="btn btn-light w-100 py-3"><i class="fa fa-user-slash"></i> Deceased Staff</a>
-    </div>
-    <div class="col-md-2 col-sm-4 mb-3">
-      <a href="admin_branch/reports_marital.php" class="btn btn-light w-100 py-3"><i class="fa fa-ring"></i> List by Marital Status</a>
-    </div>
-    <div class="col-md-2 col-sm-4 mb-3">
-      <a href="admin_branch/reports_trade.php" class="btn btn-light w-100 py-3"><i class="fa fa-tools"></i> List by Trade</a>
-    </div>
-  </div>
-</div>
 
-  <!-- Info Section -->
-  <div class="row mt-4">
-    <div class="col-12">
-      <div class="alert alert-info">The options above help to manage all aspects of staff administration, including creation, editing, promotion, postings, medals, and comprehensive reporting.
-      </div>
-    </div>
-  </div>
-</div>
+    <script>
+        // Report search functionality
+        document.getElementById('reportSearch').addEventListener('keyup', function() {
+            const query = this.value.toLowerCase();
+            const reportButtons = document.querySelectorAll('.report-btn');
+            
+            reportButtons.forEach(function(btn) {
+                const text = btn.textContent.toLowerCase();
+                const parent = btn.closest('.col-md-2, .col-sm-4');
+                
+                if (text.includes(query)) {
+                    parent.style.display = '';
+                } else {
+                    parent.style.display = 'none';
+                }
+            });
+        });
+    </script>
 
-
-<script>
-document.getElementById('reportSearch').addEventListener('keyup', function() {
-  const query = this.value.toLowerCase();
-  document.querySelectorAll('#reportsLinks .col-md-2, #reportsLinks .col-sm-4').forEach(function(col) {
-    const text = col.textContent.toLowerCase();
-    col.style.display = text.includes(query) ? '' : 'none';
-  });
-});
-</script>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
 
-<?php require_once $abs_us_root . $us_url_root . 'users/includes/html_footer.php'; ?>
+<?php
+// Helper functions for dashboard statistics
+function getPendingPromotions() {
+    return 5; // Sample data
+}
+
+function getRecentMedals() {
+    return 12; // Sample data
+}
+
+function getNewAppointments() {
+    return 3; // Sample data
+}
+?>

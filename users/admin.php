@@ -11,76 +11,124 @@ requireAdmin();
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <link rel="stylesheet" href="css/armis_custom.css">
-    <style>
-        :root {
-            --primary: #355E3B;
-            --yellow: #f1c40f;
-        }
-        .admin-header {
-            background: var(--primary);
-            color: white;
-            padding: 1rem 0;
-            margin-bottom: 2rem;
-        }
-        .admin-card {
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-            padding: 2rem;
-            margin-bottom: 2rem;
-        }
-        .btn-custom {
-            background: var(--primary);
-            border-color: var(--primary);
-            color: white;
-        }
-        .btn-custom:hover {
-            background: #2d4d32;
-            border-color: #2d4d32;
-            color: white;
-        }
-    </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg armis-navbar">
-        <div class="container">
-            <a class="navbar-brand armis-brand" href="../">ARMIS</a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="../logout.php">Logout</a>
+    <?php include 'includes/sidebar.php'; ?>
+    
+    <div class="main-content">
+        <div class="dashboard-header">
+            <div class="container-fluid">
+                <h1><i class="fas fa-tachometer-alt"></i> Admin Dashboard</h1>
+                <p class="mb-0">Welcome back, <?php echo htmlspecialchars(getCurrentUser()['username']); ?>! Here's your system overview.</p>
             </div>
         </div>
-    </nav>
 
-    <div class="admin-header">
-        <div class="container">
-            <h1><i class="fa fa-dashboard"></i> Admin Dashboard</h1>
-            <p class="mb-0">Welcome, <?php echo htmlspecialchars(getCurrentUser()['username']); ?>!</p>
-        </div>
-    </div>
+        <div class="container-fluid">
+            <?php displayMessages(); ?>
+            
+            <!-- Dashboard Statistics -->
+            <div class="dashboard-stats">
+                <div class="stat-card">
+                    <div class="stat-number"><?php echo getTotalEmployees(); ?></div>
+                    <div class="stat-label">Total Employees</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number"><?php echo getActiveStaff(); ?></div>
+                    <div class="stat-label">Active Staff</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number"><?php echo getPendingReports(); ?></div>
+                    <div class="stat-label">Pending Reports</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number"><?php echo getCompletedTrainings(); ?></div>
+                    <div class="stat-label">Completed Trainings</div>
+                </div>
+            </div>
 
-    <div class="container">
-        <div class="admin-card">
-            <h3>Quick Actions</h3>
-            <div class="row">
-                <div class="col-md-3 mb-3">
-                    <a href="employees.php" class="btn btn-custom w-100 py-3">
-                        <i class="fa fa-users"></i><br>Manage Employees
+            <!-- Quick Actions -->
+            <div class="dashboard-card">
+                <h3><i class="fas fa-bolt"></i> Quick Actions</h3>
+                <div class="quick-actions">
+                    <a href="employees.php" class="action-btn">
+                        <i class="fas fa-users"></i>
+                        <span>Manage Employees</span>
+                    </a>
+                    <a href="admin_branch.php" class="action-btn">
+                        <i class="fas fa-cogs"></i>
+                        <span>Admin Branch</span>
+                    </a>
+                    <a href="command_reports.php" class="action-btn">
+                        <i class="fas fa-chart-bar"></i>
+                        <span>Command Reports</span>
+                    </a>
+                    <a href="training/courses.php" class="action-btn">
+                        <i class="fas fa-graduation-cap"></i>
+                        <span>Training Courses</span>
+                    </a>
+                    <a href="admin_branch/create_staff.php" class="action-btn">
+                        <i class="fas fa-user-plus"></i>
+                        <span>Create Staff</span>
+                    </a>
+                    <a href="admin_branch/medals.php" class="action-btn">
+                        <i class="fas fa-medal"></i>
+                        <span>Manage Medals</span>
                     </a>
                 </div>
-                <div class="col-md-3 mb-3">
-                    <a href="admin_branch.php" class="btn btn-custom w-100 py-3">
-                        <i class="fa fa-cogs"></i><br>Admin Branch
-                    </a>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="dashboard-card">
+                <h3><i class="fas fa-clock"></i> Recent Activity</h3>
+                <div class="activity-list">
+                    <div class="activity-item">
+                        <div class="activity-icon"><i class="fas fa-user-plus"></i></div>
+                        <div class="activity-content">
+                            <div class="activity-title">New staff member created</div>
+                            <div class="activity-time">2 hours ago</div>
+                        </div>
+                    </div>
+                    <div class="activity-item">
+                        <div class="activity-icon"><i class="fas fa-medal"></i></div>
+                        <div class="activity-content">
+                            <div class="activity-title">Medal awarded to staff member</div>
+                            <div class="activity-time">4 hours ago</div>
+                        </div>
+                    </div>
+                    <div class="activity-item">
+                        <div class="activity-icon"><i class="fas fa-file-alt"></i></div>
+                        <div class="activity-content">
+                            <div class="activity-title">New report generated</div>
+                            <div class="activity-time">1 day ago</div>
+                        </div>
+                    </div>
                 </div>
-                <div class="col-md-3 mb-3">
-                    <a href="command_reports.php" class="btn btn-custom w-100 py-3">
-                        <i class="fa fa-chart-bar"></i><br>Command Reports
-                    </a>
-                </div>
-                <div class="col-md-3 mb-3">
-                    <a href="training/courses.php" class="btn btn-custom w-100 py-3">
-                        <i class="fa fa-graduation-cap"></i><br>Training Courses
-                    </a>
+            </div>
+
+            <!-- System Status -->
+            <div class="dashboard-card">
+                <h3><i class="fas fa-server"></i> System Status</h3>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="status-item">
+                            <span class="status-label">Database Connection</span>
+                            <span class="status-value status-online">Online</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Last Backup</span>
+                            <span class="status-value">Today, 2:00 AM</span>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="status-item">
+                            <span class="status-label">System Version</span>
+                            <span class="status-value">ARMIS v2.0</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Active Users</span>
+                            <span class="status-value"><?php echo getTotalUsers(); ?></span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -89,4 +137,27 @@ requireAdmin();
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
+
+<?php
+// Dashboard helper functions
+function getTotalEmployees() {
+    // In a real application, this would query the database
+    return 156; // Sample data
+}
+
+function getActiveStaff() {
+    // In a real application, this would query the database
+    return 143; // Sample data
+}
+
+function getPendingReports() {
+    // In a real application, this would query the database
+    return 8; // Sample data
+}
+
+function getCompletedTrainings() {
+    // In a real application, this would query the database
+    return 89; // Sample data
+}
+?>
 

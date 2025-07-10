@@ -5,7 +5,18 @@ require_once 'auth.php';
 if ($_POST && isset($_POST['username']) && isset($_POST['password'])) {
     if (isset($_POST['csrf_token']) && CSRFToken::validate($_POST['csrf_token'])) {
         if (loginUser($_POST['username'], $_POST['password'])) {
-            redirect('users/admin.php');
+            // Smart redirection based on user role and redirect parameter
+            $redirect_url = isset($_GET['redirect']) ? $_GET['redirect'] : null;
+            
+            if ($redirect_url && filter_var($redirect_url, FILTER_VALIDATE_URL) === false) {
+                // Validate redirect URL is internal
+                if (strpos($redirect_url, '/') === 0) {
+                    redirect($redirect_url);
+                }
+            }
+            
+            // Default redirection based on user permissions
+            redirectToDashboard();
         } else {
             setMessage('Invalid username or password', 'error');
         }
@@ -14,9 +25,9 @@ if ($_POST && isset($_POST['username']) && isset($_POST['password'])) {
     }
 }
 
-// If already logged in, redirect to admin
+// If already logged in, redirect to appropriate dashboard
 if (isLoggedIn()) {
-    redirect('users/admin.php');
+    redirectToDashboard();
 }
 ?>
 <!DOCTYPE html>
@@ -67,6 +78,20 @@ if (isLoggedIn()) {
             background: #2d4d32;
             color: white;
         }
+        .login-features {
+            background: #f8f9fa;
+            padding: 1.5rem;
+            border-top: 1px solid #dee2e6;
+        }
+        .feature-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        .feature-item i {
+            color: var(--primary);
+            margin-right: 0.5rem;
+        }
     </style>
 </head>
 <body>
@@ -96,6 +121,25 @@ if (isLoggedIn()) {
                         </form>
                         <hr>
                         <p class="text-center text-muted small">Default credentials: admin / password</p>
+                    </div>
+                    <div class="login-features">
+                        <h6 class="mb-3">System Features</h6>
+                        <div class="feature-item">
+                            <i class="fas fa-shield-alt"></i>
+                            <small>Secure Authentication</small>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-users"></i>
+                            <small>Staff Management</small>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-chart-bar"></i>
+                            <small>Comprehensive Reports</small>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-cogs"></i>
+                            <small>Admin Tools</small>
+                        </div>
                     </div>
                 </div>
             </div>
