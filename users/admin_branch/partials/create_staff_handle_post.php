@@ -1,24 +1,7 @@
 <?php
-// filepath: c:\wamp64\www\Armis\users\admin_branch\partials\create_staff_handle_post.php
+// filepath: users/admin_branch/partials/create_staff_handle_post.php
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-// CSRF Token class
-if (!class_exists('Token')) {
-    class Token {
-        public static function generate() {
-            if (!isset($_SESSION['csrf_token'])) {
-                $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-            }
-            return $_SESSION['csrf_token'];
-        }
-        public static function check($token) {
-            return isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);
-        }
-    }
-}
+require_once '../../../auth.php';
 
 $errors = [];
 $tabErrors = [];
@@ -37,8 +20,8 @@ if (!function_exists('sanitize_array')) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // CSRF check
-    if (!isset($_POST['csrf']) || !Token::check($_POST['csrf'])) {
+    // CSRF check using our native system
+    if (!isset($_POST['csrf_token']) || !CSRFToken::validate($_POST['csrf_token'])) {
         $errors[] = "Invalid CSRF token.";
     } else {
         // Required fields (Personal/Service)
@@ -139,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'role'         => sanitize($_POST['role'] ?? ''),
                 'renewDate'    => sanitize($_POST['renewDate'] ?? ''),
                 'accStatus'    => sanitize($_POST['accStatus'] ?? ''),
-                'createdBy'    => $_SESSION['user_id'] ?? null,
+                'createdBy'    => getCurrentUser()['id'] ?? null,
                 'dateCreated'  => date('Y-m-d H:i:s'),
             ];
 
@@ -216,7 +199,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     'unitID'     => $appt_units[$i] ?? null,
                                     'apptDate'   => $appt_starts[$i] ?? null,
                                     'comment'    => $appt_comments[$i] ?? null,
-                                    'createdBy'  => $_SESSION['user_id'] ?? null,
+                                    'createdBy'  => getCurrentUser()['id'] ?? null,
                                     'dateCreated'=> date('Y-m-d H:i:s')
                                 ]);
                             }
@@ -230,7 +213,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                       VALUES (:user_id, :message, 0, 0, :date_created, :class)";
                         $notif_stmt = $pdo->prepare($notif_sql);
                         $notif_stmt->execute([
-                            'user_id' => $_SESSION['user_id'] ?? null,
+                            'user_id' => getCurrentUser()['id'] ?? null,
                             'message' => 'Staff record for <b>'.sanitize($_POST['fname']).' '.sanitize($_POST['lname']).'</b> created successfully.',
                             'date_created' => date('Y-m-d H:i:s'),
                             'class' => 'success'
@@ -242,7 +225,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $success = true;
                     $_POST = [];
-                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                    // Generate new CSRF token
+                    CSRFToken::generate();
                     header("Location: create_staff.php?success=1");
                     exit;
                 } else {

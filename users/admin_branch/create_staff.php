@@ -1,13 +1,44 @@
 <?php
-require_once '../init.php';
-require_once $abs_us_root . $us_url_root . 'users/includes/template/prep.php';
-if (!securePage($_SERVER['PHP_SELF'])) { die(); }
-require_once 'partials/create_staff_config.php';
-require_once 'partials/create_staff_handle_post.php';
+require_once '../../auth.php';
+require_once '../db.php';
+requireAdmin();
+
+// Check if config and handler files exist
+if (file_exists('partials/create_staff_config.php')) {
+    require_once 'partials/create_staff_config.php';
+}
+if (file_exists('partials/create_staff_handle_post.php')) {
+    require_once 'partials/create_staff_handle_post.php';
+}
 ?>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARMIS - Create Staff Member</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="../css/armis_custom.css">
+    <style>
+        :root {
+            --primary: #355E3B;
+            --yellow: #f1c40f;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg armis-navbar">
+        <div class="container">
+            <a class="navbar-brand armis-brand" href="../../">ARMIS</a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="../admin.php">Dashboard</a>
+                <a class="nav-link" href="../../logout.php">Logout</a>
+            </div>
+        </div>
+    </nav>
+
 <div class="container my-5" style="background: #f8f9fa; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); padding: 30px;">
     <div class="mb-3">
         <a href="../admin_branch.php" class="btn btn-outline-secondary" aria-label="Back to Admin Branch">
@@ -15,7 +46,7 @@ require_once 'partials/create_staff_handle_post.php';
         </a>
     </div>
     <div class="card shadow-sm">
-        <div class="card-header bg-success text-white">
+        <div class="card-header text-white" style="background: var(--primary);">
             <h4 class="mb-0"><i class="fa fa-user-plus"></i> Register New Staff Member</h4>
         </div>
         <div class="card-body">

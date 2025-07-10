@@ -1,22 +1,18 @@
 <?php
-	require_once 'init.php';
-	require_once $abs_us_root.$us_url_root.'users/includes/template/prep.php';
-	if(isset($user) && $user->isLoggedIn()){
-	}
-	$emailQ = $db->query("SELECT * FROM email");
-	$emailR = $emailQ->first();
-	// dump($emailR);
-	// dump($emailR->email_act);
+	require_once '../auth.php';
+	require_once 'db.php';
+	requireAdmin();
+	
 	//PHP Goes Here!
 	$errors=[];
 	$successes=[];
-	$userId = $user->data()->id;
-	$grav = get_gravatar(strtolower(trim($user->data()->email)));
-	$validation = new Validate();
-	$userdetails=$user->data();
-	$cp = $db->query("SELECT * FROM staff")->results();
-	//$sp = $db->query("SELECT * FROM equipment")->results();
+	$userId = getCurrentUser()['id'];
 	$y = date("d-M-Y");
+	
+	// Get staff data using PDO
+	$stmt = $pdo->query("SELECT * FROM staff");
+	$cp = $stmt->fetchAll();
+	
 	function confirm($servNo,$rank,$sname,$fname,$nrc,$dob,$gender,$marital,$addr,$prvnc,$dist,$attdate,$unit)
 	{
 		include 'db.php';
@@ -27,7 +23,7 @@
 		if ($conn->query($sql) === TRUE) 
 		{
 		    echo "Recorded Added Successfully";
-		    Redirect::to($us_url_root.'users/employees.php');
+		    header("Location: employees.php");
 		} 
 		else 
 		{
