@@ -1,5 +1,5 @@
 <?php
-require_once 'staff_auth.php';
+require_once 'staff_auth_standalone.php';
 
 // Require user to be logged in
 requireLogin();

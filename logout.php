@@ -1,5 +1,5 @@
 <?php
-require_once 'staff_auth.php';
+require_once 'staff_auth_standalone.php';
 
 // Logout the user
 logoutUser();
