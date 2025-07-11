@@ -1,5 +1,5 @@
 <?php
-require_once 'auth.php';
+require_once 'staff_auth.php';
 
 // Start session with secure settings
 ini_set('session.cookie_httponly', 1);

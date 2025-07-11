@@ -1,6 +1,12 @@
 <?php
-require_once 'auth.php';
+require_once 'staff_auth.php';
 
+// Logout the user
 logoutUser();
-redirect('index.php');
+
+// Set logout message
+setMessage('You have been logged out successfully.', 'success');
+
+// Redirect to login page
+redirect('login.php');
 ?>

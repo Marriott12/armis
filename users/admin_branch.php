@@ -1,6 +1,6 @@
 <?php
-require_once '../auth.php';
-requireAdmin();
+require_once '../staff_auth.php';
+requireAdminBranch();
 ?>
 <!DOCTYPE html>
 <html lang="en">

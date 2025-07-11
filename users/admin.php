@@ -1,5 +1,5 @@
 <?php
-require_once '../auth.php';
+require_once '../staff_auth.php';
 requireAdmin();
 ?>
 <!DOCTYPE html>

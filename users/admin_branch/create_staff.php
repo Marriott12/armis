@@ -1,15 +1,79 @@
 <?php
-require_once '../../auth.php';
+require_once '../../staff_auth.php';
 require_once '../db.php';
-requireAdmin();
+requireAdminBranch();
+
+$user = getCurrentUser();
+
+// Handle form submission
+if ($_POST && isset($_POST['create_staff'])) {
+    if (isset($_POST['csrf_token']) && CSRFToken::validate($_POST['csrf_token'])) {
+        try {
+            // Validate required fields
+            $required_fields = ['svcNo', 'fname', 'lname', 'username', 'email', 'role'];
+            $missing_fields = [];
+            
+            foreach ($required_fields as $field) {
+                if (empty($_POST[$field])) {
+                    $missing_fields[] = $field;
+                }
+            }
+            
+            if (!empty($missing_fields)) {
+                setMessage('Missing required fields: ' . implode(', ', $missing_fields), 'error');
+            } else {
+                // Check if username or service number already exists
+                $db = getDatabase();
+                $stmt = $db->prepare("SELECT svcNo FROM staff WHERE svcNo = ? OR username = ?");
+                $stmt->execute([$_POST['svcNo'], $_POST['username']]);
+                
+                if ($stmt->fetch()) {
+                    setMessage('Service number or username already exists.', 'error');
+                } else {
+                    // Prepare staff data
+                    $staffData = [
+                        'svcNo' => $_POST['svcNo'],
+                        'fname' => $_POST['fname'],
+                        'lname' => $_POST['lname'],
+                        'username' => $_POST['username'],
+                        'email' => $_POST['email'],
+                        'role' => $_POST['role'],
+                        'rankID' => $_POST['rankID'] ?? null,
+                        'gender' => $_POST['gender'] ?? null,
+                        'DOB' => $_POST['DOB'] ?? null,
+                        'province' => $_POST['province'] ?? null,
+                        'tel' => $_POST['tel'] ?? null,
+                        'category' => $_POST['category'] ?? null,
+                        'unitID' => $_POST['unitID'] ?? null,
+                        'svcStatus' => 'Serving'
+                    ];
+                    
+                    // Create staff member
+                    $result = createStaff($staffData, $user['svcNo']);
+                    
+                    if ($result['success']) {
+                        setMessage("Staff member created successfully! Temporary password: {$result['tempPassword']} (User must reset on first login)", 'success');
+                        // Clear form data
+                        $_POST = [];
+                    } else {
+                        setMessage('Error creating staff member: ' . $result['error'], 'error');
+                    }
+                }
+            }
+        } catch (Exception $e) {
+            error_log("Create staff error: " . $e->getMessage());
+            setMessage('An unexpected error occurred. Please try again.', 'error');
+        }
+    } else {
+        setMessage('Security token validation failed. Please try again.', 'error');
+    }
+}
 
 // Check if config and handler files exist
 if (file_exists('partials/create_staff_config.php')) {
     require_once 'partials/create_staff_config.php';
 }
-if (file_exists('partials/create_staff_handle_post.php')) {
-    require_once 'partials/create_staff_handle_post.php';
-}
+?>
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -50,10 +114,11 @@ if (file_exists('partials/create_staff_handle_post.php')) {
             <h4 class="mb-0"><i class="fa fa-user-plus"></i> Register New Staff Member</h4>
         </div>
         <div class="card-body">
-            <?php require 'partials/alerts.php'; ?>
+            <?php displayMessages(); ?>
             <?php require 'partials/create_staff_tabs.php'; ?>
             <form id="createStaffForm" method="post" action="<?=htmlspecialchars($_SERVER["PHP_SELF"]);?>" autocomplete="off">
-                <input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['csrf_token'])?>">
+                <?php echo CSRFToken::getField(); ?>
+                <input type="hidden" name="create_staff" value="1">
                 <div class="tab-content" id="staffTabContent">
                     <?php require 'partials/tab_personal.php'; ?>
                     <?php require 'partials/tab_service.php'; ?>
@@ -65,7 +130,7 @@ if (file_exists('partials/create_staff_handle_post.php')) {
                     <?php require 'partials/tab_language.php'; ?>
                 </div>
                 <div class="text-end mt-4">
-                    <button type="submit" class="btn btn-success px-5 py-2"><i class="fa fa-save"></i> Register Staff</button>
+                    <button type="submit" name="create_staff" class="btn btn-success px-5 py-2"><i class="fa fa-save"></i> Create Staff Member</button>
                 </div>
             </form>
         </div>
