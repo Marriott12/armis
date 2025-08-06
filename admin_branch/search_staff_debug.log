@@ -1,0 +1,222 @@
+2025-07-31 13:37:16 | q=m | rank_id=12 | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE s.rank_id = ? AND s.rank_id NOT IN (14,27,28,29) AND (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["12","%m%","%m%","%m%"]
+2025-07-31 13:42:12 | q=m | rank_id=12 | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE s.rank_id = ? AND s.rank_id NOT IN (14,27,28,29) AND (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["12","%m%","%m%","%m%"]
+2025-07-31 14:06:57 | q=m | rank_id=12 | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE s.rank_id = ? AND s.rank_id NOT IN (14,27,28,29) AND (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["12","%m%","%m%","%m%"]
+2025-07-31 14:06:58 | q=ma | rank_id=12 | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE s.rank_id = ? AND s.rank_id NOT IN (14,27,28,29) AND (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["12","%ma%","%ma%","%ma%"]
+2025-07-31 14:06:58 | q=marr | rank_id=12 | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE s.rank_id = ? AND s.rank_id NOT IN (14,27,28,29) AND (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["12","%marr%","%marr%","%marr%"]
+2025-07-31 14:45:22 | q=ma | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%ma%","%ma%","%ma%"]
+2025-07-31 14:55:49 | q=ma | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%ma%","%ma%","%ma%"]
+2025-07-31 14:55:49 | q=mar | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%mar%","%mar%","%mar%"]
+2025-08-01 07:13:59 | q=ma | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%ma%","%ma%","%ma%"]
+2025-08-01 07:39:52 | q=M | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%M%","%M%","%M%"]
+2025-08-01 07:39:53 | q=Ma | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%Ma%","%Ma%","%Ma%"]
+2025-08-01 07:39:53 | q=Marr | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%Marr%","%Marr%","%Marr%"]
+2025-08-01 07:40:07 | q=m | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%m%","%m%","%m%"]
+2025-08-01 07:46:02 | q=m | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%m%","%m%","%m%"]
+2025-08-01 08:03:11 | q=ma | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%ma%","%ma%","%ma%"]
+2025-08-01 08:03:17 | q=m | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%m%","%m%","%m%"]
+2025-08-01 17:20:48 | q=marr | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%marr%","%marr%","%marr%"]
+2025-08-01 17:20:49 | q=marrio | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%marrio%","%marrio%","%marrio%"]
+2025-08-01 17:20:50 | q=marriott | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%marriott%","%marriott%","%marriott%"]
+2025-08-01 17:21:05 | q=marriot | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%marriot%","%marriot%","%marriot%"]
+2025-08-01 17:21:06 | q=007414 - Mumba, Marriott Gift | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%007414 - Mumba, Marriott Gift%","%007414 - Mumba, Marriott Gift%","%007414 - Mumba, Marriott Gift%"]
+2025-08-01 17:21:09 | q=007414 - Mumba, Marriott Gift c | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%007414 - Mumba, Marriott Gift c%","%007414 - Mumba, Marriott Gift c%","%007414 - Mumba, Marriott Gift c%"]
+2025-08-01 17:21:09 | q=007414 - Mumba, Marriott Gift com | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%007414 - Mumba, Marriott Gift com%","%007414 - Mumba, Marriott Gift com%","%007414 - Mumba, Marriott Gift com%"]
+2025-08-01 17:21:12 | q=007414 - Mumba, Marriott Gift c | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%007414 - Mumba, Marriott Gift c%","%007414 - Mumba, Marriott Gift c%","%007414 - Mumba, Marriott Gift c%"]
+2025-08-01 17:21:13 | q=007414 - Mumba, Marriott Gift | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%007414 - Mumba, Marriott Gift%","%007414 - Mumba, Marriott Gift%","%007414 - Mumba, Marriott Gift%"]
+2025-08-01 17:21:13 | q=007414 - Mumba, Marriott Gift m | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%007414 - Mumba, Marriott Gift m%","%007414 - Mumba, Marriott Gift m%","%007414 - Mumba, Marriott Gift m%"]
+2025-08-01 17:21:15 | q=007414 - Mumba, Marriott Gift | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%007414 - Mumba, Marriott Gift%","%007414 - Mumba, Marriott Gift%","%007414 - Mumba, Marriott Gift%"]
+2025-08-01 17:21:21 | q=007414 - Mumba, Marriott Gift c | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%007414 - Mumba, Marriott Gift c%","%007414 - Mumba, Marriott Gift c%","%007414 - Mumba, Marriott Gift c%"]
+2025-08-01 17:21:22 | q=007414 - Mumba, Marriott Gift | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%007414 - Mumba, Marriott Gift%","%007414 - Mumba, Marriott Gift%","%007414 - Mumba, Marriott Gift%"]
+2025-08-01 17:21:24 | q=007414 - Mumba, Marriott Gift de | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%007414 - Mumba, Marriott Gift de%","%007414 - Mumba, Marriott Gift de%","%007414 - Mumba, Marriott Gift de%"]
+2025-08-01 17:21:26 | q=007414 - Mumba, Marriott Gift | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%007414 - Mumba, Marriott Gift%","%007414 - Mumba, Marriott Gift%","%007414 - Mumba, Marriott Gift%"]
+2025-08-01 17:21:27 | q=007414 - Mumba, Marriott Gift | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%007414 - Mumba, Marriott Gift%","%007414 - Mumba, Marriott Gift%","%007414 - Mumba, Marriott Gift%"]
+2025-08-01 17:21:27 | q=007414 - Mumba, Marriott Gif | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%007414 - Mumba, Marriott Gif%","%007414 - Mumba, Marriott Gif%","%007414 - Mumba, Marriott Gif%"]
+2025-08-01 17:21:29 | q=0 | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%0%","%0%","%0%"]
+2025-08-01 17:21:30 | q=m | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%m%","%m%","%m%"]
+2025-08-01 17:21:30 | q=ma | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%ma%","%ma%","%ma%"]
+2025-08-01 17:21:40 | q=m | rank_id= | SQL: SELECT s.id, s.service_number, s.rank_id, s.first_name, s.last_name, s.unit_id, u.name as unit_name
+        FROM staff s
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+        ORDER BY s.last_name, s.first_name
+        LIMIT 20 | Params: ["%m%","%m%","%m%"]

@@ -1,0 +1,1915 @@
+/* Import Mobile Responsive Styles */
+@import url('mobile-responsive.css');
+
+/* ARMIS Shared Styles - Military Color Palette */
+:root {
+    --armis-primary: #2d5a27;      /* Dark Military Green */
+    --armis-secondary: #4a7c59;     /* Medium Green */
+    --armis-accent: #6b8e5a;        /* Light Green */
+    --armis-gold: #ffd700;          /* Military Gold/Yellow */
+    --armis-dark: #1a3d1a;          /* Very Dark Green */
+    --armis-light: #8fbc8f;         /* Sage Green */
+}
+
+/* Academic Tab Conditional Field Styles */
+.required-field {
+    border-left: 3px solid #ffc107 !important;
+}
+
+.academic-row, .proftech-row, .milcourse-row, .tradegroup-row {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 5px;
+    padding: 10px;
+    margin-bottom: 10px;
+    transition: all 0.3s ease;
+}
+
+.academic-row:hover, .proftech-row:hover, .milcourse-row:hover, .tradegroup-row:hover {
+    background-color: #e9ecef;
+    border-color: var(--armis-accent);
+}
+
+.invalid-feedback {
+    display: block;
+    font-size: 0.875em;
+    color: #dc3545;
+    margin-top: 0.25rem;
+}
+
+/* Remove button styling for consistency with children/dependants */
+.btn-remove-block {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 32px;
+    padding: 4px 8px;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    transition: all 0.2s ease;
+    background-color: #dc3545;
+    color: white;
+}
+
+.btn-remove-block:hover {
+    background-color: #c82333;
+    transform: scale(1.05);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.btn-remove-block i {
+    margin: 0;
+    font-size: 12px;
+}
+
+.btn-remove-block:focus {
+    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+}
+
+.is-invalid {
+    border-color: #dc3545 !important;
+    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25) !important;
+}
+
+/* Typography */
+.system-title { 
+    color: var(--armis-gold);
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+    font-weight: bold;
+    font-family: 'Arial Black', Arial, sans-serif;
+}
+
+.section-title {
+    color: var(--armis-primary);
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+.card-title {
+    color: var(--armis-primary);
+    font-weight: bold;
+}
+
+.text-armis-gold {
+    color: var(--armis-gold) !important;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+}
+
+/* Navigation */
+.navbar-custom { 
+    background: linear-gradient(135deg, var(--armis-primary) 0%, var(--armis-secondary) 50%, var(--armis-accent) 100%);
+    border-bottom: 3px solid var(--armis-gold);
+}
+
+.navbar-brand:hover .system-title {
+    color: #ffed4e;
+    text-shadow: 2px 2px 6px rgba(0,0,0,0.8);
+}
+
+/* Sidebar */
+.sidebar {
+    background: linear-gradient(180deg, var(--armis-primary) 0%, var(--armis-secondary) 100%);
+    border-right: 3px solid var(--armis-gold);
+    min-height: calc(100vh - 76px);
+}
+
+.sidebar .nav-link {
+    color: rgba(255,255,255,0.8);
+    border-radius: 8px;
+    margin: 2px 0;
+    transition: all 0.3s ease;
+}
+
+.sidebar .nav-link:hover {
+    background: rgba(255,215,0,0.2);
+    color: var(--armis-gold);
+    transform: translateX(5px);
+}
+
+.sidebar .nav-link.active {
+    background: var(--armis-gold);
+    color: var(--armis-dark);
+    font-weight: bold;
+}
+
+.sidebar-header {
+    background: var(--armis-dark);
+    color: var(--armis-gold);
+    padding: 1rem;
+    border-bottom: 2px solid var(--armis-gold);
+}
+
+/* Buttons */
+.btn-armis-primary {
+    background: linear-gradient(135deg, var(--armis-primary) 0%, var(--armis-secondary) 100%);
+    border: 2px solid var(--armis-gold);
+    color: white;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.btn-armis-primary:hover {
+    background: linear-gradient(135deg, var(--armis-dark) 0%, var(--armis-primary) 100%);
+    border-color: var(--armis-gold);
+    color: var(--armis-gold);
+    transform: translateY(-2px);
+}
+
+.btn-armis-outline {
+    border: 2px solid var(--armis-primary);
+    color: var(--armis-primary);
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.btn-armis-outline:hover {
+    background: var(--armis-primary);
+    border-color: var(--armis-gold);
+    color: white;
+}
+
+.btn-armis {
+    background: linear-gradient(135deg, var(--armis-secondary) 0%, var(--armis-accent) 100%);
+    border: 1px solid var(--armis-gold);
+    color: white;
+    font-weight: bold;
+}
+
+.btn-armis:hover {
+    background: linear-gradient(135deg, var(--armis-primary) 0%, var(--armis-dark) 100%);
+    border-color: var(--armis-gold);
+    color: var(--armis-gold);
+}
+
+/* Cards and Components */
+.feature-card {
+    border: 2px solid var(--armis-light);
+    box-shadow: 0 4px 8px rgba(45, 90, 39, 0.2);
+    transition: all 0.3s ease;
+    height: 100%;
+    background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%);
+}
+
+.feature-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 16px rgba(45, 90, 39, 0.3);
+    border-color: var(--armis-gold);
+}
+
+.module-card {
+    border: 2px solid var(--armis-accent);
+    background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%);
+    transition: all 0.3s ease;
+}
+
+.module-card:hover {
+    border-color: var(--armis-gold);
+    box-shadow: 0 6px 12px rgba(45, 90, 39, 0.25);
+}
+
+/* Hero Section */
+.hero-section {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 50%, #dee2e6 100%);
+    padding: 4rem 0;
+    border-bottom: 2px solid var(--armis-accent);
+}
+
+/* Footer */
+.footer-custom {
+    background: linear-gradient(135deg, var(--armis-dark) 0%, var(--armis-primary) 50%, var(--armis-secondary) 100%);
+    border-top: 3px solid var(--armis-gold);
+}
+
+/* Status Badges */
+.status-badge {
+    background: linear-gradient(135deg, var(--armis-secondary) 0%, var(--armis-accent) 100%);
+    border: 1px solid var(--armis-gold);
+    color: white;
+    font-weight: bold;
+}
+
+.alert-armis {
+    background: linear-gradient(135deg, var(--armis-light) 0%, var(--armis-accent) 100%);
+    border: 2px solid var(--armis-gold);
+    color: var(--armis-dark);
+}
+
+/* Content Area */
+.content-wrapper {
+    min-height: calc(100vh - 140px);
+    background: #f8f9fa;
+}
+
+.main-content {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin: 20px 0;
+    padding: 30px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .sidebar {
+        position: fixed;
+        left: -250px;
+        width: 250px;
+        z-index: 1000;
+        transition: left 0.3s ease;
+    }
+    
+    .sidebar.show {
+        left: 0;
+    }
+    
+    .content-wrapper {
+        margin-left: 0;
+    }
+}
+
+@media (min-width: 769px) {
+    .content-wrapper {
+        margin-left: 250px;
+    }
+}
+
+/* ============================================
+   MODERN DASHBOARD COMPONENTS
+   ============================================ */
+
+/* Dashboard Title */
+.dashboard-title {
+    color: var(--armis-primary);
+    font-weight: 700;
+    font-size: 2.5rem;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* KPI Cards */
+.kpi-card {
+    border: none;
+    border-radius: 16px;
+    background: linear-gradient(135deg, var(--armis-primary) 0%, var(--armis-secondary) 100%);
+    color: white;
+    box-shadow: 0 8px 32px rgba(45, 90, 39, 0.3);
+    transition: all 0.3s ease;
+    overflow: hidden;
+    position: relative;
+}
+
+.kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(45deg, rgba(255,255,255,0.1) 0%, transparent 50%);
+    pointer-events: none;
+}
+
+.kpi-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 40px rgba(45, 90, 39, 0.4);
+}
+
+.bg-gradient-primary { background: linear-gradient(135deg, #2d5a27 0%, #4a7c59 100%) !important; }
+.bg-gradient-success { background: linear-gradient(135deg, #28a745 0%, #34ce57 100%) !important; }
+.bg-gradient-warning { background: linear-gradient(135deg, #ffc107 0%, #ffcd39 100%) !important; }
+.bg-gradient-info { background: linear-gradient(135deg, #17a2b8 0%, #3dd5f3 100%) !important; }
+
+.kpi-content h6 {
+    font-size: 0.9rem;
+    font-weight: 500;
+    opacity: 0.9;
+    margin-bottom: 8px;
+}
+
+.kpi-value {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.kpi-trend {
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.kpi-icon {
+    opacity: 0.3;
+    font-size: 3rem;
+}
+
+.kpi-actions .btn {
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: white;
+    font-size: 0.8rem;
+    padding: 4px 12px;
+    border-radius: 20px;
+    transition: all 0.3s ease;
+}
+
+.kpi-actions .btn:hover {
+    background: rgba(255,255,255,0.3);
+    transform: scale(1.05);
+}
+
+/* Enhanced Dashboard Widgets */
+.dashboard-widget {
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    transition: all 0.3s ease;
+    border: 1px solid rgba(45, 90, 39, 0.1);
+    overflow: hidden;
+}
+
+.dashboard-widget:hover {
+    box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    transform: translateY(-2px);
+}
+
+.widget-header {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid rgba(45, 90, 39, 0.1);
+    background: linear-gradient(90deg, rgba(45, 90, 39, 0.05) 0%, rgba(255, 255, 255, 0) 100%);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.widget-title {
+    color: var(--armis-primary);
+    font-weight: 600;
+    font-size: 1.1rem;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.widget-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.widget-body {
+    padding: 24px;
+}
+
+/* Chart Containers */
+.chart-container {
+    position: relative;
+    height: 300px;
+    width: 100%;
+}
+
+/* Action Cards */
+.action-card {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    transition: all 0.3s ease;
+    border: 1px solid rgba(45, 90, 39, 0.1);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+.action-card:hover {
+    text-decoration: none;
+    color: inherit;
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    border-color: var(--armis-primary);
+}
+
+.action-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 12px;
+    color: white;
+    font-size: 1.5rem;
+}
+
+.action-card h6 {
+    font-weight: 600;
+    color: var(--armis-primary);
+    margin-bottom: 8px;
+}
+
+.action-card p {
+    font-size: 0.85rem;
+    color: #666;
+    margin: 0;
+}
+
+/* Activity List */
+.activity-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.activity-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 0;
+    border-bottom: 1px solid rgba(45, 90, 39, 0.1);
+}
+
+.activity-item:last-child {
+    border-bottom: none;
+}
+
+.activity-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+.activity-content h6 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--armis-primary);
+    margin-bottom: 4px;
+}
+
+.activity-content p {
+    font-size: 0.8rem;
+    margin-bottom: 4px;
+}
+
+.activity-content small {
+    font-size: 0.75rem;
+}
+
+/* Report Links */
+.report-link {
+    text-decoration: none;
+    color: inherit;
+    transition: all 0.3s ease;
+}
+
+.report-link:hover {
+    text-decoration: none;
+    color: inherit;
+}
+
+.report-link .card {
+    transition: all 0.3s ease;
+}
+
+.report-link:hover .card {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+}
+
+/* Loading States */
+.widget-loading {
+    position: relative;
+    pointer-events: none;
+}
+
+.widget-loading::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255,255,255,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 16px;
+    z-index: 10;
+}
+
+.widget-loading::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 30px;
+    height: 30px;
+    margin: -15px 0 0 -15px;
+    border: 3px solid var(--armis-accent);
+    border-top-color: var(--armis-primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    z-index: 11;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .dashboard-title {
+        font-size: 2rem;
+    }
+    
+    .kpi-value {
+        font-size: 2rem;
+    }
+    
+    .widget-header {
+        padding: 16px 20px 12px;
+    }
+    
+    .widget-body {
+        padding: 20px;
+    }
+    
+    .action-card {
+        padding: 16px;
+    }
+    
+    .action-icon {
+        width: 50px;
+        height: 50px;
+        font-size: 1.3rem;
+    }
+}
+
+/* Enhanced Hover Effects */
+.dashboard-widget:hover .widget-title {
+    color: var(--armis-secondary);
+}
+
+.kpi-card:hover .kpi-value {
+    transform: scale(1.05);
+}
+
+/* Drill-down Button Styles */
+.drill-down {
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.drill-down:hover {
+    transform: scale(1.05);
+}
+
+/* ============================================
+   ADMIN DASHBOARD SPECIFIC STYLES
+   ============================================ */
+
+/* Admin Module Cards - Enhanced version of base module-card */
+.admin-module-card {
+    transition: all 0.3s ease;
+    border: 1px solid #e3e6f0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border-radius: 10px;
+}
+
+.admin-module-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    border-color: #5a67d8;
+}
+
+/* Section Title Styling */
+.admin-section-title {
+    color: #2d3748;
+    font-weight: 600;
+    margin-bottom: 1rem;
+}
+
+/* Small Alert Styling */
+.alert-sm {
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
+}
+
+/* Text Opacity Utilities */
+.text-white-75 {
+    opacity: 0.75;
+}
+
+.text-white-50 {
+    opacity: 0.5;
+}
+
+/* Admin Card Styling */
+.admin-card {
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.admin-card-header {
+    border-radius: 10px 10px 0 0 !important;
+}
+
+/* Admin Button Styling */
+.admin-btn {
+    border-radius: 6px;
+    font-weight: 500;
+}
+
+/* Admin Badge Styling */
+.admin-badge {
+    border-radius: 6px;
+}
+
+/* Admin List Group Styling */
+.admin-list-group-item {
+    border-left: none;
+    border-right: none;
+}
+
+.admin-list-group-item:first-child {
+    border-top: none;
+}
+
+.admin-list-group-item:last-child {
+    border-bottom: none;
+}
+
+/* Admin Responsive Design */
+@media (max-width: 768px) {
+    .admin-module-card {
+        margin-bottom: 1rem;
+    }
+    
+    .admin-section-title {
+        font-size: 1.5rem;
+    }
+}
+
+/* ============================================
+   LOGIN PAGE STYLES
+   ============================================ */
+
+/* Login Page Body */
+.login-body {
+    background: linear-gradient(135deg, var(--armis-light) 0%, var(--armis-accent) 50%, var(--armis-secondary) 100%);
+    min-height: 100vh;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Animated background pattern */
+.login-body::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: 
+        radial-gradient(circle at 25% 25%, rgba(255, 215, 0, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 75% 75%, rgba(45, 90, 39, 0.1) 0%, transparent 50%);
+    animation: backgroundFloat 20s ease-in-out infinite;
+}
+
+@keyframes backgroundFloat {
+    0%, 100% { transform: translateY(0px) scale(1); }
+    50% { transform: translateY(-20px) scale(1.05); }
+}
+
+/* Login Container */
+.login-container {
+    max-width: 450px;
+    margin: 0 auto;
+    padding: 5vh 15px;
+    position: relative;
+    z-index: 1;
+}
+
+/* Modern Login Card */
+.login-card {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(15px);
+    border: none;
+    border-radius: 25px;
+    box-shadow: 
+        0 25px 50px rgba(45, 90, 39, 0.2),
+        0 0 0 1px rgba(255, 215, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    overflow: hidden;
+    transition: all 0.4s ease;
+    position: relative;
+}
+
+.login-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--armis-primary), var(--armis-gold), var(--armis-secondary));
+    z-index: 1;
+}
+
+.login-card:hover {
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 
+        0 35px 70px rgba(45, 90, 39, 0.3),
+        0 0 0 1px rgba(255, 215, 0, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+/* Login Header */
+.login-header {
+    background: linear-gradient(135deg, var(--armis-primary) 0%, var(--armis-secondary) 50%, var(--armis-accent) 100%);
+    color: white;
+    text-align: center;
+    padding: 3rem 2rem 2.5rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.login-header::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: linear-gradient(45deg, transparent 40%, rgba(255, 215, 0, 0.15) 50%, transparent 60%);
+    animation: shimmer 4s ease-in-out infinite;
+}
+
+.login-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent 0%, var(--armis-gold) 50%, transparent 100%);
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+@keyframes shimmer {
+    0% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
+    100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
+}
+
+/* Army Logo */
+.login-logo {
+    width: 100px;
+    height: 100px;
+    margin: 0 auto 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 215, 0, 0.15);
+    border-radius: 50%;
+    border: 3px solid var(--armis-gold);
+    position: relative;
+    z-index: 1;
+    transition: all 0.3s ease;
+    box-shadow: 
+        0 0 20px rgba(255, 215, 0, 0.3),
+        inset 0 0 20px rgba(255, 215, 0, 0.1);
+}
+
+.login-logo:hover {
+    transform: scale(1.05);
+    box-shadow: 
+        0 0 30px rgba(255, 215, 0, 0.5),
+        inset 0 0 30px rgba(255, 215, 0, 0.2);
+}
+
+.login-logo img {
+    width: 70px;
+    height: 70px;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+    transition: all 0.3s ease;
+}
+
+.login-logo:hover img {
+    transform: scale(1.1);
+}
+
+.login-logo i {
+    font-size: 3rem;
+    color: var(--armis-gold);
+    text-shadow: 0 0 15px rgba(255, 215, 0, 0.6);
+}
+
+/* System Title */
+.system-title {
+    color: var(--armis-gold);
+    font-weight: 900;
+    font-size: 3.5rem;
+    text-shadow: 
+        2px 2px 4px rgba(0,0,0,0.8),
+        0 0 20px rgba(255, 215, 0, 0.4),
+        0 0 40px rgba(255, 215, 0, 0.2);
+    margin-bottom: 0.5rem;
+    letter-spacing: 3px;
+    position: relative;
+    z-index: 1;
+    font-family: 'Arial Black', Arial, sans-serif;
+    text-transform: uppercase;
+}
+
+.system-title::after {
+    content: '';
+    position: absolute;
+    bottom: -5px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 2px;
+    background: var(--armis-gold);
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.6);
+}
+
+.system-subtitle {
+    font-size: 1.1rem;
+    opacity: 0.95;
+    font-weight: 400;
+    position: relative;
+    z-index: 1;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+    margin-bottom: 0.5rem;
+}
+
+/* Enhanced Form Styling */
+.login-form-container {
+    padding: 3rem 2.5rem;
+    position: relative;
+}
+
+.form-label {
+    font-weight: 700;
+    color: var(--armis-primary);
+    margin-bottom: 0.75rem;
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.form-control {
+    border: 2px solid #e9ecef;
+    border-radius: 15px;
+    padding: 15px 20px;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    background: rgba(255, 255, 255, 0.9);
+    font-weight: 500;
+}
+
+.form-control:focus {
+    border-color: var(--armis-gold);
+    box-shadow: 
+        0 0 0 0.25rem rgba(255, 215, 0, 0.25),
+        0 8px 25px rgba(45, 90, 39, 0.1),
+        inset 0 1px 3px rgba(0,0,0,0.1);
+    background: white;
+    transform: translateY(-2px);
+}
+
+.form-control::placeholder {
+    color: #6c757d;
+    opacity: 0.8;
+    font-style: italic;
+}
+
+/* Input Group Styling */
+.input-group .btn-outline-secondary {
+    border: 2px solid #e9ecef;
+    border-left: none;
+    background: rgba(108, 117, 125, 0.1);
+    transition: all 0.3s ease;
+}
+
+.input-group .btn-outline-secondary:hover {
+    background: var(--armis-gold);
+    border-color: var(--armis-gold);
+    color: var(--armis-primary);
+}
+
+/* Enhanced Login Button */
+.btn-login {
+    background: linear-gradient(135deg, var(--armis-primary) 0%, var(--armis-secondary) 50%, var(--armis-accent) 100%);
+    border: 3px solid var(--armis-gold);
+    color: white;
+    font-weight: 800;
+    width: 100%;
+    padding: 18px;
+    border-radius: 15px;
+    font-size: 1.2rem;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    transition: all 0.4s ease;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 
+        0 8px 20px rgba(45, 90, 39, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.btn-login::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 215, 0, 0.3), transparent);
+    transition: left 0.6s ease;
+}
+
+.btn-login:hover {
+    background: linear-gradient(135deg, var(--armis-dark) 0%, var(--armis-primary) 50%, var(--armis-secondary) 100%);
+    border-color: var(--armis-gold);
+    color: var(--armis-gold);
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 
+        0 15px 35px rgba(45, 90, 39, 0.4),
+        0 0 20px rgba(255, 215, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.btn-login:hover::before {
+    left: 100%;
+}
+
+.btn-login:active {
+    transform: translateY(-1px) scale(0.98);
+    transition: all 0.1s ease;
+}
+
+/* Enhanced Alert Styling */
+.alert-danger {
+    background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+    border: 1px solid #f5c6cb;
+    border-radius: 12px;
+    color: #721c24;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+    border-left: 4px solid #dc3545;
+}
+
+.alert-success {
+    background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+    border: 1px solid #c3e6cb;
+    border-radius: 12px;
+    color: #155724;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+    border-left: 4px solid #28a745;
+}
+
+/* Demo Credentials Styling */
+.demo-credentials {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border-radius: 18px;
+    border: 2px solid #dee2e6;
+    padding: 2rem;
+    margin-top: 2rem;
+    box-shadow: 
+        inset 0 1px 3px rgba(0,0,0,0.1),
+        0 2px 8px rgba(0,0,0,0.05);
+}
+
+.demo-credentials h6 {
+    color: var(--armis-primary);
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+    font-size: 1.1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-align: center;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--armis-gold);
+    position: relative;
+}
+
+.demo-credentials h6::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 30px;
+    height: 2px;
+    background: var(--armis-gold);
+    box-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
+}
+
+.credential-group {
+    background: white;
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+    border-left: 4px solid var(--armis-accent);
+    box-shadow: 
+        0 3px 10px rgba(0,0,0,0.1),
+        inset 0 1px 0 rgba(255,255,255,0.8);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.credential-group::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,215,0,0.3), transparent);
+}
+
+.credential-group:hover {
+    transform: translateX(5px);
+    box-shadow: 
+        0 5px 15px rgba(0,0,0,0.15),
+        inset 0 1px 0 rgba(255,255,255,0.9);
+    border-left-color: var(--armis-gold);
+}
+
+.credential-group:last-child {
+    margin-bottom: 0;
+}
+
+.credential-group code {
+    background: linear-gradient(135deg, var(--armis-primary), var(--armis-secondary));
+    color: var(--armis-gold);
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    border: 1px solid rgba(255,215,0,0.3);
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.2);
+}
+
+/* Security Features */
+.security-badge {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    background: rgba(255, 215, 0, 0.2);
+    border: 1px solid var(--armis-gold);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 0.8rem;
+    color: var(--armis-gold);
+    font-weight: 600;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .login-container {
+        max-width: 95%;
+        padding: 2vh 15px;
+    }
+    
+    .login-header {
+        padding: 2.5rem 1.5rem 2rem;
+    }
+    
+    .system-title {
+        font-size: 2.8rem;
+        letter-spacing: 2px;
+    }
+    
+    .login-form-container {
+        padding: 2.5rem 2rem;
+    }
+    
+    .login-logo {
+        width: 90px;
+        height: 90px;
+        margin-bottom: 1.25rem;
+    }
+    
+    .login-logo img {
+        width: 60px;
+        height: 60px;
+    }
+    
+    .btn-login {
+        font-size: 1.1rem;
+        padding: 16px;
+        letter-spacing: 1px;
+    }
+    
+    .form-control {
+        padding: 13px 18px;
+    }
+}
+
+@media (max-width: 480px) {
+    .system-title {
+        font-size: 2.2rem;
+        letter-spacing: 1px;
+    }
+    
+    .login-form-container {
+        padding: 2rem 1.5rem;
+    }
+    
+    .login-logo {
+        width: 80px;
+        height: 80px;
+    }
+    
+    .login-logo img {
+        width: 50px;
+        height: 50px;
+    }
+    
+    .btn-login {
+        font-size: 1rem;
+        padding: 14px;
+    }
+}
+
+@media (max-width: 360px) {
+    .login-container {
+        padding: 1vh 10px;
+    }
+    
+    .system-title {
+        font-size: 1.8rem;
+    }
+    
+    .login-form-container {
+        padding: 1.5rem 1rem;
+    }
+}
+
+/* ============================================
+   ADMIN BRANCH DASHBOARD ADDITIONAL FIXES
+   Consolidated from dashboard-fixes.css
+   ============================================ */
+
+/* Ensure modal content has proper scrolling */
+.modal-body {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* Fix for chart containers */
+.chart-container {
+    position: relative;
+    min-height: 300px;
+}
+
+.chart-container canvas {
+    width: 100% !important;
+    height: auto !important;
+}
+
+/* Fix for drill-down modals */
+#drillDownModal .modal-body {
+    padding: 1.5rem;
+}
+
+#drillDownModal .table-responsive {
+    margin-top: 1rem;
+}
+
+/* Ensure action cards have consistent height */
+.action-grid-widget .action-card {
+    height: 100%;
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+}
+
+/* Fix for report links in modal */
+.report-link {
+    text-decoration: none;
+    color: inherit;
+    transition: all 0.3s ease;
+}
+
+.report-link:hover {
+    text-decoration: none;
+    color: inherit;
+}
+
+/* Fix for KPI cards responsiveness */
+.kpi-card .kpi-content h2 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin: 0;
+    line-height: 1;
+}
+
+.kpi-card .kpi-trend {
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+}
+
+/* Fix for activity list items */
+.activity-item {
+    display: flex;
+    align-items: flex-start;
+    padding: 1rem 0;
+    border-bottom: 1px solid rgba(0,0,0,0.1);
+}
+
+.activity-item:last-child {
+    border-bottom: none;
+}
+
+.activity-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 1rem;
+    flex-shrink: 0;
+}
+
+.activity-content {
+    flex: 1;
+}
+
+.activity-content h6 {
+    margin: 0 0 0.25rem 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.activity-content p {
+    margin: 0 0 0.25rem 0;
+    font-size: 0.85rem;
+}
+
+/* Loading states */
+.loading-spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #007bff;
+    border-radius: 50%;
+    animation: admin-spin 1s linear infinite;
+}
+
+@keyframes admin-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Error states */
+.chart-error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    background: #f8f9fa;
+    border: 1px dashed #dee2e6;
+    border-radius: 0.375rem;
+    color: #6c757d;
+    font-size: 0.9rem;
+}
+
+/* Fix for progress bars in drill-down content */
+.progress {
+    height: 8px;
+    background-color: rgba(0,0,0,0.1);
+}
+
+.progress-bar {
+    border-radius: 4px;
+}
+
+/* Additional responsive fixes for admin branch */
+@media (max-width: 768px) {
+    .kpi-card .d-flex {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .kpi-icon {
+        margin-bottom: 1rem;
+        align-self: center;
+    }
+    
+    .action-grid-widget .col-xl-2 {
+        min-width: 50%;
+    }
+    
+    .admin-module-card {
+        margin-bottom: 1rem;
+    }
+    
+    .admin-section-title {
+        font-size: 1.1rem;
+    }
+}
+
+/* ========================================
+   DASHBOARD COMPONENT STYLES
+   ======================================== */
+
+/* Dashboard Widget Standardization */
+.dashboard-widget {
+    background: #fff;
+    border-radius: 0.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border: 1px solid #e9ecef;
+    transition: all 0.3s ease;
+}
+
+.dashboard-widget:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.dashboard-widget.kpi-card {
+    color: white;
+    border: none;
+}
+
+.dashboard-widget.chart-widget {
+    min-height: 400px;
+}
+
+.dashboard-widget.list-widget {
+    max-height: 500px;
+}
+
+.dashboard-widget.quick-actions-widget {
+    min-height: 300px;
+}
+
+.dashboard-widget.unit-overview-widget {
+    min-height: 350px;
+}
+
+.dashboard-widget.alerts-widget {
+    max-height: 450px;
+}
+
+/* Widget Headers */
+.widget-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem 1.5rem 0.75rem;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.widget-title {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #2c5530;
+}
+
+.widget-title i {
+    margin-right: 0.5rem;
+    color: #4a90e2;
+}
+
+.widget-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+/* Widget Body */
+.widget-body {
+    padding: 1.5rem;
+}
+
+/* Quick Action Cards */
+.quick-action-card {
+    display: block;
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    color: white;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    min-height: 120px;
+    border: none;
+}
+
+.quick-action-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    color: white;
+    text-decoration: none;
+}
+
+.quick-action-content {
+    text-align: center;
+}
+
+.quick-action-content h6 {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+/* Unit Cards */
+.unit-card {
+    background: #f8f9fa;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.unit-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.unit-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.unit-name {
+    margin: 0;
+    font-weight: 600;
+}
+
+.unit-stats .stat-item {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.25rem;
+}
+
+.stat-label {
+    font-size: 0.875rem;
+    color: #6c757d;
+}
+
+.stat-value {
+    font-weight: 600;
+}
+
+/* Alert Items */
+.alert-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.alert-item {
+    padding: 0.75rem;
+    border-bottom: 1px solid #dee2e6;
+    transition: background-color 0.2s ease;
+    cursor: pointer;
+}
+
+.alert-item:hover {
+    background-color: #f8f9fa;
+}
+
+.alert-item:last-child {
+    border-bottom: none;
+}
+
+.alert-content h6 {
+    margin: 0 0 0.25rem 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.alert-text {
+    margin: 0 0 0.25rem 0;
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+.alert-time {
+    font-size: 0.75rem;
+    color: #adb5bd;
+}
+
+/* Activity Items */
+.activity-list, .activities-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.activity-item {
+    display: flex;
+    align-items: flex-start;
+    padding: 0.75rem;
+    border-bottom: 1px solid #dee2e6;
+    transition: background-color 0.2s ease;
+}
+
+.activity-item:hover {
+    background-color: #f8f9fa;
+}
+
+.activity-item:last-child {
+    border-bottom: none;
+}
+
+.activity-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 0.75rem;
+    color: white;
+    font-size: 0.875rem;
+}
+
+.activity-content {
+    flex: 1;
+}
+
+.activity-content h6 {
+    margin: 0 0 0.25rem 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+/* Event Items */
+.event-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.event-item {
+    display: flex;
+    align-items: flex-start;
+    padding: 0.75rem;
+    border-bottom: 1px solid #dee2e6;
+    transition: background-color 0.2s ease;
+}
+
+.event-item:hover {
+    background-color: #f8f9fa;
+}
+
+.event-item:last-child {
+    border-bottom: none;
+}
+
+.event-date {
+    background: #007bff;
+    color: white;
+    border-radius: 0.375rem;
+    padding: 0.5rem;
+    text-align: center;
+    margin-right: 0.75rem;
+    min-width: 50px;
+}
+
+.event-item.urgent .event-date {
+    background: #dc3545;
+}
+
+.date-day {
+    font-size: 1.125rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.date-month {
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+}
+
+.event-content {
+    flex: 1;
+}
+
+.event-title {
+    margin: 0 0 0.25rem 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.event-description {
+    margin: 0 0 0.5rem 0;
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+.event-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Button Standardization */
+.btn-sm {
+    font-size: 0.875rem;
+    padding: 0.375rem 0.75rem;
+}
+
+/* Icon Standardization */
+.fa-lg {
+    font-size: 1.25em;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .quick-action-card {
+        min-height: 100px;
+        padding: 1rem;
+    }
+    
+    .unit-card {
+        margin-bottom: 1rem;
+    }
+    
+    .widget-header {
+        padding: 1rem 1rem 0.5rem;
+    }
+    
+    .widget-body {
+        padding: 1rem;
+    }
+}
+/* Import Mobile Responsive Styles */
+@import url('mobile-responsive.css');
+
+/* ARMIS Shared Styles - Military Color Palette */
+:root {
+    --armis-primary: #2d5a27;      /* Dark Military Green */
+    --armis-secondary: #4a7c59;     /* Medium Green */
+    --armis-accent: #6b8e5a;        /* Light Green */
+    --armis-gold: #ffd700;          /* Military Gold/Yellow */
+    --armis-dark: #1a3d1a;          /* Very Dark Green */
+    --armis-light: #8fbc8f;         /* Sage Green */
+}
+
+/* Academic Tab Conditional Field Styles */
+.required-field {
+    border-left: 3px solid #ffc107 !important;
+}
+
+.academic-row, .proftech-row, .milcourse-row, .tradegroup-row {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 5px;
+    padding: 10px;
+    margin-bottom: 10px;
+    transition: all 0.3s ease;
+}
+
+.academic-row:hover, .proftech-row:hover, .milcourse-row:hover, .tradegroup-row:hover {
+    background-color: #e9ecef;
+    border-color: var(--armis-accent);
+}
+
+.invalid-feedback {
+    display: block;
+    font-size: 0.875em;
+    color: #dc3545;
+    margin-top: 0.25rem;
+}
+
+/* Remove button styling for consistency with children/dependants */
+.btn-remove-block {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 32px;
+    padding: 4px 8px;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    transition: all 0.2s ease;
+    background-color: #dc3545;
+    color: white;
+}
+
+.btn-remove-block:hover {
+    background-color: #c82333;
+    transform: scale(1.05);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.btn-remove-block i {
+    margin: 0;
+    font-size: 12px;
+}
+
+.btn-remove-block:focus {
+    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+}
+
+.is-invalid {
+    border-color: #dc3545 !important;
+    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25) !important;
+}
+
+/* Typography */
+.system-title { 
+    color: var(--armis-gold);
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+    font-weight: bold;
+    font-family: 'Arial Black', Arial, sans-serif;
+}
+
+.section-title {
+    color: var(--armis-primary);
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+.card-title {
+    color: var(--armis-primary);
+    font-weight: bold;
+}
+
+.text-armis-gold {
+    color: var(--armis-gold) !important;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+}
+
+/* Navigation */
+.navbar-custom { 
+    background: linear-gradient(135deg, var(--armis-primary) 0%, var(--armis-secondary) 50%, var(--armis-accent) 100%);
+    border-bottom: 3px solid var(--armis-gold);
+}
+
+.navbar-brand:hover .system-title {
+    color: #ffed4e;
+    text-shadow: 2px 2px 6px rgba(0,0,0,0.8);
+}
+
+/* Sidebar */
+.sidebar {
+    background: linear-gradient(180deg, var(--armis-primary) 0%, var(--armis-secondary) 100%);
+    border-right: 3px solid var(--armis-gold);
+    min-height: calc(100vh - 76px);
+}
+
+.sidebar .nav-link {
+    color: rgba(255,255,255,0.8);
+    border-radius: 8px;
+    margin: 2px 0;
+    transition: all 0.3s ease;
+}
+
+.sidebar .nav-link:hover {
+    background: rgba(255,215,0,0.2);
+    color: var(--armis-gold);
+    transform: translateX(5px);
+}
+
+.sidebar .nav-link.active {
+    background: var(--armis-gold);
+    color: var(--armis-dark);
+    font-weight: bold;
+}
+
+.sidebar-header {
+    background: var(--armis-dark);
+    color: var(--armis-gold);
+    padding: 1rem;
+    border-bottom: 2px solid var(--armis-gold);
+}
+
+/* ... [rest of your CSS unchanged] ... */
+
+/* ------------------ ARMIS SYSTEM-TITLE SCOPING FIXES ------------------ */
+
+/* Use large branding only on login/hero */
+.login-header .system-title, 
+.login-body .system-title, 
+.login-card .system-title {
+    font-size: 3.5rem !important;
+    font-weight: 900 !important;
+    letter-spacing: 3px !important;
+    margin-bottom: 0.5rem !important;
+    position: relative !important;
+    z-index: 1 !important;
+    text-transform: uppercase !important;
+    text-shadow: 
+        2px 2px 4px rgba(0,0,0,0.8),
+        0 0 20px rgba(255, 215, 0, 0.4),
+        0 0 40px rgba(255, 215, 0, 0.2) !important;
+    font-family: 'Arial Black', Arial, sans-serif !important;
+}
+
+/* Always use compact branding in the NAVBAR */
+.navbar .system-title,
+.navbar .system-title-short,
+.navbar-brand .system-title,
+.navbar-brand .system-title-short {
+    font-size: 1.05rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.5px !important;
+    color: var(--armis-gold) !important;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.3) !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif !important;
+    margin-bottom: 0 !important;
+    text-transform: none !important;
+    z-index: auto !important;
+    position: static !important;
+    display: inline !important;
+    vertical-align: middle !important;
+}
+
+/* Responsive hiding for system-title in navbar */
+@media (max-width: 1200px) {
+    .navbar-brand {
+        max-width: 180px;
+    }
+    .navbar .system-title {
+        display: none !important;
+    }
+    .navbar .system-title-short {
+        display: inline !important;
+    }
+}
+
+/* ------------------ END ARMIS SYSTEM-TITLE SCOPING FIXES ------------------ */
+/* ==== FIX: Ensure navbar title is never cut off ==== */
+.navbar-brand {
+    max-width: none !important;
+    width: auto !important;
+    min-width: 0 !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
+    white-space: nowrap !important;
+    display: flex !important;
+    align-items: center !important;
+    flex-shrink: 1 !important;
+}
+@media (max-width: 1200px) {
+    .navbar-brand {
+        max-width: none !important;
+        width: auto !important;
+        min-width: 0 !important;
+    }
+}

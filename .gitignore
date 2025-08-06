@@ -1,0 +1,176 @@
+# ARMIS - Comprehensive file exclusion to prevent restoration of unused files
+
+# Backup and temporary files
+*.bak
+*.old
+*.tmp
+*.backup
+*_copy.php
+*_backup.php
+*_old.php
+*_test.php
+*Copy.php
+*OLD.php
+*TEST.php
+.htaccess.backup
+app
+api
+
+# Test and debug files
+test_*.php
+debug_*.php
+debug_*.txt
+sample.php
+test_routing.php
+testing_*.php
+dev_*.php
+_test.php
+_debug.php
+quick_debug.php
+
+# Specific test files
+test_rbac_live.php
+test_db.php
+test_profile.php
+test_login_session.php
+test_central_access.php
+test_database_setup.php
+test_login.php
+test_auth.php
+test_dashboard_hierarchy.php
+test_email.php
+test_rbac.php
+
+# Specific debug files
+debug_database.php
+debug_tables.php
+admin_branch/debug_form_data.php
+users/debug_cv.php
+
+# Documentation files that were cleaned up
+ACADEMIC_CONDITIONAL_FIELDS_COMPLETE.md
+ADMIN_DASHBOARD_IMPLEMENTATION.md
+CLEANUP_REPORT.md
+CSS_ANALYSIS_RECOMMENDATIONS.md
+DATABASE_SCHEMA_ALIGNMENT_COMPLETE.md
+DYNAMIC_AUTH_IMPLEMENTATION.md
+HEADER_IMPLEMENTATION_STATUS.md
+HEADER_LOGIN_STATUS_CHECK.md
+IMPLEMENTATION_COMPLETE.md
+LOGIN_MODERNIZATION_REPORT.md
+PROFILE_SYSTEM_ENHANCEMENT_SUMMARY.md
+RBAC_COMPLETION_REPORT.md
+RBAC_IMPLEMENTATION_COMPLETE.md
+SETUP_COMPLETE.md
+SYSTEM_ANALYSIS_COMPLETE.md
+SYSTEM_UPDATES_COMPLETE.md
+USER_PROFILE_DATABASE_INTEGRATION_COMPLETE.md
+USER_PROFILE_ERROR_FIXES_COMPLETE.md
+
+# Temporary/Old files
+check_admin_role.php
+check_db.php
+check_ranks.php
+check_staff_columns.php
+check_staff_table.php
+fix_profile_column.php
+run_profile_migration.php
+admin_branch/includes/db_connection_old.php
+
+# Specific unwanted directories and files
+shared/components
+routes.php
+router
+router.php
+testfile.php
+samplefile.php
+
+# Admin Branch specific unused files
+admin_branch/sidebar.php
+admin_branch/dashboard.php
+admin_branch/command_reports*.php
+admin_branch/debug_ajax.txt
+admin_branch/*_old.php
+admin_branch/*_backup.php
+admin_branch/*_copy.php
+admin_branch/*Copy.php
+
+# Performance and cache files
+logs/*.log
+logs/*.txt
+logs/performance.log
+logs/error.log
+logs/access.log
+cache/
+tmp/
+temp/
+!logs/.gitkeep
+
+# Database and sensitive files
+*.sql.backup
+database_backup_*
+config_backup.*
+.env.backup
+credentials_*
+
+# Temporary uploads and user files
+uploads/tmp/
+uploads/temp/
+uploads/*.tmp
+user_uploads/tmp/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-*
+.editorconfig
+.phpstorm.meta.php
+
+# System files
+Thumbs.db
+.DS_Store
+desktop.ini
+Icon?
+
+# Archive files that shouldn't be in production
+*.zip
+*.rar
+*.tar.gz
+*.7z
+archived/
+old_versions/
+
+# Documentation drafts
+draft_*
+notes.txt
+todo.txt
+README_old.*
+
+# Vendor dependencies if using Composer
+vendor/
+node_modules/
+bower_components/
+
+# Build artifacts
+dist/
+build/
+public/build/
+
+# Configuration overrides
+config_local.php
+config_dev.php
+local_settings.php
+
+# User-specific files
+user_config.php
+personal_notes.txt
+my_*
+
+# Development utilities
+phpinfo.php
+info.php
+test.php
+check.php
+ping.php
