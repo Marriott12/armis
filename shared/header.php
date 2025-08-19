@@ -66,6 +66,22 @@ header('X-Response-Time: ' . (microtime(true) - $startTime));
     <meta name="author" content="ARMIS Development Team">
     <meta name="robots" content="noindex, nofollow">
 
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#2c5530">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ARMIS">
+    <meta name="msapplication-TileColor" content="#2c5530">
+    <meta name="msapplication-tap-highlight" content="no">
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json">
+    
+    <!-- PWA Icons -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/logo.png">
+
     <!-- Performance optimizations -->
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <link rel="dns-prefetch" href="//cdn.jsdelivr.net">
@@ -181,6 +197,31 @@ header('X-Response-Time: ' . (microtime(true) - $startTime));
                 sidebar.classList.toggle('active');
             }
         }
+    </script>
+    
+    <!-- PWA Registration Script -->
+    <script>
+        // Register Service Worker for PWA functionality
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(function(registration) {
+                        console.log('ARMIS Service Worker registered successfully:', registration.scope);
+                    })
+                    .catch(function(error) {
+                        console.log('ARMIS Service Worker registration failed:', error);
+                    });
+            });
+        }
+        
+        // Initialize PWA app when DOM is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            // Load PWA scripts
+            const pwaScript = document.createElement('script');
+            pwaScript.src = '/pwa/js/pwa-app.js';
+            pwaScript.async = true;
+            document.head.appendChild(pwaScript);
+        });
     </script>
 </head>
 <body>

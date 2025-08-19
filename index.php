@@ -3,14 +3,20 @@
  * ARMIS Main Dashboard
  * Army Resource Management Information System
  * Central hub for all military operations and administration
- * RESTRICTED TO SYSTEM ADMINISTRATORS ONLY
+ * MODERNIZED WITH PWA SUPPORT AND ENHANCED SECURITY
  */
+
+// Include enhanced configuration
+require_once __DIR__ . '/config/enhanced_config.php';
 
 // Include scalability configuration
 require_once __DIR__ . '/config/scalability.php';
 
 // Include military formatting functions
 require_once __DIR__ . '/shared/military_formatting.php';
+
+// Include security audit service
+require_once __DIR__ . '/shared/security_audit_service.php';
 
 // Start session if not already started
 if (session_status() === PHP_SESSION_NONE) {
