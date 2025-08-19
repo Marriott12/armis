@@ -1,36 +1,41 @@
 <?php
-// Start session if not already started
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+// Define module constants
+define('ARMIS_ORDINANCE', true);
+define('ARMIS_DEVELOPMENT', true);
 
-// Include RBAC system
-require_once dirname(__DIR__) . '/shared/rbac.php';
+// Include ordinance authentication and services
+require_once __DIR__ . '/includes/auth.php';
+require_once dirname(__DIR__) . '/shared/database_connection.php';
+require_once __DIR__ . '/includes/ordinance_service.php';
 
-// Check if user is logged in
-if (!isset($_SESSION['user_id'])) {
-    header('Location: ' . dirname($_SERVER['PHP_SELF']) . '/../login.php');
-    exit();
-}
+// Require authentication and ordinance access
+requireOrdinanceAccess();
 
-// Check if user has access to ordinance module
-requireModuleAccess('ordinance');
+// Log page access
+logOrdinanceActivity('dashboard_access', 'Accessed Ordinance Dashboard');
 
-// Log access
-logAccess('ordinance', 'dashboard_view', true);
+// Initialize ordinance service
+$pdo = getDbConnection();
+$ordinanceService = new OrdinanceService($pdo);
+$dashboardData = [
+    'kpi' => $ordinanceService->getKPIData(),
+    'recent_activities' => $ordinanceService->getRecentActivities(4),
+    'inventory_overview' => $ordinanceService->getInventoryOverview(),
+    'maintenance_schedule' => $ordinanceService->getMaintenanceSchedule()
+];
 
-$pageTitle = "Ordinance Module";
+$pageTitle = "Ordinance Dashboard";
 $moduleName = "Ordinance";
-$moduleIcon = "shield-alt";
+$moduleIcon = "tools";
 $currentPage = "dashboard";
 
 $sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/ordinance/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Inventory', 'url' => '/Armis2/ordinance/inventory.php', 'icon' => 'boxes', 'page' => 'inventory'],
-    ['title' => 'Weapons Registry', 'url' => '/Armis2/ordinance/weapons.php', 'icon' => 'crosshairs', 'page' => 'weapons'],
-    ['title' => 'Ammunition', 'url' => '/Armis2/ordinance/ammunition.php', 'icon' => 'circle', 'page' => 'ammunition'],
-    ['title' => 'Maintenance', 'url' => '/Armis2/ordinance/maintenance.php', 'icon' => 'tools', 'page' => 'maintenance'],
-    ['title' => 'Reports', 'url' => '/Armis2/ordinance/reports.php', 'icon' => 'chart-bar', 'page' => 'reports']
+    ['title' => 'Dashboard', 'url' => '/ordinance/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
+    ['title' => 'Equipment Inventory', 'url' => '/ordinance/inventory.php', 'icon' => 'boxes', 'page' => 'inventory'],
+    ['title' => 'Maintenance', 'url' => '/ordinance/maintenance.php', 'icon' => 'wrench', 'page' => 'maintenance'],
+    ['title' => 'Supply Chain', 'url' => '/ordinance/supply.php', 'icon' => 'truck', 'page' => 'supply'],
+    ['title' => 'Asset Tracking', 'url' => '/ordinance/assets.php', 'icon' => 'barcode', 'page' => 'assets'],
+    ['title' => 'Reports', 'url' => '/ordinance/reports.php', 'icon' => 'chart-bar', 'page' => 'reports']
 ];
 
 include dirname(__DIR__) . '/shared/header.php';
