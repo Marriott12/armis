@@ -11,7 +11,7 @@ define('ARMIS_ROLES', [
     'admin' => [
         'name' => 'Administrator',
         'level' => 100,
-        'modules' => ['admin_branch', 'command', 'operations', 'training', 'finance', 'ordinance', 'users', 'admin', 'logistics', 'workflow', 'messaging'],
+        'modules' => ['admin_branch', 'command', 'operations', 'training', 'finance', 'ordinance', 'users', 'admin', 'logistics', 'workflow', 'messaging', 'data_management', 'reporting'],
         'description' => 'Full system access'
     ],
     'command' => [
