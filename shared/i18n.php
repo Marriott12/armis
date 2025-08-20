@@ -284,7 +284,20 @@ class ARMISInternationalization {
         
         // Format according to locale
         $fmt = new IntlDateFormatter($locale, IntlDateFormatter::MEDIUM, IntlDateFormatter::NONE);
-        return $fmt->format($timestamp);
+        // Format according to locale with error handling
+        try {
+            if (class_exists('IntlDateFormatter')) {
+                $fmt = new IntlDateFormatter($locale, IntlDateFormatter::MEDIUM, IntlDateFormatter::NONE);
+                $formatted = $fmt->format($timestamp);
+                if ($formatted !== false) {
+                    return $formatted;
+                }
+            }
+        } catch (Exception $e) {
+            // Fallback below
+        }
+        // Fallback: use PHP's date() with a reasonable format
+        return date('Y-m-d', $timestamp);
     }
     
     /**
