@@ -12,6 +12,7 @@ define('ARMIS_ROOT', __DIR__);
 
 // Database Configuration (Update these for production)
 define('DB_HOST', '127.0.0.1');
+define('DB_PORT', '3307');
 define('DB_NAME', 'armis1');
 define('DB_USER', 'root');
 define('DB_PASS', 'root123');

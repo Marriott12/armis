@@ -87,6 +87,9 @@ $pageTitle = 'Advanced Reporting & Analytics';
                             <a href="analytics_dashboard.php" class="btn btn-outline-info">
                                 <i class="fas fa-chart-line"></i> Analytics Dashboard
                             </a>
+                            <a href="../data-management/index.php" class="btn btn-outline-success">
+                                <i class="fas fa-database"></i> Data Management
+                            </a>
                         </div>
                     </div>
 
