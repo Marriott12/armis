@@ -119,6 +119,37 @@ self.addEventListener('fetch', (event) => {
     // Skip non-GET requests and chrome-extension requests
     if (request.method !== 'GET' || url.protocol === 'chrome-extension:') {
         return;
+    // Handle non-GET requests (e.g., POST/PUT/DELETE) and chrome-extension requests
+    if (url.protocol === 'chrome-extension:') {
+        return;
+    }
+    if (request.method !== 'GET') {
+        // Log the non-GET request for debugging/monitoring
+        console.log('[ServiceWorker] Non-GET request intercepted:', request.method, request.url);
+        // Optionally, queue the request for background sync if offline
+        // For now, respond with a generic offline message if offline
+        event.respondWith(
+            (async () => {
+                if (!self.navigator.onLine) {
+                    return new Response(
+                        JSON.stringify({
+                            error: 'Offline',
+                            message: 'Your request will be sent when connectivity is restored.',
+                            method: request.method,
+                            url: request.url
+                        }),
+                        {
+                            status: 503,
+                            headers: { 'Content-Type': 'application/json' }
+                        }
+                    );
+                } else {
+                    // If online, just fetch as normal
+                    return fetch(request);
+                }
+            })()
+        );
+        return;
     }
     
     // Handle different types of requests with appropriate strategies
