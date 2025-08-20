@@ -1,53 +1,108 @@
 <?php
 /**
- * ARMIS Ordinance Module API
- * RESTful API endpoints for ordinance management
+ * Ordinance Module API
+ * AJAX endpoint for dynamic ordinance data
  */
 
-header('Content-Type: application/json');
+// Define module constants
+define('ARMIS_ORDINANCE', true);
+define('ARMIS_DEVELOPMENT', true);
 
-require_once __DIR__ . '/includes/config.php';
+// Include required files
+require_once dirname(__DIR__) . '/config.php';
+require_once dirname(__DIR__) . '/shared/session_init.php';
+require_once dirname(__DIR__) . '/shared/database_connection.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/ordinance_service.php';
 
-session_start();
+// Require authentication
+requireOrdinanceAccess();
+
+// Set JSON headers
+header('Content-Type: application/json');
+header('Cache-Control: no-cache, no-store, must-revalidate');
+header('Pragma: no-cache');
+header('Expires: 0');
+
+// Handle different API endpoints
+$action = $_GET['action'] ?? '';
 
 try {
-    requireAuth();
-    requireOrdinanceAccess();
+    // Get database connection
+    $pdo = getDbConnection();
+    if (!$pdo) {
+        throw new Exception('Database connection not available');
+    }
     
-    $service = new OrdinanceService();
-    $method = $_SERVER['REQUEST_METHOD'];
-    $endpoint = $_GET['endpoint'] ?? '';
+    // Log API access
+    logOrdinanceActivity('api_access', "Ordinance API accessed: {$action}");
     
-    switch ($endpoint) {
-        case 'dashboard':
-            if ($method === 'GET') {
-                $data = $service->getDashboardData();
-                echo json_encode(['success' => true, 'data' => $data]);
-            }
+    $service = new OrdinanceService($pdo);
+    $response = ['success' => true, 'data' => null, 'timestamp' => date('c')];
+    
+    switch ($action) {
+        case 'get_kpi':
+            $response['data'] = $service->getKPIData();
             break;
             
-        case 'weapons':
-            if ($method === 'GET') {
-                $params = [
-                    'status' => $_GET['status'] ?? '',
-                    'weapon_type' => $_GET['weapon_type'] ?? '',
-                    'search' => $_GET['search'] ?? '',
-                ];
-                $weapons = $service->searchWeapons($params);
-                echo json_encode(['success' => true, 'data' => $weapons]);
-            } elseif ($method === 'POST') {
-                if (!hasOrdinancePermission('manage_weapons')) {
-                    throw new Exception('Insufficient permissions');
-                }
-                $input = json_decode(file_get_contents('php://input'), true);
-                $weaponId = $service->createWeapon($input);
-                echo json_encode(['success' => true, 'weapon_id' => $weaponId]);
-            }
+        case 'get_recent_activities':
+            $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 10;
+            $response['data'] = $service->getRecentActivities($limit);
             break;
             
-        case 'transactions':
+        case 'get_inventory_overview':
+            $response['data'] = $service->getInventoryOverview();
+            break;
+            
+        case 'get_maintenance_schedule':
+            $response['data'] = $service->getMaintenanceSchedule();
+            break;
+            
+        case 'get_weapons_status':
+            $response['data'] = $service->getWeaponsStatus();
+            break;
+            
+        case 'get_ammunition_status':
+            $response['data'] = $service->getAmmunitionStatus();
+            break;
+            
+        case 'get_security_alerts':
+            $response['data'] = $service->getSecurityAlerts();
+            break;
+            
+        case 'get_all_dashboard_data':
+        default:
+            $response['data'] = [
+                'kpi' => $service->getKPIData(),
+                'recent_activities' => $service->getRecentActivities(5),
+                'inventory_overview' => $service->getInventoryOverview(),
+                'maintenance_schedule' => $service->getMaintenanceSchedule(),
+                'weapons_status' => $service->getWeaponsStatus(),
+                'ammunition_status' => $service->getAmmunitionStatus(),
+                'security_alerts' => $service->getSecurityAlerts()
+            ];
+            break;
+    }
+    
+    // Log successful API response
+    logOrdinanceActivity('api_success', "Ordinance API response sent: {$action}");
+    
+} catch (Exception $e) {
+    error_log("Ordinance API error: " . $e->getMessage());
+    logOrdinanceActivity('api_error', "Ordinance API error: {$e->getMessage()}");
+    
+    $response = [
+        'success' => false,
+        'error' => ARMIS_DEVELOPMENT ? $e->getMessage() : 'An error occurred while processing your request',
+        'timestamp' => date('c')
+    ];
+    
+    http_response_code(500);
+}
+
+// Send JSON response
+echo json_encode($response);
+?>
             if ($method === 'POST') {
                 if (!hasOrdinancePermission('approve_transactions')) {
                     throw new Exception('Insufficient permissions');

@@ -1,146 +1,242 @@
 <?php
 /**
- * ARMIS Ordinance Service
- * Business logic layer for ordinance management
+ * Ordinance Dashboard Service
+ * Provides dynamic data for ordinance dashboard and functionality
  */
 
-require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/functions.php';
-require_once dirname(dirname(__DIR__)) . '/shared/database_connection.php';
+if (!defined('ARMIS_ORDINANCE')) {
+    die('Direct access not permitted');
+}
 
 class OrdinanceService {
-    private $pdo;
+    private $db;
     
-    public function __construct($pdo = null) {
-        $this->pdo = $pdo ?: getDbConnection();
+    public function __construct($database_connection) {
+        $this->db = $database_connection;
     }
     
-    public function getDashboardData() {
-        return [
-            'stats' => OrdinanceUtils::getOrdinanceStats(),
-            'recent_transactions' => $this->getRecentTransactions(10),
-            'maintenance_schedule' => $this->getMaintenanceSchedule(5),
-            'weapon_assignments' => $this->getWeaponAssignments(5)
-        ];
+    /**
+     * Get ordinance KPI data
+     */
+    public function getKPIData() {
+        try {
+            $kpis = [];
+            
+            // Total Equipment
+            $stmt = $this->db->prepare("SELECT COUNT(*) as total FROM ordinance_inventory WHERE status = 'active'");
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            $kpis['total_equipment'] = (int)($result['total'] ?? 0);
+            
+            // Operational Equipment
+            $stmt = $this->db->prepare("SELECT COUNT(*) as total FROM ordinance_inventory WHERE condition_status IN ('excellent', 'good') AND status = 'active'");
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            $kpis['operational_equipment'] = (int)($result['total'] ?? 0);
+            
+            // Maintenance Pending
+            $stmt = $this->db->prepare("SELECT COUNT(*) as total FROM maintenance_records WHERE status IN ('scheduled', 'in_progress')");
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            $kpis['maintenance_pending'] = (int)($result['total'] ?? 0);
+            
+            // Inventory Value
+            $stmt = $this->db->prepare("SELECT SUM(total_value) as total_value FROM ordinance_inventory WHERE status = 'active'");
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            $kpis['inventory_value'] = (float)($result['total_value'] ?? 0);
+            
+            // Supply Orders (recent transactions)
+            $stmt = $this->db->prepare("SELECT COUNT(*) as total FROM ordinance_transactions WHERE transaction_type = 'issue' AND DATE(transaction_date) >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)");
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            $kpis['supply_orders'] = (int)($result['total'] ?? 0);
+            
+            error_log("Ordinance KPI data retrieved: " . json_encode($kpis));
+            return $kpis;
+            
+        } catch (Exception $e) {
+            error_log("Ordinance KPI error: " . $e->getMessage());
+            return [
+                'total_equipment' => 0,
+                'operational_equipment' => 0,
+                'maintenance_pending' => 0,
+                'inventory_value' => 0,
+                'supply_orders' => 0
+            ];
+        }
     }
     
-    public function createWeapon($data) {
-        $required = ['serial_number', 'weapon_type', 'manufacturer', 'model'];
-        foreach ($required as $field) {
-            if (empty($data[$field])) {
-                throw new Exception("Field {$field} is required");
-            }
+    /**
+     * Get recent ordinance activities
+     */
+    public function getRecentActivities($limit = 10) {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT 
+                    id,
+                    transaction_type,
+                    item_type,
+                    quantity,
+                    purpose,
+                    transaction_date,
+                    created_at
+                FROM ordinance_transactions 
+                ORDER BY transaction_date DESC 
+                LIMIT ?
+            ");
+            $stmt->execute([$limit]);
+            $activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            return array_map(function($activity) {
+                return [
+                    'id' => $activity['id'],
+                    'title' => ucfirst($activity['transaction_type']) . ' - ' . $activity['item_type'],
+                    'description' => $activity['purpose'] ?? 'Equipment transaction',
+                    'status' => 'completed',
+                    'timestamp' => $activity['created_at'],
+                    'quantity' => $activity['quantity'],
+                    'type' => $activity['transaction_type']
+                ];
+            }, $activities);
+            
+        } catch (Exception $e) {
+            error_log("Ordinance activities error: " . $e->getMessage());
+            return [];
         }
-        
-        // Check for duplicate serial number
-        $existing = fetchOne("SELECT id FROM weapons_registry WHERE serial_number = ?", [$data['serial_number']]);
-        if ($existing) {
-            throw new Exception("Weapon with serial number already exists");
-        }
-        
-        $sql = "INSERT INTO weapons_registry (serial_number, weapon_type, manufacturer, model, status, created_by) 
-                VALUES (?, ?, ?, ?, 'Available', ?)";
-        
-        $weaponId = executeQuery($sql, [
-            $data['serial_number'],
-            $data['weapon_type'],
-            $data['manufacturer'],
-            $data['model'],
-            $_SESSION['user_id']
-        ]);
-        
-        if ($weaponId) {
-            OrdinanceUtils::logSecurityEvent('weapon_registered', "Weapon {$data['serial_number']} registered");
-            logOrdinanceActivity('weapon_created', "Weapon registered", [
-                'weapon_id' => $weaponId,
-                'serial_number' => $data['serial_number']
-            ]);
-        }
-        
-        return $weaponId;
     }
     
-    public function createTransaction($data) {
-        $required = ['item_id', 'transaction_type', 'quantity'];
-        foreach ($required as $field) {
-            if (empty($data[$field])) {
-                throw new Exception("Field {$field} is required");
-            }
+    /**
+     * Get inventory overview
+     */
+    public function getInventoryOverview() {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT 
+                    category,
+                    COUNT(*) as total_items,
+                    SUM(CASE WHEN condition_status IN ('excellent', 'good') THEN 1 ELSE 0 END) as operational,
+                    SUM(CASE WHEN condition_status IN ('fair', 'poor') THEN 1 ELSE 0 END) as maintenance_needed,
+                    SUM(total_value) as category_value
+                FROM ordinance_inventory
+                WHERE status = 'active'
+                GROUP BY category
+                ORDER BY category
+            ");
+            $stmt->execute();
+            
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+        } catch (Exception $e) {
+            error_log("Ordinance inventory overview error: " . $e->getMessage());
+            return [];
         }
-        
-        // Validate transaction type
-        if (!in_array($data['transaction_type'], array_keys(TRANSACTION_TYPES))) {
-            throw new Exception("Invalid transaction type");
-        }
-        
-        $transactionId = OrdinanceUtils::createTransaction($data);
-        
-        if ($transactionId) {
-            OrdinanceUtils::logSecurityEvent('transaction_created', "Transaction: {$data['transaction_type']} - Quantity: {$data['quantity']}");
-            logOrdinanceActivity('transaction_created', "Ordinance transaction created", [
-                'transaction_id' => $transactionId,
-                'type' => $data['transaction_type'],
-                'quantity' => $data['quantity']
-            ]);
-        }
-        
-        return $transactionId;
     }
     
-    public function searchWeapons($params = []) {
-        $sql = "SELECT * FROM weapons_registry WHERE 1=1";
-        $bindings = [];
-        
-        if (!empty($params['status'])) {
-            $sql .= " AND status = ?";
-            $bindings[] = $params['status'];
-        }
-        
-        if (!empty($params['weapon_type'])) {
-            $sql .= " AND weapon_type = ?";
-            $bindings[] = $params['weapon_type'];
-        }
-        
-        if (!empty($params['search'])) {
-            $sql .= " AND (serial_number LIKE ? OR manufacturer LIKE ? OR model LIKE ?)";
-            $searchTerm = '%' . $params['search'] . '%';
-            $bindings[] = $searchTerm;
-            $bindings[] = $searchTerm;
-            $bindings[] = $searchTerm;
-        }
-        
-        $sql .= " ORDER BY weapon_type ASC, serial_number ASC";
-        
-        return fetchAll($sql, $bindings) ?: [];
-    }
-    
-    private function getRecentTransactions($limit) {
-        $sql = "SELECT ot.*, oi.item_name 
-                FROM ordinance_transactions ot
-                LEFT JOIN ordinance_inventory oi ON ot.item_id = oi.id
-                ORDER BY ot.transaction_date DESC 
-                LIMIT ?";
-        return fetchAll($sql, [$limit]) ?: [];
-    }
-    
-    private function getMaintenanceSchedule($limit) {
-        $sql = "SELECT mr.*, wr.serial_number, wr.weapon_type
+    /**
+     * Get maintenance schedule
+     */
+    public function getMaintenanceSchedule() {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT 
+                    mr.*,
+                    CASE 
+                        WHEN mr.item_type = 'weapon' THEN wr.weapon_name
+                        WHEN mr.item_type = 'equipment' THEN oi.item_name
+                        ELSE 'Unknown Item'
+                    END as item_name
                 FROM maintenance_records mr
-                LEFT JOIN weapons_registry wr ON mr.weapon_id = wr.id
-                WHERE mr.status = 'Scheduled'
+                LEFT JOIN weapons_registry wr ON mr.item_type = 'weapon' AND mr.item_id = wr.id
+                LEFT JOIN ordinance_inventory oi ON mr.item_type = 'equipment' AND mr.item_id = oi.id
+                WHERE mr.status IN ('scheduled', 'in_progress')
                 ORDER BY mr.scheduled_date ASC
-                LIMIT ?";
-        return fetchAll($sql, [$limit]) ?: [];
+                LIMIT 20
+            ");
+            $stmt->execute();
+            
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+        } catch (Exception $e) {
+            error_log("Ordinance maintenance schedule error: " . $e->getMessage());
+            return [];
+        }
     }
     
-    private function getWeaponAssignments($limit) {
-        $sql = "SELECT wa.*, wr.serial_number, wr.weapon_type, s.fname, s.lname
-                FROM weapon_assignments wa
-                LEFT JOIN weapons_registry wr ON wa.weapon_id = wr.id
-                LEFT JOIN staff s ON wa.staff_id = s.staffID
-                WHERE wa.status = 'Active'
-                ORDER BY wa.assigned_date DESC
-                LIMIT ?";
-        return fetchAll($sql, [$limit]) ?: [];
+    /**
+     * Get weapons status
+     */
+    public function getWeaponsStatus() {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT 
+                    weapon_type,
+                    COUNT(*) as total_weapons,
+                    SUM(CASE WHEN operational_status = 'operational' THEN 1 ELSE 0 END) as operational,
+                    SUM(CASE WHEN operational_status = 'maintenance' THEN 1 ELSE 0 END) as maintenance,
+                    SUM(CASE WHEN assigned_to_personnel IS NOT NULL THEN 1 ELSE 0 END) as assigned
+                FROM weapons_registry
+                GROUP BY weapon_type
+                ORDER BY weapon_type
+            ");
+            $stmt->execute();
+            
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+        } catch (Exception $e) {
+            error_log("Ordinance weapons status error: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Get ammunition status
+     */
+    public function getAmmunitionStatus() {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT 
+                    caliber,
+                    SUM(remaining_quantity) as total_remaining,
+                    SUM(quantity) as total_stock,
+                    COUNT(*) as lot_count,
+                    SUM(CASE WHEN expiry_date <= DATE_ADD(CURDATE(), INTERVAL 30 DAY) THEN remaining_quantity ELSE 0 END) as expiring_soon
+                FROM ammunition_inventory
+                WHERE status = 'active'
+                GROUP BY caliber
+                ORDER BY caliber
+            ");
+            $stmt->execute();
+            
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+        } catch (Exception $e) {
+            error_log("Ordinance ammunition status error: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Get security alerts
+     */
+    public function getSecurityAlerts() {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT *
+                FROM ordinance_security_logs
+                WHERE resolved = FALSE
+                AND severity IN ('critical', 'warning')
+                ORDER BY timestamp DESC
+                LIMIT 20
+            ");
+            $stmt->execute();
+            
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+        } catch (Exception $e) {
+            error_log("Ordinance security alerts error: " . $e->getMessage());
+            return [];
+        }
     }
 }
+?>
