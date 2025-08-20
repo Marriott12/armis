@@ -250,7 +250,12 @@ class CommandDynamicLoader {
         }
         
         // Build URL
-        const url = new URL(this.apiEndpoint, window.location.origin);
+        let url;
+        if (this.isAbsoluteUrl(this.apiEndpoint)) {
+            url = new URL(this.apiEndpoint);
+        } else {
+            url = new URL(this.apiEndpoint, window.location.origin);
+        }
         url.searchParams.set('action', action);
         
         // Add additional parameters
