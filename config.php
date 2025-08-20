@@ -11,10 +11,10 @@ define('ARMIS_NAME', 'Army Resource Management Information System');
 define('ARMIS_ROOT', __DIR__);
 
 // Database Configuration (Update these for production)
-define('DB_HOST', 'localhost');
-define('DB_NAME', 'armis_production');
-define('DB_USER', 'armis_user');
-define('DB_PASS', 'secure_password_here');
+define('DB_HOST', '127.0.0.1');
+define('DB_NAME', 'armis1');
+define('DB_USER', 'root');
+define('DB_PASS', 'root123');
 define('DB_CHARSET', 'utf8mb4');
 
 // Application Settings
