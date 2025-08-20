@@ -295,7 +295,20 @@ class ARMISInternationalization {
         $locale = $config['locale'] ?? 'en_US';
         
         $fmt = new NumberFormatter($locale, NumberFormatter::DECIMAL);
-        return $fmt->format($number);
+        // Check if intl extension is loaded and NumberFormatter exists
+        if (extension_loaded('intl') && class_exists('NumberFormatter')) {
+            try {
+                $fmt = new NumberFormatter($locale, NumberFormatter::DECIMAL);
+                $result = $fmt->format($number);
+                if ($result !== false) {
+                    return $result;
+                }
+            } catch (\Exception $e) {
+                // Fall through to fallback
+            }
+        }
+        // Fallback: use PHP's number_format
+        return number_format($number, $decimals, '.', ',');
     }
     
     /**
