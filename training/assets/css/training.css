@@ -1,0 +1,79 @@
+/**
+ * ARMIS Training Module Styles
+ * Custom styling for training management interface
+ */
+
+.training-dashboard {
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    min-height: 100vh;
+}
+
+.course-card {
+    transition: all 0.3s ease;
+    border-left: 4px solid transparent;
+}
+
+.course-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.course-card.difficulty-beginner {
+    border-left-color: #10b981;
+}
+
+.course-card.difficulty-intermediate {
+    border-left-color: #3b82f6;
+}
+
+.course-card.difficulty-advanced {
+    border-left-color: #f59e0b;
+}
+
+.course-card.difficulty-expert {
+    border-left-color: #ef4444;
+}
+
+.certification-badge {
+    position: relative;
+    display: inline-block;
+}
+
+.certification-badge::after {
+    content: '✓';
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background: #10b981;
+    color: white;
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.training-progress {
+    background: #e5e7eb;
+    border-radius: 8px;
+    overflow: hidden;
+    height: 20px;
+}
+
+.training-progress-bar {
+    background: linear-gradient(90deg, #10b981, #059669);
+    height: 100%;
+    transition: width 0.5s ease;
+}
+
+@media (max-width: 768px) {
+    .training-dashboard {
+        padding: 10px;
+    }
+    
+    .course-card {
+        margin-bottom: 15px;
+    }
+}
