@@ -1,0 +1,551 @@
+/**
+ * ARMIS Accessibility Framework - WCAG 2.1 AA Compliance
+ * Comprehensive accessibility enhancements for military personnel management system
+ */
+
+/* ==========================================================================
+   WCAG 2.1 AA Compliant Color Scheme
+   ========================================================================== */
+
+:root {
+    /* High contrast color palette for accessibility */
+    --a11y-bg-primary: #ffffff;
+    --a11y-bg-secondary: #f8f9fa;
+    --a11y-text-primary: #212529;
+    --a11y-text-secondary: #6c757d;
+    --a11y-link: #0056b3;
+    --a11y-link-hover: #004085;
+    --a11y-focus: #0066cc;
+    --a11y-error: #dc3545;
+    --a11y-success: #198754;
+    --a11y-warning: #fd7e14;
+    --a11y-info: #0dcaf0;
+    
+    /* Military accessible colors */
+    --a11y-military-primary: #2d5a27;
+    --a11y-military-secondary: #4a7c59;
+    --a11y-military-gold: #b8860b; /* Darker gold for contrast */
+    
+    /* Focus ring specifications */
+    --focus-ring-width: 3px;
+    --focus-ring-style: solid;
+    --focus-ring-color: var(--a11y-focus);
+    --focus-ring-offset: 2px;
+}
+
+/* ==========================================================================
+   Focus Management
+   ========================================================================== */
+
+/* Enhanced focus indicators for all interactive elements */
+*:focus {
+    outline: var(--focus-ring-width) var(--focus-ring-style) var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
+    position: relative;
+    z-index: 1;
+}
+
+/* Remove default focus for elements that will get custom focus */
+.btn:focus,
+.form-control:focus,
+.form-select:focus,
+.form-check-input:focus,
+.nav-link:focus,
+.dropdown-toggle:focus {
+    outline: none;
+    box-shadow: 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+}
+
+/* Skip links for screen readers */
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 6px;
+    background: var(--a11y-bg-primary);
+    color: var(--a11y-text-primary);
+    padding: 8px;
+    text-decoration: none;
+    border: 2px solid var(--focus-ring-color);
+    border-radius: 4px;
+    font-weight: bold;
+    z-index: 9999;
+    transition: top 0.2s ease-in-out;
+}
+
+.skip-link:focus {
+    top: 6px;
+    outline: none;
+}
+
+/* ==========================================================================
+   Keyboard Navigation Enhancements
+   ========================================================================== */
+
+/* Improved keyboard navigation for tables */
+.table-keyboard-nav {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.table-keyboard-nav th,
+.table-keyboard-nav td {
+    border: 1px solid #dee2e6;
+    position: relative;
+}
+
+.table-keyboard-nav th:focus,
+.table-keyboard-nav td:focus {
+    outline: var(--focus-ring-width) var(--focus-ring-style) var(--focus-ring-color);
+    outline-offset: -2px;
+    z-index: 1;
+}
+
+/* Enhanced button keyboard interaction */
+.btn-keyboard-enhanced {
+    position: relative;
+}
+
+.btn-keyboard-enhanced:focus::after {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: -4px;
+    right: -4px;
+    bottom: -4px;
+    border: 2px solid var(--focus-ring-color);
+    border-radius: 6px;
+    pointer-events: none;
+}
+
+/* ==========================================================================
+   Screen Reader Support
+   ========================================================================== */
+
+/* Screen reader only content */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.sr-only-focusable:focus {
+    position: static;
+    width: auto;
+    height: auto;
+    padding: inherit;
+    margin: inherit;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+}
+
+/* Enhanced ARIA live regions */
+.live-region {
+    position: absolute;
+    left: -10000px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+
+.live-region.announce {
+    position: static;
+    left: auto;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    background: var(--a11y-info);
+    color: var(--a11y-text-primary);
+    padding: 1rem;
+    border-radius: 4px;
+    margin: 1rem 0;
+    border: 1px solid #0dcaf0;
+}
+
+/* ==========================================================================
+   High Contrast Mode Support
+   ========================================================================== */
+
+@media (prefers-contrast: high) {
+    :root {
+        --armis-primary: #000000;
+        --armis-secondary: #000000;
+        --armis-accent: #000000;
+        --armis-gold: #000000;
+        --armis-dark: #000000;
+        --armis-light: #666666;
+    }
+    
+    .card {
+        border: 3px solid #000000;
+        background: #ffffff;
+    }
+    
+    .btn {
+        border: 2px solid #000000;
+        font-weight: bold;
+    }
+    
+    .btn-primary {
+        background: #000000;
+        color: #ffffff;
+    }
+    
+    .btn-outline-primary {
+        border: 3px solid #000000;
+        color: #000000;
+    }
+    
+    .form-control,
+    .form-select {
+        border: 2px solid #000000;
+        background: #ffffff;
+        color: #000000;
+    }
+    
+    .table th,
+    .table td {
+        border: 1px solid #000000;
+    }
+    
+    .nav-link {
+        border: 1px solid transparent;
+    }
+    
+    .nav-link:hover,
+    .nav-link:focus {
+        border: 1px solid #000000;
+        background: #f0f0f0;
+    }
+}
+
+/* ==========================================================================
+   Colorblind-Friendly Enhancements
+   ========================================================================== */
+
+/* Status indicators with patterns for colorblind users */
+.status-active::before,
+.status-success::before {
+    content: "✓ ";
+    font-weight: bold;
+}
+
+.status-inactive::before,
+.status-error::before {
+    content: "✗ ";
+    font-weight: bold;
+}
+
+.status-warning::before {
+    content: "⚠ ";
+    font-weight: bold;
+}
+
+.status-pending::before {
+    content: "⋯ ";
+    font-weight: bold;
+}
+
+/* Enhanced form validation with icons */
+.form-control.is-valid {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3e%3cpath fill='%23198754' d='m2.3 6.73.94-.94 1.88-1.88c.39-.39 1.02-.39 1.41 0 .39.39.39 1.02 0 1.41L4.24 7.64c-.39.39-1.02.39-1.41 0L1.46 6.27c-.39-.39-.39-1.02 0-1.41.39-.39 1.02-.39 1.41 0z'/%3e%3c/svg%3e");
+}
+
+.form-control.is-invalid {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' width='12' height='12' fill='none' stroke='%23dc3545'%3e%3ccircle cx='6' cy='6' r='4.5'/%3e%3cpath d='m5.8 4.6 1.4 1.4 1.4-1.4M8.6 6l-1.4 1.4 1.4 1.4'/%3e%3c/svg%3e");
+}
+
+/* ==========================================================================
+   Reduced Motion Support
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+    
+    .carousel {
+        pointer-events: none;
+    }
+    
+    .carousel .carousel-indicators,
+    .carousel .carousel-control-prev,
+    .carousel .carousel-control-next {
+        display: none;
+    }
+}
+
+/* ==========================================================================
+   Large Text and Zoom Support
+   ========================================================================== */
+
+/* Ensure UI works at 200% zoom */
+@media (min-resolution: 192dpi) {
+    .btn {
+        min-height: 44px;
+        padding: 0.75rem 1rem;
+    }
+    
+    .form-control {
+        min-height: 44px;
+        font-size: 1rem;
+    }
+    
+    .nav-link {
+        min-height: 44px;
+        padding: 0.75rem 1rem;
+    }
+}
+
+/* Support for increased font size */
+html[data-font-size="large"] {
+    font-size: 18px;
+}
+
+html[data-font-size="larger"] {
+    font-size: 20px;
+}
+
+html[data-font-size="largest"] {
+    font-size: 22px;
+}
+
+/* ==========================================================================
+   Military-Specific Accessibility Features
+   ========================================================================== */
+
+/* Tactical/field-friendly high contrast mode */
+.military-field-mode {
+    background: #000000;
+    color: #00ff00;
+}
+
+.military-field-mode .card {
+    background: #001100;
+    border: 1px solid #00ff00;
+    color: #00ff00;
+}
+
+.military-field-mode .btn-primary {
+    background: #004400;
+    border-color: #00ff00;
+    color: #00ff00;
+}
+
+.military-field-mode .form-control {
+    background: #001100;
+    border-color: #00ff00;
+    color: #00ff00;
+}
+
+/* Night vision friendly red mode */
+.military-night-mode {
+    background: #000000;
+    color: #ff0000;
+}
+
+.military-night-mode .card {
+    background: #110000;
+    border: 1px solid #ff0000;
+    color: #ff0000;
+}
+
+.military-night-mode .btn-primary {
+    background: #440000;
+    border-color: #ff0000;
+    color: #ff0000;
+}
+
+.military-night-mode .form-control {
+    background: #110000;
+    border-color: #ff0000;
+    color: #ff0000;
+}
+
+/* ==========================================================================
+   Form Accessibility Enhancements
+   ========================================================================== */
+
+/* Required field indicators */
+.form-label.required::after {
+    content: " *";
+    color: var(--a11y-error);
+    font-weight: bold;
+    margin-left: 0.25rem;
+}
+
+/* Form group enhancements */
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group .form-label {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--a11y-text-primary);
+}
+
+.form-group .form-text {
+    margin-top: 0.25rem;
+    font-size: 0.875rem;
+    color: var(--a11y-text-secondary);
+}
+
+/* Error message styling */
+.invalid-feedback {
+    display: block;
+    color: var(--a11y-error);
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+    font-weight: 500;
+}
+
+.invalid-feedback::before {
+    content: "⚠ ";
+    font-weight: bold;
+}
+
+/* Success message styling */
+.valid-feedback {
+    display: block;
+    color: var(--a11y-success);
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+    font-weight: 500;
+}
+
+.valid-feedback::before {
+    content: "✓ ";
+    font-weight: bold;
+}
+
+/* ==========================================================================
+   Responsive Text and Touch Targets
+   ========================================================================== */
+
+/* Ensure minimum touch target size of 44x44px */
+.btn,
+.form-control,
+.form-select,
+.form-check-input,
+.nav-link,
+.dropdown-toggle {
+    min-height: 44px;
+    min-width: 44px;
+}
+
+/* Exception for small buttons in specific contexts */
+.btn-sm {
+    min-height: 38px;
+    min-width: 38px;
+}
+
+/* Spacing between touch targets */
+.btn + .btn,
+.form-check + .form-check {
+    margin-top: 0.5rem;
+}
+
+@media (max-width: 768px) {
+    .btn + .btn,
+    .form-check + .form-check {
+        margin-top: 0.75rem;
+    }
+}
+
+/* ==========================================================================
+   Loading and Status Indicators
+   ========================================================================== */
+
+/* Accessible loading spinner */
+.loading-spinner {
+    display: inline-block;
+    width: 1.5rem;
+    height: 1.5rem;
+    border: 3px solid var(--a11y-text-secondary);
+    border-radius: 50%;
+    border-top-color: var(--a11y-focus);
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .loading-spinner {
+        animation: none;
+        border-top-color: var(--a11y-text-secondary);
+    }
+    
+    .loading-spinner::after {
+        content: "Loading...";
+        position: absolute;
+        left: -9999px;
+    }
+}
+
+/* Progress indicators */
+.progress-accessible {
+    position: relative;
+    background: var(--a11y-bg-secondary);
+    border: 1px solid var(--a11y-text-secondary);
+    border-radius: 4px;
+    height: 2rem;
+}
+
+.progress-accessible .progress-bar {
+    height: 100%;
+    background: var(--a11y-success);
+    transition: width 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--a11y-bg-primary);
+    font-weight: 600;
+}
+
+/* ==========================================================================
+   Print Accessibility
+   ========================================================================== */
+
+@media print {
+    /* Ensure sufficient contrast in print */
+    * {
+        background: white !important;
+        color: black !important;
+    }
+    
+    .btn {
+        border: 1px solid black;
+        padding: 0.25rem 0.5rem;
+    }
+    
+    /* Hide interactive elements in print */
+    .btn,
+    .form-control,
+    .dropdown,
+    .nav-tabs,
+    .pagination {
+        display: none;
+    }
+    
+    /* Show form values instead of inputs */
+    .form-control::after {
+        content: attr(value);
+        display: block;
+        border-bottom: 1px solid black;
+        padding: 0.25rem 0;
+    }
+}

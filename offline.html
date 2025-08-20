@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARMIS - Offline Mode</title>
+    <link rel="stylesheet" href="/shared/armis-styles.css">
+    <link rel="stylesheet" href="/shared/mobile-responsive.css">
+    <link rel="stylesheet" href="/shared/accessibility.css">
+    <link rel="stylesheet" href="/shared/military-themes.css">
+    
+    <style>
+        .offline-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, var(--theme-military-primary), var(--theme-military-secondary));
+            padding: 2rem;
+        }
+        
+        .offline-card {
+            background: var(--theme-bg-primary);
+            border-radius: 12px;
+            padding: 3rem;
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--theme-border);
+        }
+        
+        .offline-icon {
+            font-size: 4rem;
+            color: var(--theme-military-gold);
+            margin-bottom: 2rem;
+            display: block;
+        }
+        
+        .offline-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--theme-text-primary);
+            margin-bottom: 1rem;
+        }
+        
+        .offline-subtitle {
+            font-size: 1.25rem;
+            color: var(--theme-text-secondary);
+            margin-bottom: 2rem;
+        }
+        
+        .offline-description {
+            color: var(--theme-text-secondary);
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+        
+        .offline-features {
+            background: var(--theme-bg-secondary);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 2rem 0;
+            text-align: left;
+        }
+        
+        .offline-features h4 {
+            color: var(--theme-military-primary);
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+        
+        .offline-features ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .offline-features li {
+            padding: 0.5rem 0;
+            color: var(--theme-text-secondary);
+            position: relative;
+            padding-left: 1.5rem;
+        }
+        
+        .offline-features li::before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: var(--theme-success);
+            font-weight: bold;
+        }
+        
+        .retry-button {
+            background: var(--theme-military-primary);
+            color: var(--theme-bg-primary);
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 0.5rem;
+        }
+        
+        .retry-button:hover {
+            background: var(--theme-military-secondary);
+            transform: translateY(-2px);
+        }
+        
+        .offline-button {
+            background: var(--theme-military-accent);
+            color: var(--theme-bg-primary);
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 0.5rem;
+        }
+        
+        .offline-button:hover {
+            background: var(--theme-military-gold);
+            color: var(--theme-text-primary);
+        }
+        
+        .connection-status {
+            margin-top: 2rem;
+            padding: 1rem;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+        
+        .connection-status.online {
+            background: rgba(25, 135, 84, 0.1);
+            border: 1px solid var(--theme-success);
+            color: var(--theme-success);
+        }
+        
+        .connection-status.offline {
+            background: rgba(220, 53, 69, 0.1);
+            border: 1px solid var(--theme-danger);
+            color: var(--theme-danger);
+        }
+        
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .sync-indicator {
+            margin-top: 1rem;
+            padding: 0.75rem;
+            background: var(--theme-bg-secondary);
+            border-radius: 6px;
+            font-size: 0.875rem;
+            color: var(--theme-text-secondary);
+        }
+        
+        @media (max-width: 768px) {
+            .offline-card {
+                padding: 2rem 1.5rem;
+                margin: 1rem;
+            }
+            
+            .offline-title {
+                font-size: 2rem;
+            }
+            
+            .offline-icon {
+                font-size: 3rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="offline-container">
+        <div class="offline-card">
+            <div class="offline-icon">🛡️</div>
+            
+            <h1 class="offline-title">ARMIS Offline Mode</h1>
+            <p class="offline-subtitle">Mission-Ready Even Without Connection</p>
+            
+            <p class="offline-description">
+                You're currently offline, but ARMIS continues to serve your mission. 
+                Our offline capabilities ensure you can access critical information and 
+                continue your work even in challenging network conditions.
+            </p>
+            
+            <div class="offline-features">
+                <h4>Available Offline Features:</h4>
+                <ul>
+                    <li>View cached personnel records</li>
+                    <li>Access training materials</li>
+                    <li>Review operation plans</li>
+                    <li>Use voice commands</li>
+                    <li>Navigate system interfaces</li>
+                    <li>Auto-sync when connection returns</li>
+                </ul>
+            </div>
+            
+            <div class="connection-status offline" id="connectionStatus">
+                <span class="pulse">●</span> Currently Offline
+            </div>
+            
+            <div class="sync-indicator" id="syncIndicator">
+                Any changes you make will be synchronized when connection is restored.
+            </div>
+            
+            <div style="margin-top: 2rem;">
+                <button class="retry-button" onclick="retryConnection()" aria-label="Retry connection">
+                    🔄 Check Connection
+                </button>
+                
+                <button class="offline-button" onclick="continueOffline()" aria-label="Continue offline">
+                    📱 Continue Offline
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Check connection status
+        function updateConnectionStatus() {
+            const statusElement = document.getElementById('connectionStatus');
+            const syncIndicator = document.getElementById('syncIndicator');
+            
+            if (navigator.onLine) {
+                statusElement.className = 'connection-status online';
+                statusElement.innerHTML = '<span>●</span> Back Online - Synchronizing...';
+                syncIndicator.textContent = 'Connection restored! Synchronizing data...';
+                
+                // Attempt to reload the page after a brief delay
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            } else {
+                statusElement.className = 'connection-status offline';
+                statusElement.innerHTML = '<span class="pulse">●</span> Currently Offline';
+                syncIndicator.textContent = 'Any changes you make will be synchronized when connection is restored.';
+            }
+        }
+        
+        // Retry connection
+        function retryConnection() {
+            const button = event.target;
+            button.disabled = true;
+            button.textContent = '🔄 Checking...';
+            
+            // Update status
+            updateConnectionStatus();
+            
+            // Attempt to fetch a small resource to test connectivity
+            fetch('/', { 
+                method: 'HEAD',
+                cache: 'no-cache'
+            })
+            .then(response => {
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    throw new Error('Connection test failed');
+                }
+            })
+            .catch(() => {
+                button.disabled = false;
+                button.textContent = '🔄 Check Connection';
+                
+                // Show retry feedback
+                const feedback = document.createElement('div');
+                feedback.style.cssText = `
+                    background: rgba(220, 53, 69, 0.1);
+                    border: 1px solid var(--theme-danger);
+                    color: var(--theme-danger);
+                    padding: 0.75rem;
+                    border-radius: 6px;
+                    margin-top: 1rem;
+                    font-size: 0.875rem;
+                `;
+                feedback.textContent = 'Still offline. Please check your network connection.';
+                
+                // Remove any existing feedback
+                const existingFeedback = document.querySelector('.retry-feedback');
+                if (existingFeedback) {
+                    existingFeedback.remove();
+                }
+                
+                feedback.className = 'retry-feedback';
+                button.parentNode.appendChild(feedback);
+                
+                // Remove feedback after 3 seconds
+                setTimeout(() => {
+                    feedback.remove();
+                }, 3000);
+            });
+        }
+        
+        // Continue offline
+        function continueOffline() {
+            // Try to navigate to cached dashboard
+            if ('serviceWorker' in navigator) {
+                caches.match('/admin_branch/index.php')
+                .then(response => {
+                    if (response) {
+                        window.location.href = '/admin_branch/index.php';
+                    } else {
+                        // Navigate to root if dashboard not cached
+                        window.location.href = '/';
+                    }
+                })
+                .catch(() => {
+                    window.location.href = '/';
+                });
+            } else {
+                window.location.href = '/';
+            }
+        }
+        
+        // Listen for online/offline events
+        window.addEventListener('online', updateConnectionStatus);
+        window.addEventListener('offline', updateConnectionStatus);
+        
+        // Check connection status on load
+        updateConnectionStatus();
+        
+        // Register service worker if not already registered
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js')
+            .then(registration => {
+                console.log('ServiceWorker registered:', registration.scope);
+            })
+            .catch(error => {
+                console.error('ServiceWorker registration failed:', error);
+            });
+        }
+        
+        // Apply theme from localStorage
+        const savedTheme = localStorage.getItem('armis_theme');
+        if (savedTheme) {
+            document.documentElement.setAttribute('data-theme', savedTheme);
+        }
+        
+        // Apply accessibility settings
+        const fontSize = localStorage.getItem('armis_font_size');
+        if (fontSize) {
+            document.documentElement.setAttribute('data-font-size', fontSize);
+        }
+        
+        // Voice commands support (simplified for offline)
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const voiceButton = document.createElement('button');
+            voiceButton.innerHTML = '🎤';
+            voiceButton.className = 'offline-button';
+            voiceButton.style.cssText = `
+                position: fixed;
+                bottom: 20px;
+                right: 20px;
+                border-radius: 50%;
+                width: 60px;
+                height: 60px;
+                font-size: 1.5rem;
+            `;
+            voiceButton.title = 'Voice Commands (Limited offline)';
+            voiceButton.setAttribute('aria-label', 'Voice commands');
+            
+            voiceButton.onclick = () => {
+                alert('Voice commands are limited in offline mode. Say "Continue offline" or "Check connection"');
+            };
+            
+            document.body.appendChild(voiceButton);
+        }
+        
+        // Periodic connection check
+        setInterval(() => {
+            if (!navigator.onLine) {
+                // Try a lightweight connection test
+                fetch('/manifest.json', { 
+                    method: 'HEAD',
+                    cache: 'no-cache'
+                })
+                .then(response => {
+                    if (response.ok) {
+                        updateConnectionStatus();
+                    }
+                })
+                .catch(() => {
+                    // Still offline, do nothing
+                });
+            }
+        }, 30000); // Check every 30 seconds
+    </script>
+</body>
+</html>

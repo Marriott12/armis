@@ -1,0 +1,479 @@
+/**
+ * ARMIS Military Theme System
+ * Enhanced dark mode and military branch-specific themes
+ * Supports multiple military themes and accessibility options
+ */
+
+/* ==========================================================================
+   Theme Variables - Base System
+   ========================================================================== */
+
+:root {
+    /* Light theme (default) */
+    --theme-bg-primary: #ffffff;
+    --theme-bg-secondary: #f8f9fa;
+    --theme-bg-tertiary: #e9ecef;
+    --theme-text-primary: #212529;
+    --theme-text-secondary: #6c757d;
+    --theme-text-muted: #adb5bd;
+    --theme-border: #dee2e6;
+    --theme-shadow: rgba(0, 0, 0, 0.1);
+    
+    /* Military colors */
+    --theme-military-primary: #2d5a27;
+    --theme-military-secondary: #4a7c59;
+    --theme-military-accent: #6b8e5a;
+    --theme-military-gold: #ffd700;
+    --theme-military-dark: #1a3d1a;
+    --theme-military-light: #8fbc8f;
+    
+    /* Status colors */
+    --theme-success: #198754;
+    --theme-warning: #fd7e14;
+    --theme-danger: #dc3545;
+    --theme-info: #0dcaf0;
+    
+    /* Interactive elements */
+    --theme-focus: #0066cc;
+    --theme-hover: rgba(0, 0, 0, 0.05);
+    --theme-active: rgba(0, 0, 0, 0.1);
+}
+
+/* ==========================================================================
+   Dark Theme
+   ========================================================================== */
+
+[data-theme="dark"] {
+    --theme-bg-primary: #1a1a1a;
+    --theme-bg-secondary: #2d2d2d;
+    --theme-bg-tertiary: #404040;
+    --theme-text-primary: #ffffff;
+    --theme-text-secondary: #cccccc;
+    --theme-text-muted: #999999;
+    --theme-border: #555555;
+    --theme-shadow: rgba(0, 0, 0, 0.3);
+    
+    /* Military colors adjusted for dark theme */
+    --theme-military-primary: #4a7c59;
+    --theme-military-secondary: #6b8e5a;
+    --theme-military-accent: #8fbc8f;
+    --theme-military-gold: #ffed4a;
+    --theme-military-dark: #2d5a27;
+    --theme-military-light: #a8d8a8;
+    
+    /* Status colors adjusted for dark theme */
+    --theme-success: #28a745;
+    --theme-warning: #ffc107;
+    --theme-danger: #dc3545;
+    --theme-info: #17a2b8;
+    
+    /* Interactive elements */
+    --theme-focus: #4dabf7;
+    --theme-hover: rgba(255, 255, 255, 0.1);
+    --theme-active: rgba(255, 255, 255, 0.2);
+}
+
+/* ==========================================================================
+   Military Field Theme (Tactical Green)
+   ========================================================================== */
+
+[data-theme="field"] {
+    --theme-bg-primary: #000000;
+    --theme-bg-secondary: #001100;
+    --theme-bg-tertiary: #002200;
+    --theme-text-primary: #00ff00;
+    --theme-text-secondary: #00cc00;
+    --theme-text-muted: #008800;
+    --theme-border: #004400;
+    --theme-shadow: rgba(0, 255, 0, 0.2);
+    
+    /* Military colors for field operations */
+    --theme-military-primary: #00ff00;
+    --theme-military-secondary: #00cc00;
+    --theme-military-accent: #00aa00;
+    --theme-military-gold: #ffff00;
+    --theme-military-dark: #004400;
+    --theme-military-light: #44ff44;
+    
+    /* Status colors for field visibility */
+    --theme-success: #00ff00;
+    --theme-warning: #ffff00;
+    --theme-danger: #ff4444;
+    --theme-info: #00ffff;
+    
+    /* Interactive elements */
+    --theme-focus: #00ffff;
+    --theme-hover: rgba(0, 255, 0, 0.2);
+    --theme-active: rgba(0, 255, 0, 0.3);
+}
+
+/* ==========================================================================
+   Night Vision Theme (Red)
+   ========================================================================== */
+
+[data-theme="night"] {
+    --theme-bg-primary: #000000;
+    --theme-bg-secondary: #110000;
+    --theme-bg-tertiary: #220000;
+    --theme-text-primary: #ff0000;
+    --theme-text-secondary: #cc0000;
+    --theme-text-muted: #880000;
+    --theme-border: #440000;
+    --theme-shadow: rgba(255, 0, 0, 0.2);
+    
+    /* Military colors for night operations */
+    --theme-military-primary: #ff0000;
+    --theme-military-secondary: #cc0000;
+    --theme-military-accent: #aa0000;
+    --theme-military-gold: #ffaa00;
+    --theme-military-dark: #440000;
+    --theme-military-light: #ff4444;
+    
+    /* Status colors for night visibility */
+    --theme-success: #ff0000;
+    --theme-warning: #ffaa00;
+    --theme-danger: #ff4444;
+    --theme-info: #ff6666;
+    
+    /* Interactive elements */
+    --theme-focus: #ffaa00;
+    --theme-hover: rgba(255, 0, 0, 0.2);
+    --theme-active: rgba(255, 0, 0, 0.3);
+}
+
+/* ==========================================================================
+   Desert Camouflage Theme
+   ========================================================================== */
+
+[data-theme="desert"] {
+    --theme-bg-primary: #f4e4bc;
+    --theme-bg-secondary: #e6d3a7;
+    --theme-bg-tertiary: #d4c194;
+    --theme-text-primary: #3d2914;
+    --theme-text-secondary: #5c3e20;
+    --theme-text-muted: #8b6c42;
+    --theme-border: #c4a373;
+    --theme-shadow: rgba(61, 41, 20, 0.2);
+    
+    /* Military colors for desert operations */
+    --theme-military-primary: #8b4513;
+    --theme-military-secondary: #a0522d;
+    --theme-military-accent: #cd853f;
+    --theme-military-gold: #daa520;
+    --theme-military-dark: #654321;
+    --theme-military-light: #deb887;
+    
+    /* Status colors adapted for desert theme */
+    --theme-success: #6b8e23;
+    --theme-warning: #ff8c00;
+    --theme-danger: #b22222;
+    --theme-info: #4682b4;
+    
+    /* Interactive elements */
+    --theme-focus: #ff6347;
+    --theme-hover: rgba(61, 41, 20, 0.1);
+    --theme-active: rgba(61, 41, 20, 0.2);
+}
+
+/* ==========================================================================
+   Woodland Camouflage Theme
+   ========================================================================== */
+
+[data-theme="woodland"] {
+    --theme-bg-primary: #3c4f3c;
+    --theme-bg-secondary: #2d3b2d;
+    --theme-bg-tertiary: #1f291f;
+    --theme-text-primary: #e8f5e8;
+    --theme-text-secondary: #c8e6c8;
+    --theme-text-muted: #a8d6a8;
+    --theme-border: #5d6f5d;
+    --theme-shadow: rgba(0, 0, 0, 0.4);
+    
+    /* Military colors for woodland operations */
+    --theme-military-primary: #228b22;
+    --theme-military-secondary: #32cd32;
+    --theme-military-accent: #7cfc00;
+    --theme-military-gold: #daa520;
+    --theme-military-dark: #006400;
+    --theme-military-light: #90ee90;
+    
+    /* Status colors adapted for woodland theme */
+    --theme-success: #32cd32;
+    --theme-warning: #ffa500;
+    --theme-danger: #dc143c;
+    --theme-info: #87ceeb;
+    
+    /* Interactive elements */
+    --theme-focus: #00bfff;
+    --theme-hover: rgba(255, 255, 255, 0.1);
+    --theme-active: rgba(255, 255, 255, 0.2);
+}
+
+/* ==========================================================================
+   Urban Camouflage Theme
+   ========================================================================== */
+
+[data-theme="urban"] {
+    --theme-bg-primary: #4a4a4a;
+    --theme-bg-secondary: #3a3a3a;
+    --theme-bg-tertiary: #2a2a2a;
+    --theme-text-primary: #f0f0f0;
+    --theme-text-secondary: #d0d0d0;
+    --theme-text-muted: #b0b0b0;
+    --theme-border: #6a6a6a;
+    --theme-shadow: rgba(0, 0, 0, 0.5);
+    
+    /* Military colors for urban operations */
+    --theme-military-primary: #708090;
+    --theme-military-secondary: #778899;
+    --theme-military-accent: #a9a9a9;
+    --theme-military-gold: #ffd700;
+    --theme-military-dark: #2f4f4f;
+    --theme-military-light: #d3d3d3;
+    
+    /* Status colors adapted for urban theme */
+    --theme-success: #90ee90;
+    --theme-warning: #ffa500;
+    --theme-danger: #fa8072;
+    --theme-info: #87cefa;
+    
+    /* Interactive elements */
+    --theme-focus: #00bfff;
+    --theme-hover: rgba(255, 255, 255, 0.1);
+    --theme-active: rgba(255, 255, 255, 0.2);
+}
+
+/* ==========================================================================
+   Core Theme Application
+   ========================================================================== */
+
+body {
+    background-color: var(--theme-bg-primary);
+    color: var(--theme-text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.card {
+    background-color: var(--theme-bg-secondary);
+    border-color: var(--theme-border);
+    color: var(--theme-text-primary);
+}
+
+.btn-primary {
+    background-color: var(--theme-military-primary);
+    border-color: var(--theme-military-primary);
+    color: var(--theme-bg-primary);
+}
+
+.btn-primary:hover {
+    background-color: var(--theme-military-secondary);
+    border-color: var(--theme-military-secondary);
+}
+
+.btn-outline-primary {
+    border-color: var(--theme-military-primary);
+    color: var(--theme-military-primary);
+}
+
+.btn-outline-primary:hover {
+    background-color: var(--theme-military-primary);
+    border-color: var(--theme-military-primary);
+    color: var(--theme-bg-primary);
+}
+
+.form-control,
+.form-select {
+    background-color: var(--theme-bg-primary);
+    border-color: var(--theme-border);
+    color: var(--theme-text-primary);
+}
+
+.form-control:focus,
+.form-select:focus {
+    background-color: var(--theme-bg-primary);
+    border-color: var(--theme-focus);
+    color: var(--theme-text-primary);
+    box-shadow: 0 0 0 0.2rem rgba(var(--theme-focus), 0.25);
+}
+
+.table {
+    color: var(--theme-text-primary);
+}
+
+.table th,
+.table td {
+    border-color: var(--theme-border);
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: var(--theme-bg-tertiary);
+}
+
+.nav-link {
+    color: var(--theme-text-secondary);
+}
+
+.nav-link:hover,
+.nav-link:focus {
+    color: var(--theme-text-primary);
+    background-color: var(--theme-hover);
+}
+
+.nav-link.active {
+    color: var(--theme-military-gold);
+    background-color: var(--theme-military-primary);
+}
+
+.sidebar {
+    background-color: var(--theme-bg-secondary);
+    border-color: var(--theme-border);
+}
+
+.navbar {
+    background-color: var(--theme-bg-secondary);
+    border-color: var(--theme-border);
+}
+
+/* ==========================================================================
+   Theme Switcher Component
+   ========================================================================== */
+
+.theme-switcher {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1060;
+    background: var(--theme-bg-secondary);
+    border: 1px solid var(--theme-border);
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: 0 4px 8px var(--theme-shadow);
+}
+
+.theme-switcher h6 {
+    margin-bottom: 0.5rem;
+    color: var(--theme-text-primary);
+    font-weight: 600;
+}
+
+.theme-option {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem;
+    margin: 0.25rem 0;
+    border: 1px solid var(--theme-border);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.theme-option:hover {
+    background-color: var(--theme-hover);
+    border-color: var(--theme-military-primary);
+}
+
+.theme-option.active {
+    background-color: var(--theme-military-primary);
+    color: var(--theme-bg-primary);
+    border-color: var(--theme-military-primary);
+}
+
+.theme-preview {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    margin-right: 0.5rem;
+    border: 1px solid var(--theme-border);
+}
+
+.theme-preview.light {
+    background: linear-gradient(45deg, #ffffff 50%, #2d5a27 50%);
+}
+
+.theme-preview.dark {
+    background: linear-gradient(45deg, #1a1a1a 50%, #4a7c59 50%);
+}
+
+.theme-preview.field {
+    background: linear-gradient(45deg, #000000 50%, #00ff00 50%);
+}
+
+.theme-preview.night {
+    background: linear-gradient(45deg, #000000 50%, #ff0000 50%);
+}
+
+.theme-preview.desert {
+    background: linear-gradient(45deg, #f4e4bc 50%, #8b4513 50%);
+}
+
+.theme-preview.woodland {
+    background: linear-gradient(45deg, #3c4f3c 50%, #228b22 50%);
+}
+
+.theme-preview.urban {
+    background: linear-gradient(45deg, #4a4a4a 50%, #708090 50%);
+}
+
+/* ==========================================================================
+   Reduced Motion Support
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+    * {
+        transition: none !important;
+        animation: none !important;
+    }
+}
+
+/* ==========================================================================
+   Print Styles for All Themes
+   ========================================================================== */
+
+@media print {
+    body {
+        background: white !important;
+        color: black !important;
+    }
+    
+    .card {
+        background: white !important;
+        border: 1px solid black !important;
+        color: black !important;
+    }
+    
+    .btn {
+        background: white !important;
+        color: black !important;
+        border: 1px solid black !important;
+    }
+    
+    .theme-switcher {
+        display: none !important;
+    }
+}
+
+/* ==========================================================================
+   High Contrast Mode Override
+   ========================================================================== */
+
+@media (prefers-contrast: high) {
+    :root {
+        --theme-bg-primary: #ffffff;
+        --theme-bg-secondary: #f0f0f0;
+        --theme-text-primary: #000000;
+        --theme-text-secondary: #000000;
+        --theme-border: #000000;
+        --theme-military-primary: #000000;
+        --theme-focus: #0000ff;
+    }
+    
+    [data-theme="dark"] {
+        --theme-bg-primary: #000000;
+        --theme-bg-secondary: #111111;
+        --theme-text-primary: #ffffff;
+        --theme-text-secondary: #ffffff;
+        --theme-border: #ffffff;
+        --theme-military-primary: #ffffff;
+        --theme-focus: #ffff00;
+    }
+}
