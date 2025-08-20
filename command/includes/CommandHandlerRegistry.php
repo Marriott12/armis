@@ -373,7 +373,18 @@ class CommandValidationMiddleware {
     private function sanitizeArray($array) {
         foreach ($array as $key => $value) {
             if (is_string($value)) {
-                $array[$key] = htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+                // Context-aware sanitization
+                if ($key === 'endpoint') {
+                    // Validate URL
+                    if (filter_var($value, FILTER_VALIDATE_URL)) {
+                        // Encode URL
+                        $array[$key] = rawurlencode($value);
+                    } else {
+                        throw new Exception("Invalid endpoint URL: " . $value);
+                    }
+                } else {
+                    $array[$key] = htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+                }
             } elseif (is_array($value)) {
                 $array[$key] = $this->sanitizeArray($value);
             }
