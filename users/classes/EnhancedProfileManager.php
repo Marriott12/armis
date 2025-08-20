@@ -38,14 +38,14 @@ class EnhancedProfileManager {
         try {
             $stmt = $this->pdo->prepare("
                 SELECT s.*, 
-                       r.name as rank_name, r.abbreviation as rank_abbr, r.category as rank_category,
+                       r.name as rank_name, r.abbreviation as rank_abbr,
                        u.name as unit_name, u.code as unit_code, u.type as unit_type,
                        c.name as corps_name, c.abbreviation as corps_abbr
                 FROM staff s 
                 LEFT JOIN ranks r ON s.rank_id = r.id
                 LEFT JOIN units u ON s.unit_id = u.id
                 LEFT JOIN corps c ON s.corps = c.abbreviation
-                WHERE s.id = ? AND s.is_active = TRUE
+                WHERE s.id = ?
             ");
             $stmt->execute([$this->userId]);
             $this->userProfile = $stmt->fetch(PDO::FETCH_OBJ);
@@ -274,32 +274,46 @@ class EnhancedProfileManager {
             }
             
             // Get current rank details
-            $stmt = $this->pdo->prepare("
-                SELECT * FROM ranks WHERE id = ?
-            ");
+            $stmt = $this->pdo->prepare("SELECT * FROM ranks WHERE id = ?");
             $stmt->execute([$currentRank]);
             $current = $stmt->fetch(PDO::FETCH_OBJ);
             
-            // Get next rank in progression
-            $stmt = $this->pdo->prepare("
-                SELECT * FROM ranks 
-                WHERE rank_order > ? AND category = ? AND is_active = TRUE
-                ORDER BY rank_order ASC LIMIT 1
-            ");
-            $stmt->execute([$current->rank_order, $current->category]);
-            $next = $stmt->fetch(PDO::FETCH_OBJ);
+            if (!$current) {
+                return null;
+            }
+            
+            // Try to get next rank in progression (if rank_order exists)
+            $next = null;
+            try {
+                $stmt = $this->pdo->prepare("
+                    SELECT * FROM ranks 
+                    WHERE rank_order > ? AND is_active = TRUE
+                    ORDER BY rank_order ASC LIMIT 1
+                ");
+                $stmt->execute([$current->rank_order ?? 0]);
+                $next = $stmt->fetch(PDO::FETCH_OBJ);
+            } catch (Exception $e) {
+                // rank_order column may not exist yet
+                error_log("Rank progression query failed (rank_order column missing): " . $e->getMessage());
+            }
             
             // Get rank history
-            $stmt = $this->pdo->prepare("
-                SELECT r.name, r.abbreviation, a.timestamp
-                FROM audit_log a
-                JOIN ranks r ON r.id = a.new_value
-                WHERE a.user_id = ? AND a.table_name = 'staff' AND a.field_name = 'rank_id'
-                ORDER BY a.timestamp DESC
-                LIMIT 10
-            ");
-            $stmt->execute([$this->userId]);
-            $history = $stmt->fetchAll(PDO::FETCH_OBJ);
+            $history = [];
+            try {
+                $stmt = $this->pdo->prepare("
+                    SELECT r.name, r.abbreviation, a.timestamp
+                    FROM audit_log a
+                    JOIN ranks r ON r.id = a.new_value
+                    WHERE a.user_id = ? AND a.table_name = 'staff' AND a.field_name = 'rank_id'
+                    ORDER BY a.timestamp DESC
+                    LIMIT 10
+                ");
+                $stmt->execute([$this->userId]);
+                $history = $stmt->fetchAll(PDO::FETCH_OBJ);
+            } catch (Exception $e) {
+                // audit_log may not have rank history yet
+                error_log("Rank history query failed: " . $e->getMessage());
+            }
             
             return [
                 'current' => $current,
