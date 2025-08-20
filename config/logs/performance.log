@@ -1107,3 +1107,14 @@
 2025-08-19 09:05:43 - /admin/users.php - Time: 0.0006s - Memory: 0.00MB
 2025-08-19 09:05:55 - /admin/security.php - Time: 0.0008s - Memory: 0.00MB
 2025-08-19 09:06:06 - /admin/reports.php - Time: 0.0006s - Memory: 0.00MB
+2025-08-20 10:54:53 - / - Time: 0.0013s - Memory: 0.00MB
+2025-08-20 10:57:40 - / - Time: 0.0013s - Memory: 0.00MB
+2025-08-20 11:02:00 - /admin/index.php - Time: 0.0016s - Memory: 0.00MB
+2025-08-20 11:02:07 - /admin/index.php - Time: 0.0009s - Memory: 0.00MB
+2025-08-20 11:02:16 - /command/index.php - Time: 0.0005s - Memory: 0.00MB
+2025-08-20 11:02:23 - /training/index.php - Time: 0.0005s - Memory: 0.00MB
+2025-08-20 11:06:03 - / - Time: 0.0012s - Memory: 0.00MB
+2025-08-20 11:06:28 - /admin/index.php - Time: 0.0006s - Memory: 0.00MB
+2025-08-20 11:06:36 - /command/index.php - Time: 0.0006s - Memory: 0.00MB
+2025-08-20 11:06:44 - /training/index.php - Time: 0.0006s - Memory: 0.00MB
+2025-08-20 11:06:51 - /operations/index.php - Time: 0.0007s - Memory: 0.00MB

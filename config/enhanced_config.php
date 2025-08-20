@@ -108,10 +108,10 @@ class ARMISConfig {
                     'log_level' => 'debug'
                 ],
                 'database' => [
-                    'host' => 'localhost',
-                    'name' => 'armis_dev',
+                    'host' => '127.0.0.1',
+                    'name' => 'armis1',
                     'user' => 'root',
-                    'password' => '',
+                    'password' => 'root123',
                     'charset' => 'utf8mb4'
                 ],
                 'redis' => [
@@ -259,7 +259,7 @@ class ARMISConfig {
      * Load feature flags
      */
     private static function loadFeatureFlags() {
-        self::$config['features'] => [
+        self::$config['features'] = [
             'api_v2' => false,
             'advanced_analytics' => true,
             'real_time_notifications' => true,

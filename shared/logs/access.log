@@ -272,3 +272,11 @@
 {"timestamp":"2025-08-19 09:05:43","user_id":1,"username":"admin","role":"admin","module":"admin","action":"users_view","success":true,"ip":"::1","user_agent":"Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) HeadlessChrome\/139.0.0.0 Safari\/537.36"}
 {"timestamp":"2025-08-19 09:05:55","user_id":1,"username":"admin","role":"admin","module":"admin","action":"security_center_view","success":true,"ip":"::1","user_agent":"Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) HeadlessChrome\/139.0.0.0 Safari\/537.36"}
 {"timestamp":"2025-08-19 09:06:06","user_id":1,"username":"admin","role":"admin","module":"admin","action":"reports_view","success":true,"ip":"::1","user_agent":"Mozilla\/5.0 (X11; Linux x86_64) AppleWebKit\/537.36 (KHTML, like Gecko) HeadlessChrome\/139.0.0.0 Safari\/537.36"}
+{"timestamp":"2025-08-20 11:02:00","user_id":1,"username":"admin","role":"admin","module":"admin","action":"dashboard_view","success":true,"ip":"::1","user_agent":"curl\/8.5.0"}
+{"timestamp":"2025-08-20 11:02:07","user_id":1,"username":"admin","role":"admin","module":"admin","action":"dashboard_view","success":true,"ip":"::1","user_agent":"curl\/8.5.0"}
+{"timestamp":"2025-08-20 11:02:16","user_id":1,"username":"admin","role":"admin","module":"command","action":"dashboard_view","success":true,"ip":"::1","user_agent":"curl\/8.5.0"}
+{"timestamp":"2025-08-20 11:02:23","user_id":1,"username":"admin","role":"admin","module":"training","action":"dashboard_view","success":true,"ip":"::1","user_agent":"curl\/8.5.0"}
+{"timestamp":"2025-08-20 11:06:28","user_id":1,"username":"admin","role":"admin","module":"admin","action":"dashboard_view","success":true,"ip":"::1","user_agent":"curl\/8.5.0"}
+{"timestamp":"2025-08-20 11:06:36","user_id":1,"username":"admin","role":"admin","module":"command","action":"dashboard_view","success":true,"ip":"::1","user_agent":"curl\/8.5.0"}
+{"timestamp":"2025-08-20 11:06:44","user_id":1,"username":"admin","role":"admin","module":"training","action":"dashboard_view","success":true,"ip":"::1","user_agent":"curl\/8.5.0"}
+{"timestamp":"2025-08-20 11:06:51","user_id":1,"username":"admin","role":"admin","module":"operations","action":"dashboard_view","success":true,"ip":"::1","user_agent":"curl\/8.5.0"}
