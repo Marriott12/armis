@@ -148,7 +148,8 @@ const scriptWithoutDOMListener = voiceScript.replace(
 );
 
 eval(scriptWithoutDOMListener);
-
+// Import the ARMISVoiceCommands class directly from the module
+const { ARMISVoiceCommands } = require('../../shared/voice-commands.js');
 describe('ARMIS Voice Commands', () => {
     let voiceCommands;
     
