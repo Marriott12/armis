@@ -39,7 +39,7 @@ class CommandDynamicLoader {
             const settings = await this.apiCall('get_settings');
             this.autoRefresh = settings.autoRefresh || this.autoRefresh;
             this.refreshInterval = settings.refreshInterval || this.refreshInterval;
-            this.cacheTimeout = settings.cacheTimeout * 1000 || this.cacheTimeout;
+            this.cacheTimeout = (typeof settings.cacheTimeout === 'number' && !isNaN(settings.cacheTimeout) ? settings.cacheTimeout * 1000 : this.cacheTimeout);
             console.log('Settings loaded:', settings);
         } catch (error) {
             console.warn('Failed to load settings, using defaults:', error);
