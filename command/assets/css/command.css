@@ -1,0 +1,342 @@
+/**
+ * ARMIS Command Module Styles
+ * Custom styling for command operations interface
+ */
+
+/* Command Dashboard Specific Styles */
+.command-dashboard {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    min-height: 100vh;
+}
+
+.mission-card {
+    transition: all 0.3s ease;
+    border-left: 4px solid transparent;
+}
+
+.mission-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.mission-card.priority-critical {
+    border-left-color: #dc3545;
+}
+
+.mission-card.priority-high {
+    border-left-color: #ffc107;
+}
+
+.mission-card.priority-medium {
+    border-left-color: #17a2b8;
+}
+
+.mission-card.priority-low {
+    border-left-color: #6c757d;
+}
+
+/* Status indicators */
+.status-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 8px;
+}
+
+.status-active {
+    background-color: #28a745;
+    animation: pulse 2s infinite;
+}
+
+.status-planning {
+    background-color: #6c757d;
+}
+
+.status-hold {
+    background-color: #ffc107;
+}
+
+.status-completed {
+    background-color: #007bff;
+}
+
+.status-cancelled {
+    background-color: #dc3545;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+/* Command hierarchy visualization */
+.command-hierarchy {
+    position: relative;
+}
+
+.hierarchy-level {
+    margin: 15px 0;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #007bff;
+}
+
+.hierarchy-level.level-strategic {
+    border-left-color: #dc3545;
+    background: #fff5f5;
+}
+
+.hierarchy-level.level-operational {
+    border-left-color: #ffc107;
+    background: #fffbf0;
+}
+
+.hierarchy-level.level-tactical {
+    border-left-color: #28a745;
+    background: #f8fff9;
+}
+
+.hierarchy-level.level-unit {
+    border-left-color: #17a2b8;
+    background: #f0fbff;
+}
+
+/* Mission timeline */
+.mission-timeline {
+    position: relative;
+    padding-left: 30px;
+}
+
+.mission-timeline::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #dee2e6;
+}
+
+.timeline-item {
+    position: relative;
+    margin-bottom: 20px;
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -23px;
+    top: 20px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #007bff;
+    border: 3px solid white;
+    box-shadow: 0 0 0 2px #dee2e6;
+}
+
+.timeline-item.completed::before {
+    background: #28a745;
+}
+
+.timeline-item.cancelled::before {
+    background: #dc3545;
+}
+
+/* Communication panel */
+.communication-panel {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.communication-item {
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 6px;
+    background: #f8f9fa;
+    border-left: 3px solid #007bff;
+}
+
+.communication-item.priority-critical {
+    border-left-color: #dc3545;
+    background: #fff5f5;
+}
+
+.communication-item.priority-high {
+    border-left-color: #ffc107;
+    background: #fffbf0;
+}
+
+/* Real-time indicators */
+.real-time-indicator {
+    position: relative;
+    display: inline-block;
+}
+
+.real-time-indicator::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 8px;
+    height: 8px;
+    background: #28a745;
+    border-radius: 50%;
+    animation: pulse 1.5s infinite;
+}
+
+/* Mission search and filters */
+.mission-filters {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    margin-bottom: 20px;
+}
+
+.filter-group {
+    margin-bottom: 15px;
+}
+
+.filter-group:last-child {
+    margin-bottom: 0;
+}
+
+/* Command statistics cards */
+.command-stat-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    transition: all 0.3s ease;
+}
+
+.command-stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.stat-icon {
+    font-size: 2.5rem;
+    margin-bottom: 10px;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.stat-label {
+    font-size: 0.9rem;
+    color: #6c757d;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .command-hierarchy {
+        padding-left: 0;
+    }
+    
+    .mission-timeline {
+        padding-left: 20px;
+    }
+    
+    .mission-timeline::before {
+        left: 10px;
+    }
+    
+    .timeline-item::before {
+        left: -16px;
+    }
+    
+    .command-stat-card {
+        margin-bottom: 15px;
+    }
+    
+    .stat-icon {
+        font-size: 2rem;
+    }
+    
+    .stat-value {
+        font-size: 1.5rem;
+    }
+}
+
+/* Loading states */
+.loading-skeleton {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Mission priority indicators */
+.priority-indicator {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.priority-critical .priority-indicator {
+    background: #dc3545;
+    animation: blink 1s infinite;
+}
+
+.priority-high .priority-indicator {
+    background: #ffc107;
+}
+
+.priority-medium .priority-indicator {
+    background: #17a2b8;
+}
+
+.priority-low .priority-indicator {
+    background: #6c757d;
+}
+
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0.3; }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    .command-dashboard {
+        background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
+    }
+    
+    .mission-card,
+    .command-stat-card,
+    .mission-filters {
+        background: #2d3748;
+        color: #e2e8f0;
+    }
+    
+    .communication-item {
+        background: #4a5568;
+        color: #e2e8f0;
+    }
+    
+    .hierarchy-level {
+        background: #4a5568;
+        color: #e2e8f0;
+    }
+}
