@@ -141,6 +141,8 @@ function getFilteredSidebarNavigation() {
         'logistics' => ['title' => 'Logistics', 'icon' => 'truck', 'url' => '/Armis2/logistics/'],
         'workflow' => ['title' => 'Workflow', 'icon' => 'sitemap', 'url' => '/Armis2/workflow/'],
         'messaging' => ['title' => 'Messaging', 'icon' => 'comments', 'url' => '/Armis2/messaging/'],
+        'integration' => ['title' => 'Integration', 'icon' => 'exchange-alt', 'url' => '/Armis2/integration/'],
+        'reporting' => ['title' => 'Reports', 'icon' => 'chart-bar', 'url' => '/Armis2/reporting/'],
         'command' => ['title' => 'Command', 'icon' => 'chess-king', 'url' => '/Armis2/command/'],
         'operations' => ['title' => 'Operations', 'icon' => 'map-marked-alt', 'url' => '/Armis2/operations/'],
         'training' => ['title' => 'Training', 'icon' => 'graduation-cap', 'url' => '/Armis2/training/', 'badge' => '3'],
