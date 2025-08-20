@@ -13,8 +13,8 @@
 *OLD.php
 *TEST.php
 .htaccess.backup
+# Removed api exclusion to allow new API framework
 app
-api
 
 # Test and debug files
 test_*.php

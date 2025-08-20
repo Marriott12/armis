@@ -8,7 +8,6 @@
     <link rel="stylesheet" href="/shared/mobile-responsive.css">
     <link rel="stylesheet" href="/shared/accessibility.css">
     <link rel="stylesheet" href="/shared/military-themes.css">
-    
     <style>
         .offline-container {
             min-height: 100vh;
@@ -178,6 +177,37 @@
             .offline-icon {
                 font-size: 3rem;
             }
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .offline-card {
+            background: white;
+            border-radius: 15px;
+            padding: 3rem;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            max-width: 500px;
+            margin: 20px;
+        }
+        .offline-icon {
+            font-size: 4rem;
+            color: #6c757d;
+            margin-bottom: 1.5rem;
+        }
+        .retry-btn {
+            margin-top: 1.5rem;
+        }
+        .offline-features {
+            text-align: left;
+            margin-top: 2rem;
+        }
+        .feature-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        .feature-item i {
+            color: #28a745;
+            margin-right: 0.5rem;
         }
     </style>
 </head>
@@ -223,6 +253,44 @@
                 <button class="offline-button" onclick="continueOffline()" aria-label="Continue offline">
                     📱 Continue Offline
                 </button>
+            <div class="offline-icon">
+                <i class="fas fa-wifi-slash"></i>
+            </div>
+            
+            <h2 class="mb-3">You're Offline</h2>
+            <p class="text-muted mb-4">
+                ARMIS is currently unavailable. Please check your internet connection and try again.
+            </p>
+            
+            <div class="offline-features">
+                <h5>Available Offline Features:</h5>
+                <div class="feature-item">
+                    <i class="fas fa-check"></i>
+                    <span>View cached personnel data</span>
+                </div>
+                <div class="feature-item">
+                    <i class="fas fa-check"></i>
+                    <span>Fill forms (will sync when online)</span>
+                </div>
+                <div class="feature-item">
+                    <i class="fas fa-check"></i>
+                    <span>Access saved reports</span>
+                </div>
+                <div class="feature-item">
+                    <i class="fas fa-check"></i>
+                    <span>Browse system documentation</span>
+                </div>
+            </div>
+            
+            <button class="btn btn-primary retry-btn" onclick="location.reload()">
+                <i class="fas fa-redo"></i> Try Again
+            </button>
+            
+            <div class="mt-4 pt-3 border-top">
+                <small class="text-muted">
+                    <i class="fas fa-shield-alt"></i>
+                    Your data is secure and will sync automatically when connection is restored.
+                </small>
             </div>
         </div>
     </div>
@@ -396,6 +464,18 @@
                 });
             }
         }, 30000); // Check every 30 seconds
+      
+        // Check for connection every 10 seconds
+        setInterval(() => {
+            if (navigator.onLine) {
+                location.reload();
+            }
+        }, 10000);
+        
+        // Listen for online event
+        window.addEventListener('online', () => {
+            location.reload();
+        });
     </script>
 </body>
 </html>

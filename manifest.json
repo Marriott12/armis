@@ -60,10 +60,9 @@
       "purpose": "maskable any"
     }
   ],
-  
   "screenshots": [
     {
-      "src": "/assets/screenshots/desktop-dashboard.png",
+      "src": "pwa/screenshots/desktop-dashboard.png",
       "sizes": "1280x720",
       "type": "image/png",
       "form_factor": "wide",
@@ -71,13 +70,13 @@
     },
     {
       "src": "/assets/screenshots/mobile-dashboard.png",
-      "sizes": "360x640",
+      "sizes": "360x640", 
+      "sizes": "390x844",
       "type": "image/png",
       "form_factor": "narrow",
       "label": "ARMIS Dashboard - Mobile View"
     }
   ],
-  
   "shortcuts": [
     {
       "name": "Dashboard",
@@ -87,6 +86,11 @@
       "icons": [
         {
           "src": "/assets/icons/shortcut-dashboard.png",
+      "description": "View main dashboard",
+      "url": "/",
+      "icons": [
+        {
+          "src": "pwa/icons/dashboard-shortcut.png",
           "sizes": "96x96"
         }
       ]
@@ -192,4 +196,27 @@
   
   "id": "armis-military-system",
   "iarc_rating_id": "e84b072d-71b3-4d3e-86ae-31a8ce4e53b7"
+      "name": "Reports",
+      "short_name": "Reports",
+      "description": "Generate and view reports", 
+      "url": "/reports/",
+      "icons": [
+        {
+          "src": "pwa/icons/reports-shortcut.png",
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ],
+  "prefer_related_applications": false,
+  "protocol_handlers": [
+    {
+      "protocol": "web+armis",
+      "url": "/handle?url=%s"
+    }
+  ],
+  "edge_side_panel": {
+    "preferred_width": 400
+  },
+  "handle_links": "preferred"
 }
