@@ -11,14 +11,20 @@ define('ARMIS_ROLES', [
     'admin' => [
         'name' => 'Administrator',
         'level' => 100,
-        'modules' => ['admin_branch', 'command', 'operations', 'training', 'finance', 'ordinance', 'users', 'admin'],
+        'modules' => ['admin_branch', 'command', 'operations', 'training', 'finance', 'ordinance', 'users', 'admin', 'logistics', 'workflow', 'messaging'],
         'description' => 'Full system access'
     ],
     'command' => [
         'name' => 'Command Officer',
         'level' => 80,
-        'modules' => ['command', 'operations', 'training', 'users'],
+        'modules' => ['command', 'operations', 'training', 'users', 'logistics', 'workflow'],
         'description' => 'Command and operational oversight'
+    ],
+    'logistics' => [
+        'name' => 'Logistics Officer',
+        'level' => 70,
+        'modules' => ['logistics', 'finance', 'users'],
+        'description' => 'Supply chain and logistics management'
     ],
     'training' => [
         'name' => 'Training Officer',
@@ -132,6 +138,11 @@ function getFilteredSidebarNavigation() {
     $systemBranches = [
         'admin' => ['title' => 'System Admin', 'icon' => 'cogs', 'url' => '/Armis2/admin/', 'badge' => '!'],
         'admin_branch' => ['title' => 'Admin Branch', 'icon' => 'users-cog', 'url' => '/Armis2/admin_branch/'],
+        'logistics' => ['title' => 'Logistics', 'icon' => 'truck', 'url' => '/Armis2/logistics/'],
+        'workflow' => ['title' => 'Workflow', 'icon' => 'sitemap', 'url' => '/Armis2/workflow/'],
+        'messaging' => ['title' => 'Messaging', 'icon' => 'comments', 'url' => '/Armis2/messaging/'],
+        'integration' => ['title' => 'Integration', 'icon' => 'exchange-alt', 'url' => '/Armis2/integration/'],
+        'reporting' => ['title' => 'Reports', 'icon' => 'chart-bar', 'url' => '/Armis2/reporting/'],
         'command' => ['title' => 'Command', 'icon' => 'chess-king', 'url' => '/Armis2/command/'],
         'operations' => ['title' => 'Operations', 'icon' => 'map-marked-alt', 'url' => '/Armis2/operations/'],
         'training' => ['title' => 'Training', 'icon' => 'graduation-cap', 'url' => '/Armis2/training/', 'badge' => '3'],
@@ -167,10 +178,13 @@ function getRoleDashboardUrl($userRole = null) {
         'admin' => '/Armis2/admin/index.php',
         'admin_branch' => '/Armis2/admin_branch/index.php',
         'command' => '/Armis2/command/index.php',
+        'logistics' => '/Armis2/logistics/index.php',
         'training' => '/Armis2/training/index.php',
         'operations' => '/Armis2/operations/index.php',
         'finance' => '/Armis2/finance/index.php',
         'ordinance' => '/Armis2/ordinance/index.php',
+        'workflow' => '/Armis2/workflow/index.php',
+        'messaging' => '/Armis2/messaging/index.php',
         'user' => '/Armis2/users/index.php'
     ];
     
