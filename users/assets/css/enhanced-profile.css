@@ -1,0 +1,325 @@
+/* Enhanced Military-Grade User Profile CSS */
+
+/* Validation and Security Indicators */
+.validation-messages {
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+}
+
+.validation-loading, 
+.validation-success, 
+.validation-error, 
+.validation-warning {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.validation-loading {
+    background: rgba(23, 162, 184, 0.1);
+}
+
+.validation-success {
+    background: rgba(40, 167, 69, 0.1);
+}
+
+.validation-error {
+    background: rgba(220, 53, 69, 0.1);
+}
+
+.validation-warning {
+    background: rgba(255, 193, 7, 0.1);
+}
+
+/* Security Indicators */
+.security-indicator {
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+}
+
+.security-excellent { 
+    color: #28a745; 
+}
+
+.security-good { 
+    color: #20c997; 
+}
+
+.security-moderate { 
+    color: #ffc107; 
+}
+
+.security-poor { 
+    color: #dc3545; 
+}
+
+.security-score-display {
+    position: fixed;
+    top: 70px;
+    right: 20px;
+    background: white;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    z-index: 1050;
+    border: 1px solid #dee2e6;
+    min-width: 200px;
+    font-size: 0.875rem;
+}
+
+.security-display {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+}
+
+/* Auto-save Indicators */
+.auto-save-indicator {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.75rem;
+    pointer-events: none;
+    background: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    border: 1px solid #dee2e6;
+}
+
+/* Enhanced Form Fields */
+.form-group {
+    position: relative;
+    margin-bottom: 1.5rem;
+}
+
+.enhanced-field {
+    border-left: 3px solid #e9ecef;
+    transition: all 0.3s ease;
+    padding-left: 1rem;
+}
+
+.enhanced-field:focus {
+    border-left-color: #007bff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.enhanced-field.is-valid {
+    border-left-color: #28a745;
+}
+
+.enhanced-field.is-invalid {
+    border-left-color: #dc3545;
+}
+
+/* Military Field Groups */
+.military-field-group {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border: 1px solid #dee2e6;
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    position: relative;
+}
+
+.military-field-group::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #007bff, #28a745);
+    border-radius: 0.5rem 0.5rem 0 0;
+}
+
+.military-field-group h6 {
+    color: #495057;
+    margin-bottom: 1rem;
+    font-weight: 600;
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.military-field-group h6 i {
+    color: #007bff;
+}
+
+/* Profile Completion Indicators */
+.profile-completion-card {
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.completion-progress {
+    margin-bottom: 1rem;
+}
+
+.completion-sections {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.5rem;
+}
+
+.completion-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem;
+    background: #f8f9fa;
+    border-radius: 0.25rem;
+    font-size: 0.875rem;
+}
+
+.completion-percentage {
+    font-weight: 600;
+    color: #007bff;
+}
+
+/* Responsive Design for Mobile */
+@media (max-width: 768px) {
+    .security-score-display {
+        position: relative;
+        top: auto;
+        right: auto;
+        margin-bottom: 1rem;
+        width: 100%;
+    }
+    
+    .military-field-group {
+        padding: 1rem;
+    }
+    
+    .completion-sections {
+        grid-template-columns: 1fr;
+    }
+    
+    .enhanced-field {
+        padding-left: 0.75rem;
+    }
+}
+
+/* Print Styles */
+@media print {
+    .security-score-display,
+    .validation-messages,
+    .auto-save-indicator {
+        display: none !important;
+    }
+    
+    .enhanced-field {
+        border-left: none;
+    }
+    
+    .military-field-group {
+        background: white;
+        border: 1px solid #000;
+    }
+}
+
+/* Loading States */
+.form-loading {
+    position: relative;
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+.form-loading::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.form-loading::before {
+    content: 'Updating...';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10;
+    background: white;
+    padding: 1rem 2rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    font-weight: 600;
+}
+
+/* Accessibility Improvements */
+.validation-messages [role="alert"] {
+    border: 1px solid;
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+}
+
+.security-indicator:focus-within,
+.validation-messages:focus-within {
+    outline: 2px solid #007bff;
+    outline-offset: 2px;
+}
+
+/* High Contrast Mode Support */
+@media (prefers-contrast: high) {
+    .military-field-group {
+        background: white;
+        border: 2px solid #000;
+    }
+    
+    .enhanced-field {
+        border-left-width: 4px;
+    }
+    
+    .security-score-display {
+        border: 2px solid #000;
+    }
+}
+
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+    .enhanced-field,
+    .validation-loading i,
+    .form-loading {
+        transition: none;
+        animation: none;
+    }
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+    .military-field-group {
+        background: #2d3748;
+        border-color: #4a5568;
+        color: #e2e8f0;
+    }
+    
+    .military-field-group h6 {
+        color: #e2e8f0;
+    }
+    
+    .security-score-display {
+        background: #2d3748;
+        border-color: #4a5568;
+        color: #e2e8f0;
+    }
+    
+    .validation-messages {
+        background: #2d3748;
+    }
+}
