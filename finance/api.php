@@ -1,68 +1,110 @@
 <?php
 /**
- * ARMIS Finance Module API
- * RESTful API endpoints for finance management
+ * Finance Module API
+ * AJAX endpoint for dynamic finance data
  */
 
-header('Content-Type: application/json');
+// Define module constants
+define('ARMIS_FINANCE', true);
+define('ARMIS_DEVELOPMENT', true);
 
-require_once __DIR__ . '/includes/config.php';
+// Include required files
+require_once dirname(__DIR__) . '/config.php';
+require_once dirname(__DIR__) . '/shared/session_init.php';
+require_once dirname(__DIR__) . '/shared/database_connection.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/finance_service.php';
 
-session_start();
+// Require authentication
+requireFinanceAccess();
+
+// Set JSON headers
+header('Content-Type: application/json');
+header('Cache-Control: no-cache, no-store, must-revalidate');
+header('Pragma: no-cache');
+header('Expires: 0');
+
+// Handle different API endpoints
+$action = $_GET['action'] ?? '';
 
 try {
-    requireAuth();
-    requireFinanceAccess();
-    
-    $service = new FinanceService();
-    $method = $_SERVER['REQUEST_METHOD'];
-    $endpoint = $_GET['endpoint'] ?? '';
-    
-    switch ($endpoint) {
-        case 'dashboard':
-            if ($method === 'GET') {
-                $data = $service->getDashboardData();
-                echo json_encode(['success' => true, 'data' => $data]);
-            }
-            break;
-            
-        case 'budgets':
-            if ($method === 'GET') {
-                $params = [
-                    'status' => $_GET['status'] ?? '',
-                    'fiscal_year' => $_GET['fiscal_year'] ?? '',
-                ];
-                $budgets = $service->searchBudgets($params);
-                echo json_encode(['success' => true, 'data' => $budgets]);
-            } elseif ($method === 'POST') {
-                if (!hasFinancePermission('manage_budgets')) {
-                    throw new Exception('Insufficient permissions');
-                }
-                $input = json_decode(file_get_contents('php://input'), true);
-                $budgetId = $service->createBudget($input);
-                echo json_encode(['success' => true, 'budget_id' => $budgetId]);
-            }
-            break;
-            
-        case 'expenditures':
-            if ($method === 'POST') {
-                if (!hasFinancePermission('approve_expenditures')) {
-                    throw new Exception('Insufficient permissions');
-                }
-                $input = json_decode(file_get_contents('php://input'), true);
-                $expenditureId = $service->createExpenditure($input);
-                echo json_encode(['success' => true, 'expenditure_id' => $expenditureId]);
-            }
-            break;
-            
-        default:
-            http_response_code(404);
-            echo json_encode(['error' => 'Endpoint not found']);
+    // Get database connection
+    $pdo = getDbConnection();
+    if (!$pdo) {
+        throw new Exception('Database connection not available');
     }
     
+    // Log API access
+    logFinanceActivity('api_access', "Finance API accessed: {$action}");
+    
+    $service = new FinanceService($pdo);
+    $response = ['success' => true, 'data' => null, 'timestamp' => date('c')];
+    
+    switch ($action) {
+        case 'get_kpi':
+            $response['data'] = $service->getKPIData();
+            break;
+            
+        case 'get_recent_activities':
+            $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 10;
+            $response['data'] = $service->getRecentActivities($limit);
+            break;
+            
+        case 'get_budget_overview':
+            $response['data'] = $service->getBudgetOverview();
+            break;
+            
+        case 'get_expense_breakdown':
+            $response['data'] = $service->getExpenseBreakdown();
+            break;
+            
+        case 'get_monthly_trends':
+            $response['data'] = $service->getMonthlyTrends();
+            break;
+            
+        case 'get_pending_transactions':
+            $response['data'] = $service->getPendingTransactions();
+            break;
+            
+        case 'get_contract_overview':
+            $response['data'] = $service->getContractOverview();
+            break;
+            
+        case 'get_financial_alerts':
+            $response['data'] = $service->getFinancialAlerts();
+            break;
+            
+        case 'get_all_dashboard_data':
+        default:
+            $response['data'] = [
+                'kpi' => $service->getKPIData(),
+                'recent_activities' => $service->getRecentActivities(5),
+                'budget_overview' => $service->getBudgetOverview(),
+                'expense_breakdown' => $service->getExpenseBreakdown(),
+                'monthly_trends' => $service->getMonthlyTrends(),
+                'pending_transactions' => $service->getPendingTransactions(),
+                'contract_overview' => $service->getContractOverview(),
+                'financial_alerts' => $service->getFinancialAlerts()
+            ];
+            break;
+    }
+    
+    // Log successful API response
+    logFinanceActivity('api_success', "Finance API response sent: {$action}");
+    
 } catch (Exception $e) {
+    error_log("Finance API error: " . $e->getMessage());
+    logFinanceActivity('api_error', "Finance API error: {$e->getMessage()}");
+    
+    $response = [
+        'success' => false,
+        'error' => ARMIS_DEVELOPMENT ? $e->getMessage() : 'An error occurred while processing your request',
+        'timestamp' => date('c')
+    ];
+    
     http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
 }
+
+// Send JSON response
+echo json_encode($response);
+?>
