@@ -49,12 +49,21 @@ return [
         'skip_to_navigation' => 'Skip to navigation',
         'high_contrast' => 'High Contrast',
         'large_text' => 'Large Text',
-        'keyboard_navigation' => 'Keyboard Navigation'
+        'keyboard_navigation' => 'Keyboard Navigation',
+        'system_name' => 'ARMIS - Army Resource Management Information System',
+        'system_description' => 'Comprehensive military personnel management system',
+        'armis_logo' => 'ARMIS Logo',
+        'themes' => 'Themes',
+        'theme' => 'theme',
+        'enabled' => 'enabled',
+        'disabled' => 'disabled',
+        'normal_text' => 'Normal Text'
     ],
     
     // Navigation and menu items
     'navigation' => [
         'main_menu' => 'Main Menu',
+        'toggle_navigation' => 'Toggle navigation',
         'admin' => 'Administration',
         'personnel' => 'Personnel',
         'training' => 'Training',
@@ -73,6 +82,24 @@ return [
         'procurement' => 'Procurement',
         'mission_planning' => 'Mission Planning',
         'resource_allocation' => 'Resource Allocation'
+    ],
+    
+    // Theme names
+    'themes' => [
+        'light' => 'Light Theme',
+        'dark' => 'Dark Theme',
+        'field' => 'Field Operations',
+        'night' => 'Night Vision',
+        'desert' => 'Desert Camouflage',
+        'woodland' => 'Woodland Camouflage',
+        'urban' => 'Urban Operations'
+    ],
+    
+    // PWA messages
+    'pwa' => [
+        'update_available' => 'A new version is available. Update now?',
+        'install_prompt' => 'Install ARMIS app for better experience?',
+        'offline_ready' => 'ARMIS is ready for offline use'
     ],
     
     // Form labels and validation
@@ -365,5 +392,55 @@ return [
         'speak_navigation' => 'Say "Go to" followed by page name',
         'speak_search' => 'Say "Search for" followed by term',
         'speak_action' => 'Say action name like "Save" or "Cancel"'
+    ],
+    
+    // Demo page translations
+    'demo' => [
+        'phase2_title' => 'ARMIS Phase 2 Modernization',
+        'feature_controls' => 'Feature Controls',
+        'internationalization' => 'Internationalization',
+        'i18n_description' => 'Multi-language support for international military units with full RTL support.',
+        'current_language' => 'Current Language',
+        'text_direction' => 'Text Direction',
+        'military_themes' => 'Military Themes',
+        'themes_description' => 'Operation-specific themes optimized for different environments and lighting conditions.',
+        'accessibility' => 'Accessibility Features',
+        'accessibility_description' => 'WCAG 2.1 AA compliant features for universal access and usability.',
+        'screen_reader_test' => 'Test Screen Reader',
+        'wcag_compliant' => 'WCAG 2.1 AA Compliant',
+        'voice_description' => 'Hands-free navigation and control using voice commands for field operations.',
+        'start_listening' => 'Start Listening',
+        'voice_commands_help' => 'Voice Commands Help',
+        'try_saying' => 'Try saying',
+        'sample_command_1' => 'Go to dashboard',
+        'sample_command_2' => 'Dark mode',
+        'sample_command_3' => 'High contrast',
+        'pwa_features' => 'PWA Features',
+        'pwa_description' => 'Progressive Web App with offline capabilities and native app experience.',
+        'test_offline' => 'Test Offline Mode',
+        'install_app' => 'Install App',
+        'test_notification' => 'Test Notification',
+        'system_status' => 'System Status',
+        'i18n_status' => 'i18n Ready',
+        'accessibility_status' => 'A11y Ready',
+        'themes_status' => 'Themes Ready',
+        'voice_status' => 'Voice Support',
+        'pwa_status' => 'PWA Ready',
+        'connection_status' => 'Connection',
+        'implementation_details' => 'Implementation Details',
+        'phase2a_completed' => 'Phase 2A Completed Features',
+        'feature_i18n' => 'Internationalization Framework (8 languages)',
+        'feature_accessibility' => 'WCAG 2.1 AA Accessibility Compliance',
+        'feature_themes' => 'Military Theme System (7 themes)',
+        'feature_voice' => 'Voice Command System (50+ commands)',
+        'feature_pwa' => 'Progressive Web App with Offline Support',
+        'feature_cicd' => 'CI/CD Pipeline with Automated Testing',
+        'technical_specs' => 'Technical Specifications',
+        'wcag_compliance' => 'WCAG Compliance',
+        'languages_supported' => 'Languages Supported',
+        'themes_available' => 'Themes Available',
+        'voice_commands' => 'Voice Commands',
+        'full_offline' => 'Full Offline Support',
+        'mobile_optimized' => 'Mobile Optimized'
     ]
 ];
