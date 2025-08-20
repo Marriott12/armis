@@ -311,7 +311,9 @@ class ARMISVoiceCommands {
         
         const distance = matrix[len2][len1];
         const maxLength = Math.max(len1, len2);
-        return 1 - (distance / maxLength);
+        const similarity = 1 - (distance / maxLength);
+        this.similarityCache.set(cacheKey, similarity);
+        return similarity;
     }
     
     /**
