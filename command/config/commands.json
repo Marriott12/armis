@@ -1,0 +1,175 @@
+{
+    "version": "1.0.0",
+    "lastUpdated": "2025-08-19T10:10:05+00:00",
+    "commands": {
+        "navigation": [
+            {
+                "id": "dashboard",
+                "title": "Dashboard",
+                "url": "/Armis2/command/index.php",
+                "icon": "tachometer-alt",
+                "page": "dashboard",
+                "enabled": true,
+                "order": 1
+            },
+            {
+                "id": "operations",
+                "title": "Operational Reports",
+                "url": "/Armis2/command/operations.php",
+                "icon": "file-alt",
+                "page": "operations",
+                "enabled": true,
+                "order": 2
+            },
+            {
+                "id": "profiles",
+                "title": "Staff Profiles",
+                "url": "/Armis2/command/profiles.php",
+                "icon": "id-card",
+                "page": "profiles",
+                "enabled": true,
+                "order": 3
+            },
+            {
+                "id": "reports",
+                "title": "Command Reports",
+                "url": "/Armis2/command/reports.php",
+                "icon": "chart-line",
+                "page": "reports",
+                "enabled": true,
+                "order": 4
+            }
+        ],
+        "dashboard_modules": [
+            {
+                "id": "command_structure",
+                "title": "Command Structure",
+                "description": "View and manage command hierarchy",
+                "icon": "sitemap",
+                "iconColor": "text-primary",
+                "url": "/command/operations",
+                "buttonText": "View Structure",
+                "buttonClass": "btn-armis",
+                "enabled": true,
+                "order": 1,
+                "permissions": [
+                    "command.view",
+                    "operations.view"
+                ]
+            },
+            {
+                "id": "operational_reports",
+                "title": "Operational Reports",
+                "description": "View and manage operational status reports",
+                "icon": "file-alt",
+                "iconColor": "text-primary",
+                "url": "/command/operations",
+                "buttonText": "View Reports",
+                "buttonClass": "btn-armis",
+                "enabled": true,
+                "order": 2,
+                "permissions": [
+                    "command.reports"
+                ]
+            },
+            {
+                "id": "staff_profiles",
+                "title": "Staff Profiles",
+                "description": "Access detailed personnel profiles and records",
+                "icon": "id-card",
+                "iconColor": "text-success",
+                "url": "profiles.php",
+                "buttonText": "View Profiles",
+                "buttonClass": "btn-armis",
+                "enabled": true,
+                "order": 3,
+                "permissions": [
+                    "command.profiles"
+                ]
+            },
+            {
+                "id": "command_reports",
+                "title": "Command Reports",
+                "description": "Generate strategic and tactical reports",
+                "icon": "chart-line",
+                "iconColor": "text-warning",
+                "url": "/command/reports",
+                "buttonText": "Generate Reports",
+                "buttonClass": "btn-armis",
+                "enabled": true,
+                "order": 4,
+                "permissions": [
+                    "command.reports"
+                ]
+            },
+            {
+                "id": "search_analytics",
+                "title": "Search & Analytics",
+                "description": "Advanced search and data analytics tools",
+                "icon": "search",
+                "iconColor": "text-info",
+                "url": "/command/search",
+                "buttonText": "Search",
+                "buttonClass": "btn-armis",
+                "enabled": true,
+                "order": 5,
+                "permissions": [
+                    "command.search"
+                ]
+            }
+        ],
+        "overview_stats": [
+            {
+                "id": "active_operations",
+                "title": "Active Operations",
+                "icon": "rocket",
+                "color": "bg-primary",
+                "dataSource": "api",
+                "endpoint": "/command/api/stats.php?type=operations",
+                "fallbackValue": "15",
+                "enabled": true,
+                "order": 1
+            },
+            {
+                "id": "personnel_ready",
+                "title": "Personnel Ready",
+                "icon": "users",
+                "color": "bg-success",
+                "dataSource": "api",
+                "endpoint": "/command/api/stats.php?type=personnel",
+                "fallbackValue": "92%",
+                "enabled": true,
+                "order": 2
+            },
+            {
+                "id": "alerts",
+                "title": "Alerts",
+                "icon": "exclamation-triangle",
+                "color": "bg-warning",
+                "dataSource": "api",
+                "endpoint": "/command/api/stats.php?type=alerts",
+                "fallbackValue": "3",
+                "enabled": true,
+                "order": 3
+            },
+            {
+                "id": "mission_status",
+                "title": "Mission Status",
+                "icon": "check-circle",
+                "color": "bg-info",
+                "dataSource": "api",
+                "endpoint": "/command/api/stats.php?type=mission",
+                "fallbackValue": "GREEN",
+                "enabled": true,
+                "order": 4
+            }
+        ]
+    },
+    "settings": {
+        "autoRefresh": true,
+        "refreshInterval": 30000,
+        "enableCache": true,
+        "cacheTimeout": 300,
+        "debugMode": false
+    }
+}
