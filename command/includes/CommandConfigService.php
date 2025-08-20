@@ -50,7 +50,13 @@ class CommandConfigService {
             $this->cache[$cacheKey] = [
                 'data' => $config,
                 'timestamp' => time()
+        // Cache the result to file
+        if ($useCache) {
+            $cacheData = [
+                'data' => $config,
+                'timestamp' => time()
             ];
+            file_put_contents($cacheFile, json_encode($cacheData));
         }
         
         return $config;
