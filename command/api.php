@@ -208,7 +208,7 @@ function getRequestContext() {
 function getUserPermissions($userId) {
     // This would normally check the database for user-specific permissions
     // Enhanced to be more granular based on role
-    $role = $_SESSION['user_role'] ?? 'user';
+    $role = getUserRoleById($userId);
     
     $permissions = [];
     switch ($role) {
