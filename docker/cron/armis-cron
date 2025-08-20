@@ -1,0 +1,21 @@
+# ARMIS Cron Jobs for automated tasks
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# Automated backups (daily at 2 AM)
+0 2 * * * www-data /usr/bin/php /var/www/html/scripts/automated_backup.php >> /var/www/html/shared/logs/backup.log 2>&1
+
+# Clean old logs (weekly on Sunday at 3 AM)
+0 3 * * 0 www-data /usr/bin/php /var/www/html/scripts/cleanup_logs.php >> /var/www/html/shared/logs/cleanup.log 2>&1
+
+# Security audit report (daily at 6 AM)
+0 6 * * * www-data /usr/bin/php /var/www/html/scripts/security_audit.php >> /var/www/html/shared/logs/security.log 2>&1
+
+# Performance metrics collection (every 15 minutes)
+*/15 * * * * www-data /usr/bin/php /var/www/html/scripts/performance_metrics.php >> /var/www/html/shared/logs/performance.log 2>&1
+
+# Rate limit cleanup (hourly)
+0 * * * * www-data /usr/bin/php /var/www/html/scripts/cleanup_rate_limits.php >> /var/www/html/shared/logs/rate_limits.log 2>&1
+
+# Send scheduled notifications (every 5 minutes)
+*/5 * * * * www-data /usr/bin/php /var/www/html/scripts/send_notifications.php >> /var/www/html/shared/logs/notifications.log 2>&1

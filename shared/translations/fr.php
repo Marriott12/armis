@@ -1,0 +1,181 @@
+<?php
+/**
+ * French translations for ARMIS system
+ * Traductions françaises pour le système ARMIS
+ */
+
+return [
+    // Common interface elements
+    'common' => [
+        'welcome' => 'Bienvenue',
+        'login' => 'Connexion',
+        'logout' => 'Déconnexion',
+        'home' => 'Accueil',
+        'dashboard' => 'Tableau de bord',
+        'profile' => 'Profil',
+        'settings' => 'Paramètres',
+        'help' => 'Aide',
+        'search' => 'Rechercher',
+        'filter' => 'Filtrer',
+        'export' => 'Exporter',
+        'import' => 'Importer',
+        'save' => 'Enregistrer',
+        'cancel' => 'Annuler',
+        'delete' => 'Supprimer',
+        'edit' => 'Modifier',
+        'view' => 'Voir',
+        'add' => 'Ajouter',
+        'remove' => 'Retirer',
+        'submit' => 'Soumettre',
+        'reset' => 'Réinitialiser',
+        'confirm' => 'Confirmer',
+        'loading' => 'Chargement...',
+        'error' => 'Erreur',
+        'success' => 'Succès',
+        'warning' => 'Attention',
+        'info' => 'Information',
+        'required' => 'Requis',
+        'optional' => 'Optionnel',
+        'yes' => 'Oui',
+        'no' => 'Non',
+        'all' => 'Tous',
+        'none' => 'Aucun',
+        'select' => 'Sélectionner',
+        'choose' => 'Choisir',
+        'language_switcher' => 'Sélecteur de langue',
+        'select_language' => 'Sélectionner la langue',
+        'accessibility_menu' => 'Menu d\'accessibilité',
+        'skip_to_content' => 'Aller au contenu principal',
+        'skip_to_navigation' => 'Aller à la navigation',
+        'high_contrast' => 'Contraste élevé',
+        'large_text' => 'Texte large',
+        'keyboard_navigation' => 'Navigation au clavier'
+    ],
+    
+    // Navigation and menu items
+    'navigation' => [
+        'main_menu' => 'Menu principal',
+        'admin' => 'Administration',
+        'personnel' => 'Personnel',
+        'training' => 'Formation',
+        'operations' => 'Opérations',
+        'finance' => 'Finance',
+        'reports' => 'Rapports',
+        'staff_management' => 'Gestion du personnel',
+        'create_staff' => 'Créer personnel',
+        'promotions' => 'Promotions',
+        'medals' => 'Médailles',
+        'appointments' => 'Nominations',
+        'units' => 'Unités',
+        'courses' => 'Cours',
+        'certifications' => 'Certifications',
+        'budget' => 'Budget',
+        'procurement' => 'Approvisionnement',
+        'mission_planning' => 'Planification de mission',
+        'resource_allocation' => 'Allocation des ressources'
+    ],
+    
+    // Form labels and validation
+    'forms' => [
+        'personal_information' => 'Informations personnelles',
+        'contact_information' => 'Informations de contact',
+        'military_information' => 'Informations militaires',
+        'emergency_contact' => 'Contact d\'urgence',
+        'medical_information' => 'Informations médicales',
+        'training_records' => 'Dossiers de formation',
+        'service_number' => 'Numéro de service',
+        'first_name' => 'Prénom',
+        'last_name' => 'Nom de famille',
+        'middle_name' => 'Deuxième prénom',
+        'date_of_birth' => 'Date de naissance',
+        'gender' => 'Genre',
+        'nationality' => 'Nationalité',
+        'rank' => 'Grade',
+        'unit' => 'Unité',
+        'position' => 'Position',
+        'enlistment_date' => 'Date d\'engagement',
+        'email' => 'Adresse e-mail',
+        'phone' => 'Numéro de téléphone',
+        'address' => 'Adresse',
+        'next_of_kin' => 'Proche parent',
+        'blood_type' => 'Groupe sanguin',
+        'medical_conditions' => 'Conditions médicales',
+        'allergies' => 'Allergies',
+        'languages' => 'Langues',
+        'certifications' => 'Certifications',
+        'decorations' => 'Décorations',
+        'field_required' => 'Ce champ est requis',
+        'invalid_email' => 'Veuillez entrer une adresse e-mail valide',
+        'invalid_phone' => 'Veuillez entrer un numéro de téléphone valide',
+        'invalid_date' => 'Veuillez entrer une date valide',
+        'password_too_short' => 'Le mot de passe doit contenir au moins 8 caractères',
+        'passwords_dont_match' => 'Les mots de passe ne correspondent pas'
+    ],
+    
+    // Status and states
+    'status' => [
+        'active' => 'Actif',
+        'inactive' => 'Inactif',
+        'deployed' => 'Déployé',
+        'on_leave' => 'En congé',
+        'training' => 'En formation',
+        'retired' => 'Retraité',
+        'discharged' => 'Libéré',
+        'medical_leave' => 'Congé médical',
+        'pending' => 'En attente',
+        'approved' => 'Approuvé',
+        'rejected' => 'Rejeté',
+        'completed' => 'Terminé',
+        'in_progress' => 'En cours',
+        'scheduled' => 'Programmé',
+        'cancelled' => 'Annulé'
+    ],
+    
+    // Military ranks and positions
+    'military' => [
+        'enlisted' => 'Personnel enrôlé',
+        'nco' => 'Sous-officier',
+        'officer' => 'Officier',
+        'warrant_officer' => 'Adjudant',
+        'commissioned_officer' => 'Officier commissionné',
+        'general_officer' => 'Officier général',
+        'recruit' => 'Recrue',
+        'private' => 'Soldat',
+        'corporal' => 'Caporal',
+        'sergeant' => 'Sergent',
+        'lieutenant' => 'Lieutenant',
+        'captain' => 'Capitaine',
+        'major' => 'Major',
+        'colonel' => 'Colonel',
+        'general' => 'Général',
+        'command' => 'Commandement',
+        'support' => 'Soutien',
+        'logistics' => 'Logistique',
+        'intelligence' => 'Renseignement',
+        'communications' => 'Communications',
+        'medical' => 'Médical',
+        'engineering' => 'Génie',
+        'aviation' => 'Aviation',
+        'armor' => 'Blindé',
+        'infantry' => 'Infanterie',
+        'artillery' => 'Artillerie'
+    ],
+    
+    // Voice commands
+    'voice' => [
+        'voice_commands' => 'Commandes vocales',
+        'speak_command' => 'Dire la commande',
+        'listening' => 'Écoute...',
+        'command_not_recognized' => 'Commande non reconnue',
+        'voice_disabled' => 'Commandes vocales désactivées',
+        'enable_voice' => 'Activer les commandes vocales',
+        'disable_voice' => 'Désactiver les commandes vocales',
+        'microphone_access' => 'Accès au microphone requis',
+        'speak_navigation' => 'Dites "Aller à" suivi du nom de la page',
+        'speak_search' => 'Dites "Rechercher" suivi du terme',
+        'speak_action' => 'Dites le nom de l\'action comme "Enregistrer" ou "Annuler"'
+    ]
+    
+    // Note: Only including key sections for demonstration
+    // A full translation would include all sections from the English file
+];

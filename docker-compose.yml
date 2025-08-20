@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  armis-app:
+    build: .
+    container_name: armis-web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./uploads:/var/www/html/uploads
+      - ./shared/logs:/var/www/html/shared/logs
+      - ./cache:/var/www/html/cache
+    environment:
+      - DB_HOST=armis-mysql
+      - DB_NAME=armis_production
+      - DB_USER=armis_user
+      - DB_PASS=secure_db_password
+      - REDIS_HOST=armis-redis
+      - ARMIS_ENV=production
+    depends_on:
+      - armis-mysql
+      - armis-redis
+    networks:
+      - armis-network
+
+  armis-mysql:
+    image: mysql:8.0
+    container_name: armis-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: secure_root_password
+      MYSQL_DATABASE: armis_production
+      MYSQL_USER: armis_user
+      MYSQL_PASSWORD: secure_db_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database:/docker-entrypoint-initdb.d
+    ports:
+      - "3306:3306"
+    command: --default-authentication-plugin=mysql_native_password
+    networks:
+      - armis-network
+
+  armis-redis:
+    image: redis:7-alpine
+    container_name: armis-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass secure_redis_password
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - armis-network
+
+  armis-backup:
+    image: mysql:8.0
+    container_name: armis-backup
+    restart: "no"
+    environment:
+      MYSQL_HOST: armis-mysql
+      MYSQL_ROOT_PASSWORD: secure_root_password
+      MYSQL_DATABASE: armis_production
+    volumes:
+      - ./backups:/backups
+      - ./scripts:/scripts
+    command: >
+      bash -c "
+        while ! mysqladmin ping -h armis-mysql --silent; do
+          echo 'Waiting for MySQL...'
+          sleep 1
+        done
+        echo 'MySQL is ready. Starting backup service...'
+        /scripts/backup.sh
+      "
+    depends_on:
+      - armis-mysql
+    networks:
+      - armis-network
+
+volumes:
+  mysql_data:
+  redis_data:
+
+networks:
+  armis-network:
+    driver: bridge

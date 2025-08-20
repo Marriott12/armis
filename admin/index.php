@@ -1,32 +1,51 @@
 <?php
-// Start session if not already started
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+/**
+ * ARMIS System Administration - Enhanced Dashboard
+ * Complete system management and monitoring tools
+ */
 
-// Include RBAC system
+// Module constants
+define('ARMIS_ADMIN', true);
+
+// Include core files
+require_once dirname(__DIR__) . '/config.php';
+require_once dirname(__DIR__) . '/shared/session_init.php';
+require_once dirname(__DIR__) . '/shared/database_connection.php';
 require_once dirname(__DIR__) . '/shared/rbac.php';
+require_once __DIR__ . '/includes/admin_service.php';
 
-$pageTitle = "System Admin";
-$moduleName = "System Admin";
-$moduleIcon = "cogs";
-$currentPage = "dashboard";
-
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'User Management', 'url' => '/Armis2/admin/users.php', 'icon' => 'users', 'page' => 'users'],
-    ['title' => 'System Settings', 'url' => '/Armis2/admin/settings.php', 'icon' => 'cogs', 'page' => 'settings'],
-    ['title' => 'Database Management', 'url' => '/Armis2/admin/database.php', 'icon' => 'database', 'page' => 'database'],
-    ['title' => 'Security Center', 'url' => '/Armis2/admin/security.php', 'icon' => 'shield-alt', 'page' => 'security'],
-    ['title' => 'System Reports', 'url' => '/Armis2/admin/reports.php', 'icon' => 'chart-bar', 'page' => 'reports']
-];
-
-
-// Check if user is logged in and has admin privileges
-if (!isset($_SESSION['user_id'])) {
-    header('Location: ' . dirname($_SERVER['PHP_SELF']) . '/../login.php');
+// Authentication and authorization
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['username'])) {
+    header('Location: ' . ARMIS_BASE_URL . '/login.php');
     exit();
 }
+
+if (!hasModuleAccess('admin')) {
+    header('Location: ' . ARMIS_BASE_URL . '/unauthorized.php?module=admin');
+    exit();
+}
+
+// Initialize services
+$pdo = getDbConnection();
+$adminService = new AdminService($pdo);
+
+// Get system status and metrics
+$systemData = [
+    'system_health' => $adminService->getSystemHealth(),
+    'performance_metrics' => $adminService->getPerformanceMetrics(),
+    'security_status' => $adminService->getSecurityStatus(),
+    'user_activity' => $adminService->getUserActivity(),
+    'system_logs' => $adminService->getRecentSystemLogs(10),
+    'database_status' => $adminService->getDatabaseStatus(),
+    'module_status' => $adminService->getModuleStatus()
+];
+
+// Page title
+$pageTitle = 'System Administration Dashboard';
+
+// Include the enhanced dashboard
+include __DIR__ . '/enhanced_dashboard.php';
+?>
 
 // Check if user has access to admin module
 requireModuleAccess('admin');
