@@ -11,10 +11,11 @@ if (!defined('ARMIS_DB_CONFIG')) {
 }
 
 // Database configuration constants
-if (!defined('DB_HOST')) define('DB_HOST', 'localhost');
+if (!defined('DB_HOST')) define('DB_HOST', '127.0.0.1');
+if (!defined('DB_PORT')) define('DB_PORT', '3307');
 if (!defined('DB_NAME')) define('DB_NAME', 'armis1');
 if (!defined('DB_USER')) define('DB_USER', 'root');
-if (!defined('DB_PASS')) define('DB_PASS', '');
+if (!defined('DB_PASS')) define('DB_PASS', 'root123');
 if (!defined('DB_CHARSET')) define('DB_CHARSET', 'utf8mb4');
 
 /**
@@ -26,7 +27,8 @@ function getDbConnection() {
     
     if ($pdo === null) {
         try {
-            $dsn = "mysql:host=" . DB_HOST . ";port=3306;dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
+            $port = defined('DB_PORT') ? DB_PORT : '3306';
+            $dsn = "mysql:host=" . DB_HOST . ";port=" . $port . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
             $options = [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
