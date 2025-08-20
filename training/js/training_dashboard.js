@@ -581,6 +581,6 @@ class TrainingDashboard {
 }
 
 // Initialize dashboard when DOM is ready
-$(document).ready(function() {
+document.addEventListener('DOMContentLoaded', function() {
     window.trainingDashboard = new TrainingDashboard();
 });
