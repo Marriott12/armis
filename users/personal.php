@@ -56,6 +56,10 @@ try {
                 'height' => $_POST['height'] ?? null,
                 'email' => $_POST['email'] ?? null,
                 'tel' => $_POST['tel'] ?? null,
+                'combatSize' => $_POST['combatSize'] ?? null,
+                'bsize' => $_POST['bsize'] ?? null,
+                'ssize' => $_POST['ssize'] ?? null,
+                'hdress' => $_POST['hdress'] ?? null,
                 'updated_at' => $now
             ];
             $set = [];
@@ -191,6 +195,8 @@ try {
                         $contactData[] = [
                             'type' => $type,
                             'value' => $_POST['contact_values'][$index],
+                            'contact_name' => $_POST['contact_names'][$index] ?? '',
+                            'relationship' => $_POST['contact_relationships'][$index] ?? '',
                             'is_primary' => isset($_POST['contact_primary'][$index])
                         ];
                     }
@@ -335,6 +341,68 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         <input type="number" class="form-control" name="height" value="<?= htmlspecialchars($userData->height ?? '') ?>" min="100" max="250">
                                     </div>
                                 </div>
+                                
+                                <!-- Military Sizing Information -->
+                                <div class="row">
+                                    <div class="col-12 mb-2">
+                                        <h6 class="text-muted"><i class="fas fa-ruler"></i> Military Sizing Information</h6>
+                                        <p class="small text-muted mb-2">These sizes are used for uniform and equipment allocation</p>
+                                        <hr class="my-2">
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-3 mb-3">
+                                        <label class="form-label">Combat Size</label>
+                                        <select class="form-select" name="combatSize">
+                                            <option value="">Select Size</option>
+                                            <?php 
+                                            $combatSizes = [
+                                                'XS' => 'Extra Small (XS)',
+                                                'S' => 'Small (S)', 
+                                                'M' => 'Medium (M)',
+                                                'L' => 'Large (L)',
+                                                'XL' => 'Extra Large (XL)',
+                                                'XXL' => '2X Large (XXL)',
+                                                '3XL' => '3X Large (3XL)',
+                                                '4XL' => '4X Large (4XL)'
+                                            ];
+                                            foreach ($combatSizes as $value => $label): ?>
+                                                <option value="<?= $value ?>" <?= ($userData->combatSize ?? '') === $value ? 'selected' : '' ?>><?= $label ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <label class="form-label">Boot Size</label>
+                                        <select class="form-select" name="bsize">
+                                            <option value="">Select Size</option>
+                                            <?php 
+                                            for ($i = 4; $i <= 15; $i++): ?>
+                                                <option value="<?= $i ?>" <?= ($userData->bsize ?? '') == $i ? 'selected' : '' ?>><?= $i ?></option>
+                                            <?php endfor; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <label class="form-label">Staff Shoe Size</label>
+                                        <select class="form-select" name="ssize">
+                                            <option value="">Select Size</option>
+                                            <?php 
+                                            for ($i = 4; $i <= 15; $i++): ?>
+                                                <option value="<?= $i ?>" <?= ($userData->ssize ?? '') == $i ? 'selected' : '' ?>><?= $i ?></option>
+                                            <?php endfor; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <label class="form-label">Head Dress Size</label>
+                                        <select class="form-select" name="hdress">
+                                            <option value="">Select Size</option>
+                                            <?php 
+                                            for ($i = 52; $i <= 65; $i++): ?>
+                                                <option value="<?= $i ?>" <?= ($userData->hdress ?? '') == $i ? 'selected' : '' ?>><?= $i ?></option>
+                                            <?php endfor; ?>
+                                        </select>
+                                    </div>
+                                </div>
+                                
                                 <div class="row">
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label">Email Address</label>
@@ -547,13 +615,22 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="card">
                         <div class="card-header">
                             <h5 class="mb-0"><i class="fas fa-address-book"></i> Contact Information</h5>
+                            <p class="mb-0 small text-muted">Add emergency contacts, family members, and other important contacts</p>
                         </div>
                         <div class="card-body">
-                            <form method="POST">
+                            <form method="POST" onsubmit="return validateContactFields()">
+                                <div class="row mb-2">
+                                    <div class="col-md-2"><strong>Type</strong></div>
+                                    <div class="col-md-3"><strong>Contact Value</strong></div>
+                                    <div class="col-md-2"><strong>Contact Name</strong></div>
+                                    <div class="col-md-2"><strong>Relationship</strong></div>
+                                    <div class="col-md-2"><strong>Primary</strong></div>
+                                    <div class="col-md-1"><strong>Action</strong></div>
+                                </div>
                                 <div id="contactList">
                                     <?php if (empty($contactInfo)): ?>
                                         <div class="row mb-3">
-                                            <div class="col-md-3">
+                                            <div class="col-md-2">
                                                 <select class="form-select" name="contact_types[]">
                                                     <option value="">Select Type</option>
                                                     <option value="Mobile">Mobile</option>
@@ -563,8 +640,14 @@ document.addEventListener('DOMContentLoaded', function() {
                                                     <option value="Emergency">Emergency</option>
                                                 </select>
                                             </div>
-                                            <div class="col-md-6">
+                                            <div class="col-md-3">
                                                 <input type="text" class="form-control" name="contact_values[]" placeholder="Contact Value">
+                                            </div>
+                                            <div class="col-md-2">
+                                                <input type="text" class="form-control" name="contact_names[]" placeholder="Contact Name">
+                                            </div>
+                                            <div class="col-md-2">
+                                                <input type="text" class="form-control" name="contact_relationships[]" placeholder="Relationship">
                                             </div>
                                             <div class="col-md-2">
                                                 <div class="form-check">
@@ -581,7 +664,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <?php else: ?>
                                         <?php foreach ($contactInfo as $contact): ?>
                                             <div class="row mb-3">
-                                                <div class="col-md-3">
+                                                <div class="col-md-2">
                                                     <select class="form-select" name="contact_types[]">
                                                         <option value="">Select Type</option>
                                                         <option value="Mobile" <?= $contact->contact_type === 'Mobile' ? 'selected' : '' ?>>Mobile</option>
@@ -591,8 +674,14 @@ document.addEventListener('DOMContentLoaded', function() {
                                                         <option value="Emergency" <?= $contact->contact_type === 'Emergency' ? 'selected' : '' ?>>Emergency</option>
                                                     </select>
                                                 </div>
-                                                <div class="col-md-6">
+                                                <div class="col-md-3">
                                                     <input type="text" class="form-control" name="contact_values[]" value="<?= htmlspecialchars($contact->contact_value ?? '') ?>" placeholder="Contact Value">
+                                                </div>
+                                                <div class="col-md-2">
+                                                    <input type="text" class="form-control" name="contact_names[]" value="<?= htmlspecialchars($contact->contact_name ?? '') ?>" placeholder="Contact Name">
+                                                </div>
+                                                <div class="col-md-2">
+                                                    <input type="text" class="form-control" name="contact_relationships[]" value="<?= htmlspecialchars($contact->relationship ?? '') ?>" placeholder="Relationship">
                                                 </div>
                                                 <div class="col-md-2">
                                                     <div class="form-check">
@@ -623,6 +712,82 @@ document.addEventListener('DOMContentLoaded', function() {
                                     </div>
                                 </div>
                             </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Help & Recommendations Section -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="card border-info">
+                        <div class="card-header bg-info text-white">
+                            <h6 class="mb-0"><i class="fas fa-lightbulb"></i> Recommendations & Tips</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6 class="text-primary"><i class="fas fa-ruler"></i> Military Sizing Guidelines</h6>
+                                    <ul class="small mb-3">
+                                        <li><strong>Combat Size:</strong> Used for combat uniforms and protective gear</li>
+                                        <li><strong>Boot Size:</strong> Military boots and protective footwear</li>
+                                        <li><strong>Staff Shoe Size:</strong> Dress shoes and formal footwear</li>
+                                        <li><strong>Head Dress Size:</strong> Berets, caps, and ceremonial headwear (measured in cm)</li>
+                                    </ul>
+                                    
+                                    <h6 class="text-success"><i class="fas fa-phone"></i> Contact Information Best Practices</h6>
+                                    <ul class="small mb-3">
+                                        <li>Always include at least one <strong>Emergency Contact</strong> with name and relationship</li>
+                                        <li>Keep your <strong>Primary</strong> contact information up to date</li>
+                                        <li>Include multiple contact methods (mobile, email, home)</li>
+                                        <li>For emergency contacts, specify relationship (spouse, parent, sibling, etc.)</li>
+                                    </ul>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6 class="text-warning"><i class="fas fa-exclamation-triangle"></i> Important Notes</h6>
+                                    <ul class="small mb-3">
+                                        <li>Size information is used for uniform and equipment allocation</li>
+                                        <li>Accurate sizing helps prevent delays in equipment issue</li>
+                                        <li>Contact information is used for personnel administration and emergencies</li>
+                                        <li>Regular updates ensure you receive important communications</li>
+                                    </ul>
+                                    
+                                    <h6 class="text-info"><i class="fas fa-shield-alt"></i> Privacy & Security</h6>
+                                    <ul class="small mb-0">
+                                        <li>Your personal information is protected and used only for official purposes</li>
+                                        <li>Emergency contacts will only be contacted in genuine emergencies</li>
+                                        <li>Size information is used solely for equipment allocation</li>
+                                        <li>All data is stored securely and accessed only by authorized personnel</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="row mt-3">
+                                <div class="col-12">
+                                    <div class="alert alert-light border border-primary">
+                                        <h6 class="text-primary mb-2"><i class="fas fa-cogs"></i> Future Enhancements</h6>
+                                        <p class="small mb-2">We are continuously improving the system. Upcoming features include:</p>
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <ul class="small mb-0">
+                                                    <li>Automated size recommendations based on measurements</li>
+                                                    <li>Digital uniform fitting appointments</li>
+                                                    <li>Equipment request tracking</li>
+                                                    <li>Contact verification notifications</li>
+                                                </ul>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <ul class="small mb-0">
+                                                    <li>Emergency contact SMS verification</li>
+                                                    <li>Medical information integration</li>
+                                                    <li>Personnel photo management</li>
+                                                    <li>Mobile app for profile updates</li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -670,7 +835,7 @@ function addContact() {
     const newContact = document.createElement('div');
     newContact.className = 'row mb-3';
     newContact.innerHTML = `
-        <div class="col-md-3">
+        <div class="col-md-2">
             <select class="form-select" name="contact_types[]">
                 <option value="">Select Type</option>
                 <option value="Mobile">Mobile</option>
@@ -680,8 +845,14 @@ function addContact() {
                 <option value="Emergency">Emergency</option>
             </select>
         </div>
-        <div class="col-md-6">
+        <div class="col-md-3">
             <input type="text" class="form-control" name="contact_values[]" placeholder="Contact Value">
+        </div>
+        <div class="col-md-2">
+            <input type="text" class="form-control" name="contact_names[]" placeholder="Contact Name">
+        </div>
+        <div class="col-md-2">
+            <input type="text" class="form-control" name="contact_relationships[]" placeholder="Relationship">
         </div>
         <div class="col-md-2">
             <div class="form-check">
@@ -721,6 +892,80 @@ function validateEmail(email) {
 }
 function validatePhone(phone) {
     return /^\+?\d{8,15}$/.test(phone);
+}
+
+// Enhanced validation for new fields
+function validateSizingFields() {
+    const sizingFields = ['combatSize', 'bsize', 'ssize', 'hdress'];
+    let isValid = true;
+    
+    sizingFields.forEach(field => {
+        const element = document.querySelector(`[name="${field}"]`);
+        if (element && element.value) {
+            element.classList.add('is-valid');
+            element.classList.remove('is-invalid');
+        }
+    });
+    
+    return isValid;
+}
+
+// Contact validation with enhanced feedback
+function validateContactFields() {
+    const contactRows = document.querySelectorAll('#contactList .row');
+    let isValid = true;
+    
+    contactRows.forEach(row => {
+        const typeSelect = row.querySelector('[name="contact_types[]"]');
+        const valueInput = row.querySelector('[name="contact_values[]"]');
+        const nameInput = row.querySelector('[name="contact_names[]"]');
+        
+        if (typeSelect && typeSelect.value && valueInput && valueInput.value.trim()) {
+            // Email validation
+            if (typeSelect.value === 'Email') {
+                if (validateEmail(valueInput.value)) {
+                    valueInput.classList.add('is-valid');
+                    valueInput.classList.remove('is-invalid');
+                    clearFieldError(valueInput);
+                } else {
+                    valueInput.classList.add('is-invalid');
+                    valueInput.classList.remove('is-valid');
+                    showFieldError(valueInput, 'Please enter a valid email address');
+                    isValid = false;
+                }
+            }
+            
+            // Phone validation
+            if (['Mobile', 'Home', 'Work', 'Emergency'].includes(typeSelect.value)) {
+                if (validatePhone(valueInput.value)) {
+                    valueInput.classList.add('is-valid');
+                    valueInput.classList.remove('is-invalid');
+                    clearFieldError(valueInput);
+                } else {
+                    valueInput.classList.add('is-invalid');
+                    valueInput.classList.remove('is-valid');
+                    showFieldError(valueInput, 'Please enter a valid phone number');
+                    isValid = false;
+                }
+            }
+            
+            // Emergency contact validation
+            if (typeSelect.value === 'Emergency' && nameInput && !nameInput.value.trim()) {
+                nameInput.classList.add('is-invalid');
+                showFieldError(nameInput, 'Emergency contact name is required');
+                isValid = false;
+            }
+        }
+    });
+    
+    return isValid;
+}
+
+// Enhanced removeContact with confirmation
+function removeContact(button) {
+    if (confirm('Are you sure you want to remove this contact?')) {
+        button.closest('.row').remove();
+    }
 }
 function validateLength(val, max) {
     return val.length <= max;

@@ -1,0 +1,213 @@
+/**
+ * Multi-Step Form Styles for ARMIS Edit Staff
+ */
+
+/* Form Steps Container */
+.form-step {
+    display: none;
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+.form-step.active {
+    display: block;
+}
+
+/* Form Stepper Navigation */
+.form-stepper {
+    margin-bottom: 2rem;
+}
+
+.stepper-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    z-index: 2;
+}
+
+.step-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background-color: #e9ecef;
+    color: #6c757d;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
+    border: 3px solid #e9ecef;
+    transition: all 0.3s ease;
+}
+
+.step-label {
+    font-size: 0.875rem;
+    color: #6c757d;
+    text-align: center;
+    font-weight: 500;
+    transition: color 0.3s ease;
+}
+
+/* Active Step */
+.step.active .step-icon {
+    background-color: #0d6efd;
+    color: white;
+    border-color: #0d6efd;
+    transform: scale(1.1);
+}
+
+.step.active .step-label {
+    color: #0d6efd;
+    font-weight: 600;
+}
+
+/* Completed Step */
+.step.completed .step-icon {
+    background-color: #198754;
+    color: white;
+    border-color: #198754;
+}
+
+.step.completed .step-label {
+    color: #198754;
+}
+
+.step.completed .step-icon::before {
+    content: "✓";
+    font-weight: bold;
+}
+
+/* Step Connectors */
+.stepper-row::before {
+    content: '';
+    position: absolute;
+    top: 25px;
+    left: 50px;
+    right: 50px;
+    height: 3px;
+    background-color: #e9ecef;
+    z-index: 1;
+}
+
+/* Progress Line */
+.stepper-row::after {
+    content: '';
+    position: absolute;
+    top: 25px;
+    left: 50px;
+    height: 3px;
+    background-color: #198754;
+    z-index: 1;
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+/* Step Hover Effects */
+.step:hover .step-icon {
+    transform: scale(1.05);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.step:hover .step-label {
+    color: #0d6efd;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .stepper-row {
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    
+    .step {
+        flex: 1;
+        min-width: 80px;
+    }
+    
+    .step-label {
+        font-size: 0.75rem;
+    }
+    
+    .step-icon {
+        width: 40px;
+        height: 40px;
+        font-size: 1rem;
+    }
+    
+    .stepper-row::before,
+    .stepper-row::after {
+        display: none;
+    }
+}
+
+/* Fade Animation */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Navigation Buttons */
+.step-navigation {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e9ecef;
+}
+
+/* Form Validation Enhancements */
+.form-step .is-invalid {
+    animation: shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+    0%, 20%, 40%, 60%, 80% {
+        transform: translateX(0);
+    }
+    10%, 30%, 50%, 70%, 90% {
+        transform: translateX(-5px);
+    }
+}
+
+/* Card Enhancements for Steps */
+.form-step .card {
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    border: none;
+}
+
+.form-step .card-header {
+    border-radius: 10px 10px 0 0 !important;
+    font-weight: 600;
+}
+
+/* Success States */
+.step-completed-indicator {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    width: 20px;
+    height: 20px;
+    background-color: #198754;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 0.75rem;
+}

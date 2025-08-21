@@ -742,8 +742,8 @@ class UserProfileManager {
             
             // Insert new contact info
             $stmt = $this->pdo->prepare("
-                INSERT INTO staff_contact_info (staff_id, contact_type, contact_value, is_primary, created_at) 
-                VALUES (?, ?, ?, ?, NOW())
+                INSERT INTO staff_contact_info (staff_id, contact_type, contact_value, contact_name, relationship, is_primary, created_at) 
+                VALUES (?, ?, ?, ?, ?, ?, NOW())
             ");
             
             foreach ($contactData as $contact) {
@@ -752,6 +752,8 @@ class UserProfileManager {
                         $this->userId,
                         $contact['type'],
                         $contact['value'],
+                        $contact['contact_name'] ?? null,
+                        $contact['relationship'] ?? null,
                         $contact['is_primary'] ?? false
                     ]);
                 }

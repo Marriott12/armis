@@ -11,12 +11,14 @@ const totalSteps = 5; // Update this if you add more steps
 function goToStep(stepNumber) {
     // Hide all steps
     document.querySelectorAll('.form-step').forEach(step => {
+        step.style.display = 'none';
         step.classList.remove('active');
     });
     
     // Show the target step
     const targetStep = document.getElementById(`step${stepNumber}`);
     if (targetStep) {
+        targetStep.style.display = 'block';
         targetStep.classList.add('active');
         currentStep = stepNumber;
         
@@ -31,20 +33,16 @@ function goToStep(stepNumber) {
     updateNavigationButtons();
 }
 
-// Function to go to the next step
-function nextStep() {
-    if (currentStep < totalSteps) {
-        if (validateCurrentStep()) {
-            goToStep(currentStep + 1);
-        }
+// Function to go to the next step (called by nextStep buttons)
+function nextStep(stepNumber) {
+    if (validateCurrentStep()) {
+        goToStep(stepNumber);
     }
 }
 
-// Function to go to the previous step
-function prevStep() {
-    if (currentStep > 1) {
-        goToStep(currentStep - 1);
-    }
+// Function to go to the previous step (called by previousStep buttons)
+function previousStep(stepNumber) {
+    goToStep(stepNumber);
 }
 
 // Function to validate the current step before proceeding
@@ -110,27 +108,19 @@ function updateStepperUI(stepNumber) {
 
 // Function to update the visibility of navigation buttons
 function updateNavigationButtons() {
-    const prevButton = document.getElementById('prevStepBtn');
-    const nextButton = document.getElementById('nextStepBtn');
-    const submitButton = document.getElementById('submitFormBtn');
-    
-    if (prevButton) {
-        prevButton.style.display = currentStep === 1 ? 'none' : 'inline-block';
-    }
-    
-    if (nextButton) {
-        nextButton.style.display = currentStep === totalSteps ? 'none' : 'inline-block';
-    }
-    
-    if (submitButton) {
-        submitButton.style.display = currentStep === totalSteps ? 'inline-block' : 'none';
-    }
+    // This function is no longer needed since we use inline navigation buttons
+    // but we keep it for compatibility
 }
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
-    // Set up initial step
-    goToStep(1);
+    // Set up initial step - hide all except first
+    for (let i = 2; i <= totalSteps; i++) {
+        const step = document.getElementById(`step${i}`);
+        if (step) {
+            step.style.display = 'none';
+        }
+    }
     
     // Set up event listeners for step navigation
     document.querySelectorAll('.step').forEach((step, index) => {
@@ -143,15 +133,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
-    // Set up event listeners for navigation buttons
-    const prevButton = document.getElementById('prevStepBtn');
-    const nextButton = document.getElementById('nextStepBtn');
-    
-    if (prevButton) {
-        prevButton.addEventListener('click', prevStep);
-    }
-    
-    if (nextButton) {
-        nextButton.addEventListener('click', nextStep);
-    }
+    // Initialize stepper UI
+    updateStepperUI(1);
 });

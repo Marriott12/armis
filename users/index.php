@@ -18,6 +18,7 @@ $currentPage = "profile";
 $sidebarLinks = [
     ['title' => 'My Profile', 'url' => '/Armis2/users/index.php', 'icon' => 'user', 'page' => 'profile'],
     ['title' => 'Personal Info', 'url' => '/Armis2/users/personal.php', 'icon' => 'id-card', 'page' => 'personal'],
+    ['title' => 'Analytics Dashboard', 'url' => '/Armis2/users/analytics_dashboard.php', 'icon' => 'chart-line', 'page' => 'analytics'],
     ['title' => 'Service Record', 'url' => '/Armis2/users/service.php', 'icon' => 'medal', 'page' => 'service'],
     ['title' => 'Training History', 'url' => '/Armis2/users/training.php', 'icon' => 'graduation-cap', 'page' => 'training'],
     ['title' => 'Family Members', 'url' => '/Armis2/users/family.php', 'icon' => 'users', 'page' => 'family'],

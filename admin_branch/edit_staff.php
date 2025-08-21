@@ -131,19 +131,40 @@ function validateDOB($dob) {
 
 function logStaffChange($svcNo, $oldData, $newData, $userId, $userIP) {
     $changes = [];
-    $fields = ['first_name', 'last_name', 'rank_id', 'unit_id', 'NRC', 'DOB', 'gender', 'svcStatus'];
+    $fields = ['first_name', 'last_name', 'rank_id', 'unit_id', 'corps_id', 'NRC', 'DOB', 'gender', 'svcStatus'];
     foreach ($fields as $field) {
-        if (isset($oldData->$field) && isset($newData[$field]) && $oldData->$field != $newData[$field]) {
+        $oldValue = isset($oldData->$field) ? $oldData->$field : null;
+        $newValue = isset($newData[$field]) ? $newData[$field] : null;
+        if ($oldValue != $newValue) {
             $changes[] = [
                 'field' => $field,
-                'old_value' => $oldData->$field,
-                'new_value' => $newData[$field]
+                'old_value' => $oldValue,
+                'new_value' => $newValue
             ];
         }
     }
     if (!empty($changes)) {
         try {
             $pdo = getDbConnection();
+            
+            // Check if staff_edit_log table exists, create if not
+            $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_edit_log'")->rowCount() > 0;
+            if (!$tableExists) {
+                $createSql = "
+                    CREATE TABLE staff_edit_log (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        service_number VARCHAR(50) NOT NULL,
+                        edited_by INT NOT NULL,
+                        edited_at DATETIME NOT NULL,
+                        user_ip VARCHAR(45),
+                        changes JSON,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ";
+                $pdo->exec($createSql);
+                error_log("Created staff_edit_log table");
+            }
+            
             $stmt = $pdo->prepare("INSERT INTO staff_edit_log (service_number, edited_by, edited_at, user_ip, changes) VALUES (?, ?, ?, ?, ?)");
             $stmt->execute([
                 $svcNo,
@@ -154,6 +175,7 @@ function logStaffChange($svcNo, $oldData, $newData, $userId, $userIP) {
             ]);
         } catch (Exception $e) {
             error_log("Failed to log staff changes: " . $e->getMessage());
+            // Don't throw exception, just log it
         }
     }
 }
@@ -476,117 +498,277 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                     // Debug: Log the update operation
                     error_log("Starting staff update for service number: " . $svcNo);
                     
+                    // Log staff changes (this won't throw exceptions now)
                     logStaffChange($svcNo, $originalStaff, $updateData, $user->data()->id ?? 0, $_SERVER['REMOTE_ADDR'] ?? '');
-                    $updateSql = "UPDATE staff SET first_name = ?, last_name = ?, rank_id = ?, unit_id = ?, corps_id = ?, NRC = ?, DOB = ?, gender = ?, svcStatus = ?, tel = ?, email = ?, address = ?, nok = ?, nokTel = ?, nokNrc = ?, nokRelat = ?, profession = ?, trade = ?, specialization = ?, combatSize = ?, bsize = ?, ssize = ?, hdress = ?, attestDate = ?, lastPromotion = ?, postingHistory = ?, awards = ?, disciplinaryRecord = ? WHERE service_number = ?";
-                    $updateParams = [$fname, $lname, $rankID, $unitID, $corpsID, $NRC, $DOB, $gender, $svcStatus, $tel, $email, $address, $nok, $nokTel, $nokNrc, $nokRelat, $profession, $trade, $specialization, $combatSize, $bsize, $ssize, $hdress, $attestDate, $lastPromotion, $postingHistory, $awards, $disciplinaryRecord, $svcNo];
+                    
+                    // Get current staff table structure to build dynamic update query
+                    $columns = $pdo->query('DESCRIBE staff')->fetchAll(PDO::FETCH_ASSOC);
+                    $existingColumns = array_column($columns, 'Field');
+                    
+                    // Map form fields to database columns
+                    $fieldMap = [
+                        'first_name' => $fname,
+                        'last_name' => $lname,
+                        'rank_id' => $rankID,
+                        'unit_id' => $unitID,
+                        'corps_id' => $corpsID,
+                        'NRC' => $NRC,
+                        'DOB' => $DOB,
+                        'gender' => $gender,
+                        'svcStatus' => $svcStatus,
+                        'tel' => $tel,
+                        'email' => $email,
+                        'address' => $address,
+                        'nok' => $nok,
+                        'nokTel' => $nokTel,
+                        'nokNrc' => $nokNrc,
+                        'nokRelat' => $nokRelat,
+                        'profession' => $profession,
+                        'trade' => $trade,
+                        'specialization' => $specialization,
+                        'combatSize' => $combatSize,
+                        'bsize' => $bsize,
+                        'ssize' => $ssize,
+                        'hdress' => $hdress,
+                        'attestDate' => $attestDate,
+                        'lastPromotion' => $lastPromotion,
+                        'postingHistory' => $postingHistory,
+                        'awards' => $awards,
+                        'disciplinaryRecord' => $disciplinaryRecord
+                    ];
+                    
+                    // Build dynamic update query with only existing columns
+                    $updateFields = [];
+                    $updateParams = [];
+                    
+                    foreach ($fieldMap as $column => $value) {
+                        if (in_array($column, $existingColumns)) {
+                            $updateFields[] = "$column = ?";
+                            $updateParams[] = $value;
+                        } else {
+                            error_log("Skipping missing column: $column");
+                        }
+                    }
+                    
+                    // Add service_number for WHERE clause
+                    $updateParams[] = $svcNo;
+                    
+                    $updateSql = "UPDATE staff SET " . implode(', ', $updateFields) . " WHERE service_number = ?";
                     
                     // Debug: Log the SQL and parameters
-                    error_log("Update SQL: " . $updateSql);
+                    error_log("Dynamic Update SQL: " . $updateSql);
                     error_log("Update Params: " . json_encode($updateParams));
                     
                     $stmt = $pdo->prepare($updateSql);
-                    $stmt->execute($updateParams);
+                    if (!$stmt->execute($updateParams)) {
+                        throw new Exception("Failed to update main staff record: " . implode(", ", $stmt->errorInfo()));
+                    }
                     
-                    error_log("Rows affected by main update: " . $stmt->rowCount());
+                    $rowsAffected = $stmt->rowCount();
+                    error_log("Rows affected by main update: " . $rowsAffected);
                     
-                    // Debug dynamic fields
-                    $operations = $_POST['operations'] ?? [];
-                    $deployments = $_POST['deployments'] ?? [];
-                    $education = $_POST['education'] ?? [];
-                    $skills = $_POST['skills'] ?? [];
+                    if ($rowsAffected === 0) {
+                        throw new Exception("No staff record found with service number: " . $svcNo);
+                    }
                     
-                    error_log("Processing operations data: " . json_encode($operations));
-                    error_log("Processing deployments data: " . json_encode($deployments));
-                    error_log("Processing education data: " . json_encode($education));
-                    error_log("Processing skills data: " . json_encode($skills));
-
                     // Get staff_id for child tables
                     $stmtStaffId = $pdo->prepare("SELECT id FROM staff WHERE service_number = ?");
                     $stmtStaffId->execute([$svcNo]);
                     $staffId = $stmtStaffId->fetchColumn();
-
-                    // --- Operations ---
-                    error_log("Processing operations for staff ID: " . $staffId);
-                    $pdo->prepare("DELETE FROM staff_operations WHERE staff_id = ?")->execute([$staffId]);
-                    $opStmt = $pdo->prepare("INSERT INTO staff_operations (staff_id, operation_id, role, start_date, end_date, performance_rating, remarks, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())");
-                    foreach ($_POST['operations'] ?? [] as $index => $op) {
-                        error_log("Processing operation " . ($index + 1) . ": " . json_encode($op));
-                        if (!empty($op['operation_id'])) {
-                            $opStmt->execute([
-                                $staffId,
-                                $op['operation_id'] ?? '',
-                                $op['role'] ?? '',
-                                $op['start_date'] ?? null,
-                                $op['end_date'] ?? null,
-                                $op['performance_rating'] ?? null,
-                                $op['remarks'] ?? ''
-                            ]);
-                            error_log("Operation insert result: " . ($opStmt->rowCount() > 0 ? "Success" : "Failed"));
-                        } else {
-                            error_log("Skipping operation due to missing operation_id");
-                        }
+                    
+                    if (!$staffId) {
+                        throw new Exception("Could not retrieve staff ID for service number: " . $svcNo);
                     }
 
-                    // --- Deployments ---
-                    error_log("Processing deployments for staff ID: " . $staffId);
-                    $pdo->prepare("DELETE FROM staff_deployments WHERE staff_id = ?")->execute([$staffId]);
-                    $depStmt = $pdo->prepare("INSERT INTO staff_deployments (staff_id, deployment_name, mission_type, location, country, start_date, end_date, duration_months, deployment_status, rank_during_deployment, role_during_deployment, commanding_officer, deployment_allowance, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
-                    foreach ($_POST['deployments'] ?? [] as $index => $dep) {
-                        error_log("Processing deployment " . ($index + 1) . ": " . json_encode($dep));
-                        if (!empty($dep['deployment_name'])) {
-                            $depStmt->execute([
-                                $staffId,
-                                $dep['deployment_name'] ?? '',
-                                $dep['mission_type'] ?? '',
-                                $dep['location'] ?? '',
-                                $dep['country'] ?? '',
-                                $dep['start_date'] ?? null,
-                                $dep['end_date'] ?? null,
-                                $dep['duration_months'] ?? null,
-                                $dep['deployment_status'] ?? '',
-                                $dep['rank_during_deployment'] ?? '',
-                                $dep['role_during_deployment'] ?? '',
-                                $dep['commanding_officer'] ?? '',
-                                $dep['deployment_allowance'] ?? null,
-                                $dep['notes'] ?? ''
-                            ]);
-                            error_log("Deployment insert result: " . ($depStmt->rowCount() > 0 ? "Success" : "Failed"));
-                        } else {
-                            error_log("Skipping deployment due to missing deployment_name");
+                    // --- Operations (with error handling) ---
+                    try {
+                        error_log("Processing operations for staff ID: " . $staffId);
+                        
+                        // Check if table exists
+                        $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_operations'")->rowCount() > 0;
+                        if (!$tableExists) {
+                            $createSql = "
+                                CREATE TABLE staff_operations (
+                                    id INT AUTO_INCREMENT PRIMARY KEY,
+                                    staff_id INT NOT NULL,
+                                    operation_id VARCHAR(100),
+                                    role VARCHAR(100),
+                                    start_date DATE,
+                                    end_date DATE,
+                                    performance_rating VARCHAR(50),
+                                    remarks TEXT,
+                                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                    FOREIGN KEY (staff_id) REFERENCES staff(id) ON DELETE CASCADE
+                                )
+                            ";
+                            $pdo->exec($createSql);
+                            error_log("Created staff_operations table");
                         }
+                        
+                        $pdo->prepare("DELETE FROM staff_operations WHERE staff_id = ?")->execute([$staffId]);
+                        $opStmt = $pdo->prepare("INSERT INTO staff_operations (staff_id, operation_id, role, start_date, end_date, performance_rating, remarks, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())");
+                        foreach ($_POST['operations'] ?? [] as $index => $op) {
+                            if (!empty($op['operation_id'])) {
+                                $opStmt->execute([
+                                    $staffId,
+                                    $op['operation_id'] ?? '',
+                                    $op['role'] ?? '',
+                                    $op['start_date'] ?? null,
+                                    $op['end_date'] ?? null,
+                                    $op['performance_rating'] ?? null,
+                                    $op['remarks'] ?? ''
+                                ]);
+                            }
+                        }
+                    } catch (Exception $e) {
+                        error_log("Error processing operations: " . $e->getMessage());
+                        // Continue processing - don't fail the entire update for child table issues
                     }
 
-                    // --- Education ---
-                    error_log("Processing education for staff ID: " . $staffId);
-                    $pdo->prepare("DELETE FROM staff_education WHERE staff_id = ?")->execute([$staffId]);
-                    $eduStmt = $pdo->prepare("INSERT INTO staff_education (staff_id, institution, qualification, level, field_of_study, year_started, year_completed, grade_obtained, is_highest_qualification, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
-                    foreach ($_POST['education'] ?? [] as $index => $edu) {
-                        error_log("Processing education " . ($index + 1) . ": " . json_encode($edu));
-                        if (!empty($edu['institution'])) {
-                            $eduStmt->execute([
-                                $staffId,
-                                $edu['institution'] ?? '',
-                                $edu['qualification'] ?? '',
-                                $edu['level'] ?? '',
-                                $edu['field_of_study'] ?? '',
-                                $edu['year_started'] ?? null,
-                                $edu['year_completed'] ?? null,
-                                $edu['grade_obtained'] ?? '',
-                                !empty($edu['is_highest_qualification']) ? 1 : 0
-                            ]);
-                            error_log("Education insert result: " . ($eduStmt->rowCount() > 0 ? "Success" : "Failed"));
-                        } else {
-                            error_log("Skipping education due to missing institution");
+                    // --- Deployments (with error handling) ---
+                    try {
+                        error_log("Processing deployments for staff ID: " . $staffId);
+                        
+                        // Check if table exists
+                        $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_deployments'")->rowCount() > 0;
+                        if (!$tableExists) {
+                            $createSql = "
+                                CREATE TABLE staff_deployments (
+                                    id INT AUTO_INCREMENT PRIMARY KEY,
+                                    staff_id INT NOT NULL,
+                                    deployment_name VARCHAR(200),
+                                    mission_type VARCHAR(100),
+                                    location VARCHAR(100),
+                                    country VARCHAR(100),
+                                    start_date DATE,
+                                    end_date DATE,
+                                    duration_months INT,
+                                    deployment_status VARCHAR(50),
+                                    rank_during_deployment VARCHAR(50),
+                                    role_during_deployment VARCHAR(100),
+                                    commanding_officer VARCHAR(100),
+                                    deployment_allowance DECIMAL(10,2),
+                                    notes TEXT,
+                                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                                    FOREIGN KEY (staff_id) REFERENCES staff(id) ON DELETE CASCADE
+                                )
+                            ";
+                            $pdo->exec($createSql);
+                            error_log("Created staff_deployments table");
                         }
+                        
+                        $pdo->prepare("DELETE FROM staff_deployments WHERE staff_id = ?")->execute([$staffId]);
+                        $depStmt = $pdo->prepare("INSERT INTO staff_deployments (staff_id, deployment_name, mission_type, location, country, start_date, end_date, duration_months, deployment_status, rank_during_deployment, role_during_deployment, commanding_officer, deployment_allowance, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+                        foreach ($_POST['deployments'] ?? [] as $index => $dep) {
+                            if (!empty($dep['deployment_name'])) {
+                                $depStmt->execute([
+                                    $staffId,
+                                    $dep['deployment_name'] ?? '',
+                                    $dep['mission_type'] ?? '',
+                                    $dep['location'] ?? '',
+                                    $dep['country'] ?? '',
+                                    $dep['start_date'] ?? null,
+                                    $dep['end_date'] ?? null,
+                                    $dep['duration_months'] ?? null,
+                                    $dep['deployment_status'] ?? '',
+                                    $dep['rank_during_deployment'] ?? '',
+                                    $dep['role_during_deployment'] ?? '',
+                                    $dep['commanding_officer'] ?? '',
+                                    $dep['deployment_allowance'] ?? null,
+                                    $dep['notes'] ?? ''
+                                ]);
+                            }
+                        }
+                    } catch (Exception $e) {
+                        error_log("Error processing deployments: " . $e->getMessage());
+                        // Continue processing
+                    }
+
+                    // --- Education (with error handling) ---
+                    try {
+                        error_log("Processing education for staff ID: " . $staffId);
+                        
+                        // Check if table exists
+                        $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_education'")->rowCount() > 0;
+                        if (!$tableExists) {
+                            $createSql = "
+                                CREATE TABLE staff_education (
+                                    id INT AUTO_INCREMENT PRIMARY KEY,
+                                    staff_id INT NOT NULL,
+                                    institution VARCHAR(200),
+                                    qualification VARCHAR(100),
+                                    level VARCHAR(50),
+                                    field_of_study VARCHAR(100),
+                                    year_started YEAR,
+                                    year_completed YEAR,
+                                    grade_obtained VARCHAR(20),
+                                    is_highest_qualification BOOLEAN DEFAULT FALSE,
+                                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                                    FOREIGN KEY (staff_id) REFERENCES staff(id) ON DELETE CASCADE
+                                )
+                            ";
+                            $pdo->exec($createSql);
+                            error_log("Created staff_education table");
+                        }
+                        
+                        $pdo->prepare("DELETE FROM staff_education WHERE staff_id = ?")->execute([$staffId]);
+                        $eduStmt = $pdo->prepare("INSERT INTO staff_education (staff_id, institution, qualification, level, field_of_study, year_started, year_completed, grade_obtained, is_highest_qualification, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+                        foreach ($_POST['education'] ?? [] as $index => $edu) {
+                            if (!empty($edu['institution'])) {
+                                $eduStmt->execute([
+                                    $staffId,
+                                    $edu['institution'] ?? '',
+                                    $edu['qualification'] ?? '',
+                                    $edu['level'] ?? '',
+                                    $edu['field_of_study'] ?? '',
+                                    $edu['year_started'] ?? null,
+                                    $edu['year_completed'] ?? null,
+                                    $edu['grade_obtained'] ?? '',
+                                    !empty($edu['is_highest_qualification']) ? 1 : 0
+                                ]);
+                            }
+                        }
+                    } catch (Exception $e) {
+                        error_log("Error processing education: " . $e->getMessage());
+                        // Continue processing
                     }
                     
-                    // --- Skills ---
-                    error_log("Processing skills for staff ID: " . $staffId);
-                    if ($pdo->query("SHOW TABLES LIKE 'staff_skills'")->rowCount()) {
+                    // --- Skills (with error handling) ---
+                    try {
+                        error_log("Processing skills for staff ID: " . $staffId);
+                        
+                        // Check if table exists
+                        $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_skills'")->rowCount() > 0;
+                        if (!$tableExists) {
+                            $createSql = "
+                                CREATE TABLE staff_skills (
+                                    id INT AUTO_INCREMENT PRIMARY KEY,
+                                    staff_id INT NOT NULL,
+                                    course_name VARCHAR(200),
+                                    course_type VARCHAR(100),
+                                    institution VARCHAR(200),
+                                    start_date DATE,
+                                    end_date DATE,
+                                    duration_days INT,
+                                    certificate_number VARCHAR(100),
+                                    grade_obtained VARCHAR(20),
+                                    location VARCHAR(100),
+                                    cost DECIMAL(10,2),
+                                    sponsored_by VARCHAR(100),
+                                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                                    FOREIGN KEY (staff_id) REFERENCES staff(id) ON DELETE CASCADE
+                                )
+                            ";
+                            $pdo->exec($createSql);
+                            error_log("Created staff_skills table");
+                        }
+                        
                         $pdo->prepare("DELETE FROM staff_skills WHERE staff_id = ?")->execute([$staffId]);
                         $skillStmt = $pdo->prepare("INSERT INTO staff_skills (staff_id, course_name, course_type, institution, start_date, end_date, duration_days, certificate_number, grade_obtained, location, cost, sponsored_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
                         foreach ($_POST['skills'] ?? [] as $index => $skill) {
-                            error_log("Processing skill " . ($index + 1) . ": " . json_encode($skill));
                             if (!empty($skill['course_name'])) {
                                 $skillStmt->execute([
                                     $staffId,
@@ -602,13 +784,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                                     $skill['cost'] ?? null,
                                     $skill['sponsored_by'] ?? ''
                                 ]);
-                                error_log("Skill insert result: " . ($skillStmt->rowCount() > 0 ? "Success" : "Failed"));
-                            } else {
-                                error_log("Skipping skill due to missing course_name");
                             }
                         }
-                    } else {
-                        error_log("staff_skills table does not exist, skipping skills processing");
+                    } catch (Exception $e) {
+                        error_log("Error processing skills: " . $e->getMessage());
+                        // Continue processing
                     }
 
                     $pdo->commit();
@@ -620,7 +800,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                 } catch (Exception $e) {
                     $pdo->rollBack();
                     error_log("Edit error by user {$user->data()->id}: " . $e->getMessage());
-                    $errors[] = "Error updating staff record. Please try again or contact system administrator.";
+                    
+                    // More specific error messages
+                    if (strpos($e->getMessage(), 'Column not found') !== false) {
+                        $errors[] = "Database schema error: " . $e->getMessage() . ". The system has been updated to handle missing columns. Please try again.";
+                    } elseif (strpos($e->getMessage(), 'Duplicate entry') !== false) {
+                        $errors[] = "This staff member already exists with the same details.";
+                    } else {
+                        $errors[] = "Error updating staff record: " . $e->getMessage() . ". Please check the logs or contact system administrator.";
+                    }
                 }
             }
         }
@@ -660,9 +848,9 @@ function getRecentActivity($limit = 10) {
     try {
         $stmt = $pdo->prepare("
             SELECT 
-                sel.service_number as svcNo,
-                s.first_name as fname,
-                s.last_name as lname,
+                sel.service_number,
+                s.first_name,
+                s.last_name,
                 sel.edited_by,
                 sel.edited_at,
                 sel.changes,
@@ -799,6 +987,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <link rel="stylesheet" href="/Armis2/assets/css/custom-icons.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css">
+<link rel="stylesheet" href="/Armis2/admin_branch/css/form-step-styles.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
 <script src="/Armis2/assets/js/edit_staff_support.js"></script>
 <div class="content-wrapper with-sidebar">
@@ -1005,7 +1194,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
                 
                 <!-- Recent Activity -->
-                <?php if (!empty($recentActivity)): ?>
+                <?php if (!empty($recentActivity) && is_array($recentActivity)): ?>
                 <div class="card mb-4">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <h6 class="mb-0">Recent Staff Updates</h6>
@@ -1018,16 +1207,16 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <div class="timeline-marker"></div>
                                     <div class="timeline-content">
                                         <h6 class="mb-1">
-                                            <?=htmlspecialchars($activity->first_name . ' ' . $activity->last_name)?>
-                                            <small class="text-muted">(<?=htmlspecialchars($activity->service_number)?>)</small>
+                                            <?=htmlspecialchars(($activity->first_name ?? 'Unknown') . ' ' . ($activity->last_name ?? 'Staff'))?>
+                                            <small class="text-muted">(<?=htmlspecialchars($activity->service_number ?? 'N/A')?>)</small>
                                         </h6>
                                         <p class="mb-1">
                                             Updated by: <?=htmlspecialchars($activity->edited_by_username ?? 'Unknown')?>
                                         </p>
                                         <small class="text-muted">
-                                            <?=date('M j, Y g:i A', strtotime($activity->edited_at))?>
+                                            <?=isset($activity->edited_at) ? date('M j, Y g:i A', strtotime($activity->edited_at)) : 'Unknown date'?>
                                         </small>
-                                        <?php if ($activity->changes): ?>
+                                        <?php if (isset($activity->changes) && $activity->changes): ?>
                                             <div class="mt-2">
                                                 <?php 
                                                 $changes = json_decode($activity->changes, true);
@@ -1481,235 +1670,261 @@ document.addEventListener('DOMContentLoaded', function() {
                 </style>
             <?php else: ?>
                 <form method="post" id="editStaffForm" autocomplete="off" aria-label="Edit Staff Member" enctype="multipart/form-data">
-                    <input type="hidden" name="edit_staff" value="1">
-                    <input type="hidden" name="svcNo" value="<?=htmlspecialchars($staff->service_number ?? '')?>">
-                    <input type="hidden" name="csrf_token" value="<?=csrf_token()?>">
-                    
-                    <?php if (!empty($_SESSION['is_admin']) && $_SESSION['is_admin']): ?>
-                    <!-- Debug information for administrators -->
-                    <div class="card mb-4 border-danger">
-                        <div class="card-header bg-danger text-white">
-                            <h5 class="mb-0">
-                                <i class="fa fa-bug"></i> Debug Information (Admin Only)
-                                <button class="btn btn-sm btn-light float-end" type="button" 
-                                        onclick="document.getElementById('debugInfo').classList.toggle('d-none')">
-                                    Toggle Debug Info
-                                </button>
-                            </h5>
-                        </div>
-                        <div class="card-body d-none" id="debugInfo">
-                            <div class="alert alert-info">
-                                <p><strong>Form ID:</strong> <?=htmlspecialchars('editStaffForm')?></p>
-                                <p><strong>Service Number:</strong> <?=htmlspecialchars($staff->service_number ?? 'Not set')?></p>
-                                <p><strong>Staff ID:</strong> <?=htmlspecialchars($staff->id ?? 'Not set')?></p>
-                                <p><strong>CSRF Token:</strong> <?=htmlspecialchars(substr(csrf_token(), 0, 10))?>...</p>
-                                <p><strong>Dynamic Data:</strong></p>
-                                <ul>
-                                    <li>Operations: <?=!empty($staffOperations) ? count($staffOperations) : 0?> records</li>
-                                    <li>Deployments: <?=!empty($staffDeployments) ? count($staffDeployments) : 0?> records</li>
-                                    <li>Education: <?=!empty($staffEducation) ? count($staffEducation) : 0?> records</li>
-                                    <li>Skills: <?=!empty($staffSkills) ? count($staffSkills) : 0?> records</li>
-                                </ul>
-                            </div>
-                        </div>
+    <input type="hidden" name="edit_staff" value="1">
+    <input type="hidden" name="svcNo" value="<?= htmlspecialchars($staff->service_number ?? '') ?>">
+    <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+
+    <?php if (!empty($_SESSION['is_admin']) && $_SESSION['is_admin']): ?>
+    <!-- Debug information for administrators -->
+    <div class="card mb-4 border-danger">
+        <div class="card-header bg-danger text-white">
+            <h5 class="mb-0">
+                <i class="fa fa-bug"></i> Debug Information (Admin Only)
+                <button class="btn btn-sm btn-light float-end" type="button"
+                        onclick="document.getElementById('debugInfo').classList.toggle('d-none')">
+                    Toggle Debug Info
+                </button>
+            </h5>
+        </div>
+        <div class="card-body d-none" id="debugInfo">
+            <div class="alert alert-info">
+                <p><strong>Form ID:</strong> <?= htmlspecialchars('editStaffForm') ?></p>
+                <p><strong>Service Number:</strong> <?= htmlspecialchars($staff->service_number ?? 'Not set') ?></p>
+                <p><strong>Staff ID:</strong> <?= htmlspecialchars($staff->id ?? 'Not set') ?></p>
+                <p><strong>CSRF Token:</strong> <?= htmlspecialchars(substr(csrf_token(), 0, 10)) ?>...</p>
+                <p><strong>Dynamic Data:</strong></p>
+                <ul>
+                    <li>Operations: <?= !empty($staffOperations) ? count($staffOperations) : 0 ?> records</li>
+                    <li>Deployments: <?= !empty($staffDeployments) ? count($staffDeployments) : 0 ?> records</li>
+                    <li>Education: <?= !empty($staffEducation) ? count($staffEducation) : 0 ?> records</li>
+                    <li>Skills: <?= !empty($staffSkills) ? count($staffSkills) : 0 ?> records</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- Form Steps Navigation -->
+    <div class="form-stepper mb-4">
+        <div class="stepper-row">
+            <div class="step active" data-step="1">
+                <div class="step-icon"><i class="fa fa-user"></i></div>
+                <div class="step-label">Personal Info</div>
+            </div>
+            <div class="step" data-step="2">
+                <div class="step-icon"><i class="fa fa-shield-alt"></i></div>
+                <div class="step-label">Military Details</div>
+            </div>
+            <div class="step" data-step="3">
+                <div class="step-icon"><i class="fa fa-tasks"></i></div>
+                <div class="step-label">Operations</div>
+            </div>
+            <div class="step" data-step="4">
+                <div class="step-icon"><i class="fa fa-plane"></i></div>
+                <div class="step-label">Deployments</div>
+            </div>
+            <div class="step" data-step="5">
+                <div class="step-icon"><i class="fa fa-graduation-cap"></i></div>
+                <div class="step-label">Education & Skills</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Container for Validation Messages -->
+    <div id="alertContainer">
+        <?php if (!empty($errors)): ?>
+        <div class="alert alert-danger mb-4">
+            <h5><i class="fa fa-exclamation-triangle"></i> Please fix the following errors:</h5>
+            <ul class="mb-0">
+                <?php foreach ($errors as $error): ?>
+                    <li><?= htmlspecialchars($error) ?></li>
+                <?php endforeach; ?>
+            </ul>
+            <hr>
+            <p class="mb-0">Fields with errors have been highlighted below.</p>
+        </div>
+        <?php endif; ?>
+    </div>
+
+    <!-- Personal Details - Step 1 -->
+    <div class="form-step active" id="step1">
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="fa fa-user"></i> Personal Details</h5>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <!-- First Name -->
+                    <div class="col-md-6">
+                        <label for="fname" class="form-label required-field">First Name</label>
+                        <input type="text"
+                               class="form-control <?= isset($validationErrors['fname']) ? 'is-invalid' : '' ?>"
+                               name="fname" id="fname"
+                               value="<?= htmlspecialchars($staff->first_name ?? '') ?>"
+                               required
+                               maxlength="<?= MAX_NAME_LENGTH ?>"
+                               minlength="<?= MIN_NAME_LENGTH ?>"
+                               pattern="[a-zA-Z\s\-'\.]{<?= MIN_NAME_LENGTH ?>,<?= MAX_NAME_LENGTH ?>}"
+                               aria-describedby="fname-help">
+                        <small id="fname-help" class="form-text text-muted">
+                            <?= MIN_NAME_LENGTH ?>–<?= MAX_NAME_LENGTH ?> characters, letters only
+                        </small>
+                        <div class="invalid-feedback" id="fname-error"><?= $validationErrors['fname'] ?? '' ?></div>
                     </div>
-                    <?php endif; ?>
-                    
-                    <!-- Form Steps Navigation -->
-                    <div class="form-stepper mb-4">
-                        <div class="stepper-row">
-                            <div class="step active" data-step="1">
-                                <div class="step-icon"><i class="fa fa-user"></i></div>
-                                <div class="step-label">Personal Info</div>
-                            </div>
-                            <div class="step" data-step="2">
-                                <div class="step-icon"><i class="fa fa-shield-alt"></i></div>
-                                <div class="step-label">Military Details</div>
-                            </div>
-                            <div class="step" data-step="3">
-                                <div class="step-icon"><i class="fa fa-tasks"></i></div>
-                                <div class="step-label">Operations</div>
-                            </div>
-                            <div class="step" data-step="4">
-                                <div class="step-icon"><i class="fa fa-plane"></i></div>
-                                <div class="step-label">Deployments</div>
-                            </div>
-                            <div class="step" data-step="5">
-                                <div class="step-icon"><i class="fa fa-graduation-cap"></i></div>
-                                <div class="step-label">Education & Skills</div>
-                            </div>
-                        </div>
+                    <!-- Last Name -->
+                    <div class="col-md-6">
+                        <label for="lname" class="form-label required-field">Last Name</label>
+                        <input type="text"
+                               class="form-control <?= isset($validationErrors['lname']) ? 'is-invalid' : '' ?>"
+                               name="lname" id="lname"
+                               value="<?= htmlspecialchars($staff->last_name ?? '') ?>"
+                               required
+                               maxlength="<?= MAX_NAME_LENGTH ?>"
+                               minlength="<?= MIN_NAME_LENGTH ?>"
+                               pattern="[a-zA-Z\s\-'\.]{<?= MIN_NAME_LENGTH ?>,<?= MAX_NAME_LENGTH ?>}"
+                               aria-describedby="lname-help">
+                        <small id="lname-help" class="form-text text-muted">
+                            <?= MIN_NAME_LENGTH ?>–<?= MAX_NAME_LENGTH ?> characters, letters only
+                        </small>
+                        <div class="invalid-feedback" id="lname-error"><?= $validationErrors['lname'] ?? '' ?></div>
                     </div>
-                    
-                    <!-- Alert Container for Validation Messages -->
-                    <div id="alertContainer">
-                        <?php if (!empty($errors)): ?>
-                        <div class="alert alert-danger mb-4">
-                            <h5><i class="fa fa-exclamation-triangle"></i> Please fix the following errors:</h5>
-                            <ul class="mb-0">
-                                <?php foreach ($errors as $error): ?>
-                                    <li><?= htmlspecialchars($error) ?></li>
-                                <?php endforeach; ?>
-                            </ul>
-                            <hr>
-                            <p class="mb-0">Fields with errors have been highlighted below.</p>
-                        </div>
-                        <?php endif; ?>
+                </div>
+
+                <div class="row mb-3">
+                    <!-- Rank -->
+                    <div class="col-md-6">
+                        <label for="rankID" class="form-label required-field">Rank</label>
+                        <select class="form-select <?= isset($validationErrors['rankID']) ? 'is-invalid' : '' ?>"
+                                name="rankID" id="rankID" required aria-describedby="rankID-help">
+                            <option value="">Select Rank</option>
+                            <?php foreach ($ranks as $rank): ?>
+                                <option value="<?= htmlspecialchars($rank->rankID) ?>"
+                                        <?= (!empty($staff) && $staff->rank_id == $rank->rankID) ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($rank->rankName) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <small id="rankID-help" class="form-text text-muted">
+                            Current: <strong><?= htmlspecialchars(!empty($staff) ? ($rankMap[$staff->rank_id] ?? 'Unknown') : 'Unknown') ?></strong>
+                        </small>
+                        <div class="invalid-feedback" id="rankID-error"><?= $validationErrors['rankID'] ?? '' ?></div>
                     </div>
-
-                    <!-- Personal Details - Step 1 -->
-                    <div class="form-step active" id="step1">
-                        <div class="card mb-4">
-                            <div class="card-header bg-primary text-white">
-                                <h5 class="mb-0"><i class="fa fa-user"></i> Personal Details</h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="row mb-3">
-                                    <div class="col-md-6">
-                                        <label for="fname" class="form-label required-field">First Name</label>
-                                        <input type="text" class="form-control <?= isset($validationErrors['fname']) ? 'is-invalid-field' : '' ?>" name="fname" id="fname"
-                                            value="<?=htmlspecialchars($staff->first_name ?? '')?>" required maxlength="<?=MAX_NAME_LENGTH?>" minlength="<?=MIN_NAME_LENGTH?>"
-                                            pattern="[a-zA-Z\s\-'\.]{<?=MIN_NAME_LENGTH?>,<?=MAX_NAME_LENGTH?>}" aria-describedby="fname-help">
-                                        <small id="fname-help" class="form-text text-muted"><?=MIN_NAME_LENGTH?>-<?=MAX_NAME_LENGTH?> characters, letters only</small>
-                                        <div class="invalid-feedback" id="fname-error"><?= $validationErrors['fname'] ?? '' ?></div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label for="lname" class="form-label required-field">Last Name</label>
-                                        <input type="text" class="form-control <?= isset($validationErrors['lname']) ? 'is-invalid-field' : '' ?>" name="lname" id="lname"
-                                            value="<?=htmlspecialchars($staff->last_name ?? '')?>" required maxlength="<?=MAX_NAME_LENGTH?>" minlength="<?=MIN_NAME_LENGTH?>"
-                                            pattern="[a-zA-Z\s\-'\.]{<?=MIN_NAME_LENGTH?>,<?=MAX_NAME_LENGTH?>}" aria-describedby="lname-help">
-                                        <small id="lname-help" class="form-text text-muted"><?=MIN_NAME_LENGTH?>-<?=MAX_NAME_LENGTH?> characters, letters only</small>
-                                        <div class="invalid-feedback" id="lname-error"><?= $validationErrors['lname'] ?? '' ?></div>
-                                    </div>
-                                </div>
-
-                                <div class="row mb-3">
-                                    <div class="col-md-6">
-                                        <label for="rankID" class="form-label required-field">Rank</label>
-                                        <select class="form-select <?= isset($validationErrors['rankID']) ? 'is-invalid-field' : '' ?>" name="rankID" id="rankID" required aria-describedby="rankID-help">
-                                            <option value="">Select Rank</option>
-                                            <?php foreach ($ranks as $rank): ?>
-                                                <option value="<?=htmlspecialchars($rank->rankID)?>" <?=(!empty($staff) && $staff->rank_id == $rank->rankID) ? 'selected' : ''?>>
-                                                    <?=htmlspecialchars($rank->rankName)?>
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                        <div class="invalid-feedback" id="rankID-error"><?= $validationErrors['rankID'] ?? '' ?></div>
-                                    </div>
-                                    </select>
-                                    <small id="rankID-help" class="form-text text-muted">
-                                        Current: <strong><?=htmlspecialchars(!empty($staff) ? ($rankMap[$staff->rank_id] ?? 'Unknown') : 'Unknown')?></strong>
-                                    </small>
-                                    <div class="invalid-feedback" id="rankID-error"></div>
-                                </div>
-                                <div class="col-md-6">
-                                    <label for="unitID" class="form-label required-field">Unit</label>
-                                    <select class="form-select" name="unitID" id="unitID" required aria-describedby="unitID-help">
-                                        <option value="">Select Unit</option>
-                                        <?php foreach ($units as $unit): ?>
-                                            <option value="<?=htmlspecialchars($unit->unitID)?>" <?=(!empty($staff) && $staff->unit_id == $unit->unitID) ? 'selected' : ''?>>
-                                                <?=htmlspecialchars($unit->unitName)?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                    <small id="unitID-help" class="form-text text-muted">
-                                        Current: <strong><?=htmlspecialchars(!empty($staff) ? ($unitMap[$staff->unit_id] ?? 'Unknown') : 'Unknown')?></strong>
-                                    </small>
-                                    <div class="invalid-feedback" id="unitID-error"></div>
-                                </div>
-                            </div>
-
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label for="corps" class="form-label">Corps <span class="text-muted">(Optional)</span></label>
-                                    <select class="form-select" name="corps" id="corps">
-                                        <option value="">Select Corps</option>
-                                        <?php foreach ($corps as $corpsItem): ?>
-                                            <option value="<?=htmlspecialchars($corpsItem->id)?>" <?=(!empty($staff) && isset($staff->corps_id) && $staff->corps_id == $corpsItem->id) ? 'selected' : ''?>>
-                                                <?=htmlspecialchars($corpsItem->name)?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-                                <div class="col-md-6">
-                                    <label for="NRC" class="form-label">NRC <span class="text-muted">(Optional)</span></label>
-                                    <input type="text" class="form-control" name="NRC" id="NRC"
-                                        value="<?=htmlspecialchars($staff->NRC ?? '')?>" maxlength="<?=MAX_NRC_LENGTH?>">
-                                    <small id="NRC-help" class="form-text text-muted">National Registration Card number</small>
-                                    <div class="invalid-feedback" id="NRC-error"></div>
-                                </div>
-                            </div>
-
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label for="DOB" class="form-label">Date of Birth <span class="text-muted">(Optional)</span></label>
-                                    <input type="date" class="form-control" name="DOB" id="DOB"
-                                        value="<?=htmlspecialchars($staff->DOB ?? '')?>"
-                                        min="<?=date('Y-m-d', strtotime('-' . MAX_AGE_YEARS . ' years'))?>"
-                                        max="<?=date('Y-m-d', strtotime('-' . MIN_AGE_YEARS . ' years'))?>">
-                                    <small id="DOB-help" class="form-text text-muted">
-                                        Age must be between <?=MIN_AGE_YEARS?> and <?=MAX_AGE_YEARS?> years
-                                    </small>
-                                    <div class="invalid-feedback" id="DOB-error"></div>
-                                </div>
-                                <div class="col-md-6">
-                                    <label for="gender" class="form-label required-field">Gender</label>
-                                    <select class="form-select" name="gender" id="gender" required aria-describedby="gender-help">
-                                        <option value="">Select Gender</option>
-                                        <?php foreach (VALID_GENDERS as $g): ?>
-                                            <option value="<?=htmlspecialchars($g)?>" <?=(!empty($staff) && $staff->gender == $g) ? 'selected' : ''?>><?=htmlspecialchars($g)?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                    <small id="gender-help" class="form-text text-muted">Select gender</small>
-                                    <div class="invalid-feedback" id="gender-error"></div>
-                                </div>
-                            </div>
-
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label for="svcStatus" class="form-label required-field">Service Status</label>
-                                    <select class="form-select" name="svcStatus" id="svcStatus" required aria-describedby="svcStatus-help">
-                                        <option value="">Select Status</option>
-                                        <?php foreach (VALID_STATUSES as $status): ?>
-                                            <option value="<?=htmlspecialchars($status)?>" <?=(!empty($staff) && $staff->svcStatus == $status) ? 'selected' : ''?>><?=htmlspecialchars($status)?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                    <small id="svcStatus-help" class="form-text text-muted">Current service status</small>
-                                    <div class="invalid-feedback" id="svcStatus-error"></div>
-                                </div>
-                                <div class="col-md-6">
-                                    <label for="tel" class="form-label">Telephone <span class="text-muted">(Optional)</span></label>
-                                    <input type="text" class="form-control" name="tel" id="tel"
-                                        value="<?=htmlspecialchars($staff->tel ?? '')?>">
-                                </div>
-                            </div>
-                        </div>
+                    <!-- Unit -->
+                    <div class="col-md-6">
+                        <label for="unitID" class="form-label required-field">Unit</label>
+                        <select class="form-select <?= isset($validationErrors['unitID']) ? 'is-invalid' : '' ?>"
+                                name="unitID" id="unitID" required aria-describedby="unitID-help">
+                            <option value="">Select Unit</option>
+                            <?php foreach ($units as $unit): ?>
+                                <option value="<?= htmlspecialchars($unit->unitID) ?>"
+                                        <?= (!empty($staff) && $staff->unit_id == $unit->unitID) ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($unit->unitName) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <small id="unitID-help" class="form-text text-muted">
+                            Current: <strong><?= htmlspecialchars(!empty($staff) ? ($unitMap[$staff->unit_id] ?? 'Unknown') : 'Unknown') ?></strong>
+                        </small>
+                        <div class="invalid-feedback" id="unitID-error"><?= $validationErrors['unitID'] ?? '' ?></div>
                     </div>
+                </div>
 
-                    <!-- Note about User Editable Content -->
-                    <div class="card mb-4">
-                        <div class="card-header bg-info text-white">
-                            <h5 class="mb-0"><i class="fa fa-info-circle"></i> User Editable Information Note</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="alert alert-info">
-                                <i class="fa fa-info-circle"></i> The following information is managed by users in their personal profile:
-                                <ul>
-                                    <li><strong>Contact Information:</strong> Email, Address</li>
-                                    <li><strong>Next of Kin Information:</strong> Name, Telephone, NRC, Relationship</li>
-                                    <li><strong>Professional Details:</strong> Profession, Trade, Specialization</li>
-                                </ul>
-                                <p>Users can update these fields in their personal profile at <code>/users/personal.php</code></p>
-                            </div>
-                        </div>
+                <div class="row mb-3">
+                    <!-- Corps -->
+                    <div class="col-md-6">
+                        <label for="corps" class="form-label">Corps <span class="text-muted">(Optional)</span></label>
+                        <select class="form-select" name="corps" id="corps">
+                            <option value="">Select Corps</option>
+                            <?php foreach ($corps as $corpsItem): ?>
+                                <option value="<?= htmlspecialchars($corpsItem->id) ?>"
+                                        <?= (!empty($staff) && isset($staff->corps_id) && $staff->corps_id == $corpsItem->id) ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($corpsItem->name) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
                     </div>
+                    <!-- NRC -->
+                    <div class="col-md-6">
+                        <label for="NRC" class="form-label">NRC <span class="text-muted">(Optional)</span></label>
+                        <input type="text" class="form-control" name="NRC" id="NRC"
+                               value="<?= htmlspecialchars($staff->NRC ?? '') ?>" maxlength="<?= MAX_NRC_LENGTH ?>">
+                        <small id="NRC-help" class="form-text text-muted">National Registration Card number</small>
+                        <div class="invalid-feedback" id="NRC-error"></div>
+                    </div>
+                </div>
 
-                    <!-- Military Details -->
-                    <div class="card mb-4">
-                        <div class="card-header bg-dark text-white">
-                            <h5 class="mb-0"><i class="fa fa-shield-alt"></i> Military Details</h5>
-                        </div>
-                        <div class="card-body">
+                <div class="row mb-3">
+                    <!-- DOB -->
+                    <div class="col-md-6">
+                        <label for="DOB" class="form-label">Date of Birth <span class="text-muted">(Optional)</span></label>
+                        <input type="date" class="form-control" name="DOB" id="DOB"
+                               value="<?= htmlspecialchars($staff->DOB ?? '') ?>"
+                               min="<?= date('Y-m-d', strtotime('-' . MAX_AGE_YEARS . ' years')) ?>"
+                               max="<?= date('Y-m-d', strtotime('-' . MIN_AGE_YEARS . ' years')) ?>">
+                        <small id="DOB-help" class="form-text text-muted">
+                            Age must be between <?= MIN_AGE_YEARS ?> and <?= MAX_AGE_YEARS ?> years
+                        </small>
+                        <div class="invalid-feedback" id="DOB-error"></div>
+                    </div>
+                    <!-- Gender -->
+                    <div class="col-md-6">
+                        <label for="gender" class="form-label required-field">Gender</label>
+                        <select class="form-select <?= isset($validationErrors['gender']) ? 'is-invalid' : '' ?>"
+                                name="gender" id="gender" required aria-describedby="gender-help">
+                            <option value="">Select Gender</option>
+                            <?php foreach (VALID_GENDERS as $g): ?>
+                                <option value="<?= htmlspecialchars($g) ?>"
+                                        <?= (!empty($staff) && $staff->gender == $g) ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($g) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <small id="gender-help" class="form-text text-muted">Select gender</small>
+                        <div class="invalid-feedback" id="gender-error"><?= $validationErrors['gender'] ?? '' ?></div>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <!-- Service Status -->
+                    <div class="col-md-6">
+                        <label for="svcStatus" class="form-label required-field">Service Status</label>
+                        <select class="form-select <?= isset($validationErrors['svcStatus']) ? 'is-invalid' : '' ?>"
+                                name="svcStatus" id="svcStatus" required aria-describedby="svcStatus-help">
+                            <option value="">Select Status</option>
+                            <?php foreach (VALID_STATUSES as $status): ?>
+                                <option value="<?= htmlspecialchars($status) ?>"
+                                        <?= (!empty($staff) && $staff->svcStatus == $status) ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($status) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <small id="svcStatus-help" class="form-text text-muted">Current service status</small>
+                        <div class="invalid-feedback" id="svcStatus-error"><?= $validationErrors['svcStatus'] ?? '' ?></div>
+                    </div>
+                    <!-- Telephone -->
+                    <div class="col-md-6">
+                        <label for="tel" class="form-label">Telephone <span class="text-muted">(Optional)</span></label>
+                        <input type="text" class="form-control" name="tel" id="tel"
+                               value="<?= htmlspecialchars($staff->tel ?? '') ?>">
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Step Navigation Buttons -->
+        <div class="d-flex justify-content-between mt-4">
+            <button type="button" class="btn btn-secondary" disabled>Previous</button>
+            <button type="button" class="btn btn-primary" onclick="nextStep(2)">Next Step</button>
+        </div>
+    </div>
+
+    <!-- Military Details - Step 2 -->
+    <div class="form-step" id="step2">
+        <div class="card mb-4">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0"><i class="fa fa-shield-alt"></i> Military Details</h5>
+            </div>
+            <div class="card-body">
                             <div class="row mb-3">
                                 <div class="col-md-3">
                                     <label for="combatSize" class="form-label">Combat Size <span class="text-muted">(Optional)</span></label>
@@ -1768,8 +1983,16 @@ document.addEventListener('DOMContentLoaded', function() {
                             </div>
                         </div>
                     </div>
+                    
+                    <!-- Step Navigation Buttons -->
+                    <div class="d-flex justify-content-between mt-4">
+                        <button type="button" class="btn btn-secondary" onclick="previousStep(1)">Previous</button>
+                        <button type="button" class="btn btn-primary" onclick="nextStep(3)">Next Step</button>
+                    </div>
+                </div>
 
-                    <!-- Dynamic Operations Section -->
+                <!-- Operations - Step 3 -->
+                <div class="form-step" id="step3">
                     <div class="card mb-4">
                         <div class="card-header bg-secondary text-white">
                             <h5 class="mb-0"><i class="fa fa-tasks"></i> Operations</h5>
@@ -1786,7 +2009,16 @@ document.addEventListener('DOMContentLoaded', function() {
                             </button>
                         </div>
                     </div>
-                    <!-- Dynamic Deployments Section -->
+                    
+                    <!-- Step Navigation Buttons -->
+                    <div class="d-flex justify-content-between mt-4">
+                        <button type="button" class="btn btn-secondary" onclick="previousStep(2)">Previous</button>
+                        <button type="button" class="btn btn-primary" onclick="nextStep(4)">Next Step</button>
+                    </div>
+                </div>
+
+                <!-- Deployments - Step 4 -->
+                <div class="form-step" id="step4">
                     <div class="card mb-4">
                         <div class="card-header bg-info text-white">
                             <h5 class="mb-0"><i class="fa fa-plane"></i> Deployments</h5>
@@ -1803,7 +2035,16 @@ document.addEventListener('DOMContentLoaded', function() {
                             </button>
                         </div>
                     </div>
-                    <!-- Dynamic Education Section -->
+                    
+                    <!-- Step Navigation Buttons -->
+                    <div class="d-flex justify-content-between mt-4">
+                        <button type="button" class="btn btn-secondary" onclick="previousStep(3)">Previous</button>
+                        <button type="button" class="btn btn-primary" onclick="nextStep(5)">Next Step</button>
+                    </div>
+                </div>
+
+                <!-- Education & Skills - Step 5 -->
+                <div class="form-step" id="step5">
                     <div class="card mb-4">
                         <div class="card-header bg-success text-white">
                             <h5 class="mb-0"><i class="fa fa-graduation-cap"></i> Education</h5>
@@ -1838,26 +2079,17 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                     </div>
 
-                    <div class="d-flex gap-2 justify-content-between mt-4 mb-4">
-                        <button type="button" class="btn btn-secondary" id="prevStepBtn" style="display: none;">
-                            <i class="fa fa-arrow-left"></i> Previous Step
+                    <!-- Final Step Navigation Buttons -->
+                    <div class="d-flex justify-content-between mt-4">
+                        <button type="button" class="btn btn-secondary" onclick="previousStep(4)">Previous</button>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fa fa-save"></i> Update Staff Record
                         </button>
-                        <div>
-                            <button type="button" class="btn btn-primary" id="nextStepBtn">
-                                Next Step <i class="fa fa-arrow-right"></i>
-                            </button>
-                            <button type="submit" class="btn btn-success px-4" id="submitFormBtn" style="display: none;">
-                                <i class="fa fa-save"></i> Save Staff Member
-                            </button>
-                            <button type="button" class="btn btn-info" id="validateFormBtn">
-                                <i class="fa fa-check-circle"></i> Validate Form
-                            </button>
-                            <a href="edit_staff.php" class="btn btn-secondary" id="cancelBtn">Cancel</a>
-                        </div>
                     </div>
+                </div>
                     
                     <div class="alert alert-info mt-3">
-                        <p><i class="fa fa-info-circle"></i> <strong>Form Submission Tip:</strong> If the form isn't saving properly, click the "Validate Form" button to check for issues.</p>
+                        <p><i class="fa fa-info-circle"></i> <strong>Form Submission Tip:</strong> If the form isn't saving properly, navigate through all steps to ensure all required fields are completed.</p>
                     </div>
                 </form>
             <?php endif; ?>

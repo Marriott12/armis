@@ -11,6 +11,17 @@ $moduleName = "Admin Branch";
 $moduleIcon = "users-cog";
 $currentPage = "profile";
 
+// Load required scripts and styles for the advanced profile
+$additionalStyles = [
+    '/Armis2/admin_branch/css/advanced-profile.css'
+];
+
+$additionalScripts = [
+    'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js',
+    '/Armis2/admin_branch/js/advanced-profile.js',
+    '/Armis2/admin_branch/js/profile-visualizations.js'
+];
+
 $sidebarLinks = [
     ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
     ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'],
@@ -39,37 +50,197 @@ $sidebarLinks = [
     ],
 ];
 
+$id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+if ($id <= 0) {
+    die('<div class="alert alert-danger">Invalid staff ID.</div>');
+}
 
+// Fetch comprehensive staff data
+$stmt = $pdo->prepare("
+    SELECT 
+        s.*, 
+        r.name AS rankName, 
+        u.name AS unitName,
+        TIMESTAMPDIFF(YEAR, s.attestDate, CURDATE()) as years_of_service,
+        TIMESTAMPDIFF(YEAR, s.DOB, CURDATE()) as age
+    FROM staff s 
+    LEFT JOIN ranks r ON s.rank_id = r.id 
+    LEFT JOIN units u ON s.unit_id = u.id 
+    WHERE s.id = ? 
+    LIMIT 1
+");
+$stmt->execute([$id]);
+$staff = $stmt->fetch(PDO::FETCH_OBJ);
+if (!$staff) {
+    die('<div class="alert alert-danger">Staff member not found.</div>');
+}
+$promotions = [];
+$promStmt = $pdo->prepare("
+    SELECT 
+        p.*, 
+        r.name AS newRankName
+    FROM staff_promotions p 
+    LEFT JOIN ranks r ON p.new_rank = r.id
+    WHERE p.staff_id = ? 
+    ORDER BY p.date_from DESC
+");
+$promStmt->execute([$id]);
+$promotions = $promStmt->fetchAll(PDO::FETCH_OBJ);
+
+// Fetch medals with enhanced details
+$medals = [];
+$medalStmt = $pdo->prepare("
+    SELECT 
+        m.*, 
+        mm.name AS medalName
+    FROM staff_medals m 
+    LEFT JOIN medals mm ON m.medal_id = mm.id 
+    WHERE m.staff_id = ? 
+    ORDER BY m.award_date DESC
+");
+$medalStmt->execute([$id]);
+$medals = $medalStmt->fetchAll(PDO::FETCH_OBJ);
+
+// Fetch courses with comprehensive data
 
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 if ($id <= 0) {
     die('<div class="alert alert-danger">Invalid staff ID.</div>');
 }
 
-$stmt = $pdo->prepare("SELECT s.*, r.name AS rankName, u.name AS unitName FROM staff s LEFT JOIN ranks r ON s.rank_id = r.id LEFT JOIN units u ON s.unit_id = u.id WHERE s.id = ? LIMIT 1");
+// Fetch comprehensive staff data
+$stmt = $pdo->prepare("
+    SELECT 
+        s.*, 
+        r.name AS rankName, 
+        u.name AS unitName,
+        TIMESTAMPDIFF(YEAR, s.attestDate, CURDATE()) as years_of_service,
+        TIMESTAMPDIFF(YEAR, s.DOB, CURDATE()) as age
+    FROM staff s 
+    LEFT JOIN ranks r ON s.rank_id = r.id 
+    LEFT JOIN units u ON s.unit_id = u.id 
+    WHERE s.id = ? 
+    LIMIT 1
+");
 $stmt->execute([$id]);
 $staff = $stmt->fetch(PDO::FETCH_OBJ);
 if (!$staff) {
     die('<div class="alert alert-danger">Staff member not found.</div>');
 }
 
-// Fetch promotions
+// Fetch promotions with more details
 $promotions = [];
-$promStmt = $pdo->prepare("SELECT p.*, r.name AS newRankName FROM staff_promotions p LEFT JOIN ranks r ON p.new_rank = r.id WHERE p.staff_id = ? ORDER BY p.date_from DESC");
+$promStmt = $pdo->prepare("
+    SELECT 
+        p.*, 
+        r.name AS newRankName,
+        IFNULL(pr.name, 'N/A') AS previousRankName,
+        DATEDIFF(p.date_from, p.date_to) as days_in_rank
+    FROM staff_promotions p 
+    LEFT JOIN ranks r ON p.new_rank = r.id
+    LEFT JOIN ranks pr ON p.current_rank = pr.id
+    WHERE p.staff_id = ? 
+    ORDER BY p.date_from DESC
+");
 $promStmt->execute([$id]);
 $promotions = $promStmt->fetchAll(PDO::FETCH_OBJ);
 
-// Fetch medals
+// Fetch medals with enhanced details
 $medals = [];
-$medalStmt = $pdo->prepare("SELECT m.*, mm.name AS medalName FROM staff_medals m LEFT JOIN medals mm ON m.medal_id = mm.id WHERE m.staff_id = ? ORDER BY m.award_date DESC");
+$medalStmt = $pdo->prepare("
+    SELECT 
+        m.*, 
+        mm.name AS medalName
+    FROM staff_medals m 
+    LEFT JOIN medals mm ON m.medal_id = mm.id 
+    WHERE m.staff_id = ? 
+    ORDER BY m.award_date DESC
+");
 $medalStmt->execute([$id]);
 $medals = $medalStmt->fetchAll(PDO::FETCH_OBJ);
 
-// Fetch courses
+// Fetch courses with comprehensive data
 $courses = [];
-$courseStmt = $pdo->prepare("SELECT c.*, cc.name AS courseName FROM staff_courses c LEFT JOIN courses cc ON c.course_id = cc.id WHERE c.staff_id = ? ORDER BY c.end_date DESC");
+$courseStmt = $pdo->prepare("
+    SELECT 
+        c.*, 
+        cc.name AS courseName
+    FROM staff_courses c 
+    LEFT JOIN courses cc ON c.course_id = cc.id 
+    WHERE c.staff_id = ? 
+    ORDER BY c.end_date DESC
+");
 $courseStmt->execute([$id]);
 $courses = $courseStmt->fetchAll(PDO::FETCH_OBJ);
+
+// Fetch assignments/postings if available
+$assignments = [];
+try {
+    $assignmentStmt = $pdo->prepare("
+        SELECT 
+            a.*,
+            u.name AS unitName,
+            p.name AS positionName
+        FROM staff_assignments a
+        LEFT JOIN units u ON a.unit_id = u.id
+        LEFT JOIN positions p ON a.position_id = p.id
+        WHERE a.staff_id = ?
+        ORDER BY a.date_from DESC
+    ");
+    $assignmentStmt->execute([$id]);
+    $assignments = $assignmentStmt->fetchAll(PDO::FETCH_OBJ);
+} catch (PDOException $e) {
+    // Table may not exist yet, ignore
+}
+
+// Fetch deployments if available
+$deployments = [];
+try {
+    $deploymentStmt = $pdo->prepare("
+        SELECT 
+            d.*,
+            o.name AS operationName,
+            o.location AS operationLocation
+        FROM staff_deployments d
+        LEFT JOIN operations o ON d.operation_id = o.id
+        WHERE d.staff_id = ?
+        ORDER BY d.date_from DESC
+    ");
+    $deploymentStmt->execute([$id]);
+    $deployments = $deploymentStmt->fetchAll(PDO::FETCH_OBJ);
+} catch (PDOException $e) {
+    // Table may not exist yet, ignore
+}
+
+// Fetch documents if available
+$documents = [];
+try {
+    $docStmt = $pdo->prepare("
+        SELECT 
+            d.*
+        FROM staff_documents d
+        WHERE d.staff_id = ?
+        ORDER BY d.upload_date DESC
+    ");
+    $docStmt->execute([$id]);
+    $documents = $docStmt->fetchAll(PDO::FETCH_OBJ);
+} catch (PDOException $e) {
+    // Table may not exist yet, ignore
+}
+
+// Calculate service statistics
+$yearsOfService = !empty($staff->attestDate) ? floor((time() - strtotime($staff->attestDate)) / (365.25 * 24 * 60 * 60)) : 0;
+$medalCount = count($medals);
+$promotionCount = count($promotions);
+$courseCount = count($courses);
+$assignmentCount = count($assignments);
+$deploymentCount = count($deployments);
+
+// Add body class for admin access
+$bodyClass = '';
+if (defined('ARMIS_ADMIN_BRANCH') && ARMIS_ADMIN_BRANCH) {
+    $bodyClass = 'admin-access';
+}
 
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php'; 
@@ -97,9 +268,13 @@ include dirname(__DIR__) . '/shared/sidebar.php';
         <div class="card-body row">
             <div class="col-md-3 text-center">
                 <?php if (!empty($staff->profile_photo)): ?>
-                    <img src="<?=htmlspecialchars($staff->profile_photo)?>" class="img-fluid rounded mb-2" alt="Profile Photo">
+                    <img src="/Armis2/<?= $staff->profile_photo?>" 
+                         class="img-fluid rounded mb-2 profile-photo" 
+                         alt="Profile Photo" 
+                         onerror="handleImageError(this);">
+                    
                 <?php else: ?>
-                    <img src="/Armis2/assets/army-logo.svg" class="img-fluid rounded mb-2" alt="No Photo">
+                    <img src="/Armis2/logo.png" class="img-fluid rounded mb-2" alt="No Photo">
                 <?php endif; ?>
                 <span class="badge bg-<?=strcasecmp($staff->svcStatus,'Active')===0?'success':(strcasecmp($staff->svcStatus,'Retired')===0?'secondary':(strcasecmp($staff->svcStatus,'Deceased')===0?'danger':'light text-dark'))?>">
                     <?=htmlspecialchars($staff->svcStatus ?? 'N/A')?>
@@ -300,6 +475,52 @@ include dirname(__DIR__) . '/shared/sidebar.php';
         downloadLink.click();
         document.body.removeChild(downloadLink);
     }
+    
+    // Function to handle profile photo loading errors
+    function handleImageError(img) {
+        // Try alternative URLs in sequence
+        if (img.dataset.altSrc1 && !img.triedAlt1) {
+            img.triedAlt1 = true;
+            img.src = img.dataset.altSrc1;
+            console.log("Trying alternate image source 1: " + img.src);
+            return;
+        }
+        
+        if (img.dataset.altSrc2 && !img.triedAlt2) {
+            img.triedAlt2 = true;
+            img.src = img.dataset.altSrc2;
+            console.log("Trying alternate image source 2: " + img.src);
+            return;
+        }
+        
+        if (img.dataset.altSrc3 && !img.triedAlt3) {
+            img.triedAlt3 = true;
+            img.src = img.dataset.altSrc3;
+            console.log("Trying alternate image source 3: " + img.src);
+            return;
+        }
+        
+        // Final fallback
+        img.src = '/Armis2/assets/army-logo.svg';
+        img.alt = 'Photo Not Found';
+        console.log("Using fallback image: " + img.src);
+    }
+    
+    // When document loads, check if we need to debug photo paths
+    document.addEventListener('DOMContentLoaded', function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('debug_photo')) {
+            const photoElements = document.querySelectorAll('.profile-photo');
+            photoElements.forEach(img => {
+                console.log('Original photo path:', img.src);
+                console.log('Alternative paths:', {
+                    'alt1': img.dataset.altSrc1,
+                    'alt2': img.dataset.altSrc2,
+                    'alt3': img.dataset.altSrc3
+                });
+            });
+        }
+    });
     </script>
         <button onclick="window.print()" class="btn btn-outline-secondary btn-sm"><i class="fa fa-print"></i> Print Profile</button>
         <a href="reports_trade.php" class="btn btn-outline-primary btn-sm"><i class="fa fa-arrow-left"></i> Back to Trade Report</a>
