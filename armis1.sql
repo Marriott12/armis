@@ -7,7 +7,7 @@
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
-SET time_zone = "+00:00";
+SET time_zone = "+02:00";
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -19,8 +19,8 @@ SET time_zone = "+00:00";
 -- =====================================================
 
 -- Create database if not exists
-CREATE DATABASE IF NOT EXISTS `armis1` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE `armis1`;
+CREATE DATABASE IF NOT EXISTS `armis` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE `armis`;
 
 -- =====================================================
 -- UTILITY STORED PROCEDURES FOR SAFE MIGRATIONS
