@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    
+    <!-- Base application theme -->
+    <style name="Theme.FormInputExample" parent="Theme.Material3.DayNight">
+        <!-- Primary brand color -->
+        <item name="colorPrimary">@color/armis_primary</item>
+        <item name="colorPrimaryVariant">@color/armis_primary_dark</item>
+        <item name="colorOnPrimary">@color/armis_text_on_primary</item>
+        
+        <!-- Secondary brand color -->
+        <item name="colorSecondary">@color/armis_secondary</item>
+        <item name="colorSecondaryVariant">@color/armis_secondary_dark</item>
+        <item name="colorOnSecondary">@color/armis_text_on_secondary</item>
+        
+        <!-- Status bar color -->
+        <item name="android:statusBarColor">@color/armis_primary_dark</item>
+        
+        <!-- Background colors -->
+        <item name="android:colorBackground">@color/armis_background</item>
+        <item name="colorSurface">@color/armis_surface</item>
+        <item name="colorOnSurface">@color/armis_text_primary</item>
+        
+        <!-- Error color -->
+        <item name="colorError">@color/armis_error</item>
+        <item name="colorOnError">@color/white</item>
+        
+        <!-- Window background -->
+        <item name="android:windowBackground">@color/armis_background</item>
+    </style>
+    
+    <!-- Form Section Header Style -->
+    <style name="FormSectionHeader">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/armis_primary</item>
+        <item name="android:background">@color/armis_surface_variant</item>
+        <item name="android:padding">16dp</item>
+        <item name="android:layout_marginTop">16dp</item>
+        <item name="android:layout_marginBottom">8dp</item>
+        <item name="android:elevation">2dp</item>
+    </style>
+    
+    <!-- Form Input Label Style -->
+    <style name="FormInputLabel">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/form_label_color</item>
+        <item name="android:layout_marginTop">8dp</item>
+        <item name="android:layout_marginBottom">4dp</item>
+        <item name="android:layout_marginStart">4dp</item>
+    </style>
+    
+    <!-- Form Input Field Style -->
+    <style name="FormInputField" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginBottom">16dp</item>
+        <item name="boxStrokeColor">@color/form_field_border_focused</item>
+        <item name="boxStrokeWidth">2dp</item>
+        <item name="hintTextColor">@color/armis_text_hint</item>
+        <item name="android:textColorHint">@color/armis_text_hint</item>
+    </style>
+    
+    <!-- Form Edit Text Style -->
+    <style name="FormEditText" parent="Widget.Material3.TextInputEditText.OutlinedBox">
+        <item name="android:textSize">16sp</item>
+        <item name="android:textColor">@color/armis_text_primary</item>
+        <item name="android:background">@color/form_field_background</item>
+        <item name="android:padding">12dp</item>
+        <item name="android:minHeight">48dp</item>
+    </style>
+    
+    <!-- Primary Button Style -->
+    <style name="PrimaryButton" parent="Widget.Material3.Button">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_margin">8dp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="backgroundTint">@color/button_primary_background</item>
+        <item name="android:textColor">@color/white</item>
+        <item name="cornerRadius">8dp</item>
+        <item name="android:elevation">4dp</item>
+    </style>
+    
+    <!-- Secondary Button Style -->
+    <style name="SecondaryButton" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_margin">8dp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="strokeColor">@color/button_secondary_background</item>
+        <item name="android:textColor">@color/button_secondary_background</item>
+        <item name="cornerRadius">8dp</item>
+    </style>
+    
+    <!-- Danger Button Style -->
+    <style name="DangerButton" parent="Widget.Material3.Button">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_margin">8dp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="backgroundTint">@color/button_danger_background</item>
+        <item name="android:textColor">@color/white</item>
+        <item name="cornerRadius">8dp</item>
+        <item name="android:elevation">4dp</item>
+    </style>
+    
+    <!-- Action Button Style (for call/website buttons) -->
+    <style name="ActionButton" parent="Widget.Material3.Button.IconButton">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_margin">4dp</item>
+        <item name="android:minWidth">48dp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="backgroundTint">@color/armis_secondary</item>
+        <item name="android:tint">@color/white</item>
+        <item name="cornerRadius">24dp</item>
+    </style>
+    
+    <!-- Spinner Style -->
+    <style name="FormSpinner" parent="Widget.Material3.AutoCompleteTextView.OutlinedBox">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginBottom">16dp</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textColor">@color/armis_text_primary</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:padding">12dp</item>
+    </style>
+    
+    <!-- Card Style for form sections -->
+    <style name="FormCard" parent="Widget.Material3.CardView.Elevated">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_margin">16dp</item>
+        <item name="cardCornerRadius">12dp</item>
+        <item name="cardElevation">4dp</item>
+        <item name="cardBackgroundColor">@color/armis_surface</item>
+    </style>
+    
+    <!-- Error Text Style -->
+    <style name="ErrorText">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/armis_error</item>
+        <item name="android:layout_marginStart">4dp</item>
+        <item name="android:layout_marginTop">4dp</item>
+        <item name="android:visibility">gone</item>
+    </style>
+    
+    <!-- Dialog Theme -->
+    <style name="AppDialog" parent="ThemeOverlay.Material3.Dialog.Alert">
+        <item name="colorPrimary">@color/armis_primary</item>
+        <item name="colorSecondary">@color/armis_secondary</item>
+        <item name="android:background">@color/armis_surface</item>
+    </style>
+    
+</resources>

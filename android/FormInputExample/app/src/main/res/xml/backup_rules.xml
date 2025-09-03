@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Exclude sensitive data from automatic backup -->
+    <exclude domain="sharedpref" path="sensitive_data.xml"/>
+    <exclude domain="database" path="form_data.db"/>
+    
+    <!-- Include user preferences and form drafts -->
+    <include domain="sharedpref" path="form_preferences.xml"/>
+    <include domain="file" path="form_drafts/"/>
+</full-backup-content>
