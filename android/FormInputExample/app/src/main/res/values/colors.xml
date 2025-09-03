@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary ARMIS colors based on military themes -->
+    <color name="armis_primary">#1B4332</color>          <!-- Dark green -->
+    <color name="armis_primary_dark">#081C15</color>     <!-- Darker green -->
+    <color name="armis_primary_light">#2D5A3E</color>    <!-- Light green -->
+    
+    <!-- Secondary colors -->
+    <color name="armis_secondary">#D4AF37</color>        <!-- Military gold -->
+    <color name="armis_secondary_dark">#B8941F</color>   <!-- Darker gold -->
+    <color name="armis_secondary_light">#E6C757</color>  <!-- Light gold -->
+    
+    <!-- Accent colors -->
+    <color name="armis_accent">#DC3545</color>           <!-- Military red -->
+    <color name="armis_accent_light">#F8D7DA</color>     <!-- Light red -->
+    
+    <!-- Background colors -->
+    <color name="armis_background">#F8F9FA</color>       <!-- Light gray background -->
+    <color name="armis_surface">#FFFFFF</color>          <!-- White surface -->
+    <color name="armis_surface_variant">#F1F3F4</color>  <!-- Light gray variant -->
+    
+    <!-- Text colors -->
+    <color name="armis_text_primary">#212529</color>     <!-- Dark text -->
+    <color name="armis_text_secondary">#6C757D</color>   <!-- Gray text -->
+    <color name="armis_text_hint">#ADB5BD</color>        <!-- Light gray hint -->
+    <color name="armis_text_on_primary">#FFFFFF</color>  <!-- White on primary -->
+    <color name="armis_text_on_secondary">#000000</color> <!-- Black on secondary -->
+    
+    <!-- Status colors -->
+    <color name="armis_success">#198754</color>          <!-- Success green -->
+    <color name="armis_warning">#FFC107</color>          <!-- Warning yellow -->
+    <color name="armis_error">#DC3545</color>            <!-- Error red -->
+    <color name="armis_info">#0DCAF0</color>             <!-- Info blue -->
+    
+    <!-- Form specific colors -->
+    <color name="form_field_background">#FFFFFF</color>
+    <color name="form_field_border">#DEE2E6</color>
+    <color name="form_field_border_focused">#1B4332</color>
+    <color name="form_field_error">#DC3545</color>
+    <color name="form_label_color">#495057</color>
+    
+    <!-- Button colors -->
+    <color name="button_primary_background">#1B4332</color>
+    <color name="button_primary_pressed">#081C15</color>
+    <color name="button_secondary_background">#6C757D</color>
+    <color name="button_secondary_pressed">#495057</color>
+    <color name="button_danger_background">#DC3545</color>
+    <color name="button_danger_pressed">#B02A37</color>
+    
+    <!-- Divider and border colors -->
+    <color name="divider_color">#DEE2E6</color>
+    <color name="border_color">#CED4DA</color>
+    
+    <!-- Transparent colors for overlays -->
+    <color name="overlay_background">#80000000</color>   <!-- Semi-transparent black -->
+    
+    <!-- Material Design standard colors -->
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="transparent">#00000000</color>
+</resources>

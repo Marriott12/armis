@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/armis_background"
+    android:fillViewport="true"
+    tools:context=".MainActivity">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Main Title -->
+        <TextView
+            android:id="@+id/tvMainTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/form_title"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:textColor="@color/armis_primary"
+            android:textAlignment="center"
+            android:layout_marginBottom="24dp"
+            android:padding="16dp"
+            android:background="@color/armis_surface"
+            android:elevation="4dp" />
+
+        <!-- Personal Information Card -->
+        <androidx.cardview.widget.CardView
+            style="@style/FormCard">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    style="@style/FormSectionHeader"
+                    android:text="@string/personal_info_section"
+                    android:layout_margin="0dp" />
+
+                <!-- First Name -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/tilFirstName"
+                    style="@style/FormInputField"
+                    android:hint="@string/first_name_label">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etFirstName"
+                        style="@style/FormEditText"
+                        android:inputType="textPersonName"
+                        android:hint="@string/first_name_hint"
+                        android:maxLength="50" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- Last Name -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/tilLastName"
+                    style="@style/FormInputField"
+                    android:hint="@string/last_name_label">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etLastName"
+                        style="@style/FormEditText"
+                        android:inputType="textPersonName"
+                        android:hint="@string/last_name_hint"
+                        android:maxLength="50" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- Service Number -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/tilServiceNumber"
+                    style="@style/FormInputField"
+                    android:hint="@string/service_number_label">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etServiceNumber"
+                        style="@style/FormEditText"
+                        android:inputType="number"
+                        android:hint="@string/service_number_hint"
+                        android:maxLength="8" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- Rank Spinner -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/tilRank"
+                    style="@style/FormInputField"
+                    android:hint="@string/rank_label">
+
+                    <AutoCompleteTextView
+                        android:id="@+id/spRank"
+                        style="@style/FormSpinner"
+                        android:hint="@string/rank_hint"
+                        android:inputType="none"
+                        android:focusable="false"
+                        android:clickable="true" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- Unit -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/tilUnit"
+                    style="@style/FormInputField"
+                    android:hint="@string/unit_label">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etUnit"
+                        style="@style/FormEditText"
+                        android:inputType="text"
+                        android:hint="@string/unit_hint"
+                        android:maxLength="100" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- Birth Date -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/tilBirthDate"
+                    style="@style/FormInputField"
+                    android:hint="@string/birth_date_label">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etBirthDate"
+                        style="@style/FormEditText"
+                        android:inputType="date"
+                        android:hint="@string/birth_date_hint"
+                        android:focusable="false"
+                        android:clickable="true" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Contact Information Card -->
+        <androidx.cardview.widget.CardView
+            style="@style/FormCard">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    style="@style/FormSectionHeader"
+                    android:text="@string/contact_info_section"
+                    android:layout_margin="0dp" />
+
+                <!-- Email with action button -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/tilEmail"
+                        style="@style/FormInputField"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:hint="@string/email_label">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etEmail"
+                            style="@style/FormEditText"
+                            android:inputType="textEmailAddress"
+                            android:hint="@string/email_hint"
+                            android:maxLength="100" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                </LinearLayout>
+
+                <!-- Phone Number with call button -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/tilPhone"
+                        style="@style/FormInputField"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:hint="@string/phone_label">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etPhone"
+                            style="@style/FormEditText"
+                            android:inputType="phone"
+                            android:hint="@string/phone_hint"
+                            android:maxLength="20" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCall"
+                        style="@style/ActionButton"
+                        android:text="@string/call_button"
+                        android:drawableLeft="@android:drawable/ic_menu_call"
+                        android:contentDescription="@string/call_button" />
+
+                </LinearLayout>
+
+                <!-- Website with visit button -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/tilWebsite"
+                        style="@style/FormInputField"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:hint="@string/website_label">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etWebsite"
+                            style="@style/FormEditText"
+                            android:inputType="textUri"
+                            android:hint="@string/website_hint"
+                            android:maxLength="200" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnVisitWebsite"
+                        style="@style/ActionButton"
+                        android:text="@string/visit_website_button"
+                        android:drawableLeft="@android:drawable/ic_menu_compass"
+                        android:contentDescription="@string/visit_website_button" />
+
+                </LinearLayout>
+
+                <!-- Notes -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/tilNotes"
+                    style="@style/FormInputField"
+                    android:hint="@string/notes_label">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etNotes"
+                        style="@style/FormEditText"
+                        android:inputType="textMultiLine"
+                        android:hint="@string/notes_hint"
+                        android:maxLength="500"
+                        android:minLines="3"
+                        android:maxLines="5"
+                        android:gravity="top|start"
+                        android:scrollbars="vertical" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Action Buttons -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="32dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSave"
+                style="@style/PrimaryButton"
+                android:text="@string/save_button"
+                android:drawableLeft="@android:drawable/ic_menu_save" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnClear"
+                style="@style/DangerButton"
+                android:text="@string/clear_button"
+                android:drawableLeft="@android:drawable/ic_menu_delete" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</ScrollView>

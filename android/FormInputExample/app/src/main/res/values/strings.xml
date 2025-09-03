@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Application name -->
+    <string name="app_name">Form Input Example</string>
+    
+    <!-- Form labels -->
+    <string name="form_title">ARMIS Personnel Information Form</string>
+    <string name="personal_info_section">Personal Information</string>
+    <string name="contact_info_section">Contact Information</string>
+    
+    <!-- Input field labels -->
+    <string name="first_name_label">First Name</string>
+    <string name="last_name_label">Last Name</string>
+    <string name="service_number_label">Service Number</string>
+    <string name="rank_label">Rank</string>
+    <string name="unit_label">Unit</string>
+    <string name="email_label">Email Address</string>
+    <string name="phone_label">Phone Number</string>
+    <string name="website_label">Personal Website</string>
+    <string name="birth_date_label">Date of Birth</string>
+    <string name="notes_label">Additional Notes</string>
+    
+    <!-- Input field hints -->
+    <string name="first_name_hint">Enter your first name</string>
+    <string name="last_name_hint">Enter your last name</string>
+    <string name="service_number_hint">e.g., 12345678</string>
+    <string name="rank_hint">Select your rank</string>
+    <string name="unit_hint">Enter your unit name</string>
+    <string name="email_hint">example@military.gov</string>
+    <string name="phone_hint">e.g., +1 555-123-4567</string>
+    <string name="website_hint">https://example.com</string>
+    <string name="birth_date_hint">MM/DD/YYYY</string>
+    <string name="notes_hint">Enter any additional information</string>
+    
+    <!-- Button labels -->
+    <string name="save_button">Save Information</string>
+    <string name="clear_button">Clear Form</string>
+    <string name="call_button">Call</string>
+    <string name="visit_website_button">Visit Website</string>
+    
+    <!-- Rank options -->
+    <string name="rank_private">Private</string>
+    <string name="rank_corporal">Corporal</string>
+    <string name="rank_sergeant">Sergeant</string>
+    <string name="rank_lieutenant">Lieutenant</string>
+    <string name="rank_captain">Captain</string>
+    <string name="rank_major">Major</string>
+    <string name="rank_colonel">Colonel</string>
+    <string name="rank_general">General</string>
+    
+    <!-- Validation messages -->
+    <string name="error_first_name_required">First name is required</string>
+    <string name="error_last_name_required">Last name is required</string>
+    <string name="error_service_number_required">Service number is required</string>
+    <string name="error_service_number_invalid">Service number must be 8 digits</string>
+    <string name="error_email_invalid">Please enter a valid email address</string>
+    <string name="error_phone_invalid">Please enter a valid phone number</string>
+    <string name="error_website_invalid">Please enter a valid website URL</string>
+    <string name="error_date_invalid">Please enter a valid date (MM/DD/YYYY)</string>
+    
+    <!-- Dialog messages -->
+    <string name="permission_required_title">Permission Required</string>
+    <string name="permission_phone_message">This app needs phone permission to make calls. Please grant permission in settings.</string>
+    <string name="permission_denied_title">Permission Denied</string>
+    <string name="permission_denied_message">Cannot make phone calls without permission.</string>
+    <string name="form_cleared_message">Form has been cleared</string>
+    <string name="form_saved_message">Information saved successfully</string>
+    <string name="invalid_phone_message">Please enter a valid phone number to make a call</string>
+    <string name="invalid_website_message">Please enter a valid website URL to visit</string>
+    <string name="confirm_clear_title">Clear Form</string>
+    <string name="confirm_clear_message">Are you sure you want to clear all form data? This action cannot be undone.</string>
+    
+    <!-- Common actions -->
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
+    <string name="settings">Settings</string>
+    
+    <!-- State restoration -->
+    <string name="state_restored_message">Form data restored from previous session</string>
+</resources>
