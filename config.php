@@ -11,11 +11,11 @@ define('ARMIS_NAME', 'Army Resource Management Information System');
 define('ARMIS_ROOT', __DIR__);
 
 // Database Configuration (Update these for production)
-define('DB_HOST', 'localhost');
-define('DB_NAME', 'armis_production');
-define('DB_USER', 'armis_user');
-define('DB_PASS', 'secure_password_here');
-define('DB_CHARSET', 'utf8mb4');
+if (!defined('DB_HOST')) define('DB_HOST', 'localhost');
+if (!defined('DB_NAME')) define('DB_NAME', 'armis1');
+if (!defined('DB_USER')) define('DB_USER', 'root'); // Changed from 'armis_user' to 'root' for local development
+if (!defined('DB_PASS')) define('DB_PASS', ''); // Changed password to empty for local development
+if (!defined('DB_CHARSET')) define('DB_CHARSET', 'utf8mb4');
 
 // Application Settings
 define('ARMIS_TIMEZONE', 'UTC');
@@ -42,11 +42,14 @@ ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 ini_set('error_log', ARMIS_LOGS_DIR . '/php_errors.log');
 
-// Session Configuration
-ini_set('session.cookie_httponly', 1);
-ini_set('session.cookie_secure', 0); // Set to 1 for HTTPS
-ini_set('session.use_strict_mode', 1);
-ini_set('session.cookie_samesite', 'Strict');
+// Session Configuration - Important: These must be set before session_start()
+// They will cause warnings if session is already started
+if (session_status() === PHP_SESSION_NONE) {
+    ini_set('session.cookie_httponly', 1);
+    ini_set('session.cookie_secure', 0); // Set to 1 for HTTPS
+    ini_set('session.use_strict_mode', 1);
+    ini_set('session.cookie_samesite', 'Strict');
+}
 
 // Production URLs (Update for your domain)
 define('ARMIS_BASE_URL', 'http://localhost/Armis2');

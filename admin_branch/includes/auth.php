@@ -12,6 +12,8 @@ if (session_status() === PHP_SESSION_NONE) {
 // Include configuration and utilities
 require_once __DIR__ . '/config.php';
 require_once dirname(dirname(__DIR__)) . '/shared/database_connection.php';
+require_once dirname(dirname(__DIR__)) . '/shared/permissions.php';
+require_once dirname(dirname(__DIR__)) . '/shared/rbac.php';
 require_once __DIR__ . '/utils.php';
 
 // Include military formatting functions
@@ -61,7 +63,7 @@ function isAdmin() {
  */
 function requireAdmin() {
     requireAuth();
-    if (!isAdmin()) {
+    if (!hasPermission(PERM_ADMIN_ACCESS)) {
         header('HTTP/1.1 403 Forbidden');
         die('Access denied. Administrator privileges required.');
     }

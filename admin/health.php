@@ -7,6 +7,9 @@
 // Include scalability configuration
 require_once dirname(__DIR__) . '/config/scalability.php';
 
+// Include database connection
+require_once dirname(__DIR__) . '/shared/database_connection.php';
+
 // Start session if not already started
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -23,7 +26,7 @@ $healthChecks = [];
 
 // Database connectivity
 try {
-    $db = new PDO("mysql:host=localhost;dbname=armis", "username", "password");
+    $db = getDbConnection();
     $healthChecks['database'] = ['status' => 'OK', 'message' => 'Database connection successful'];
 } catch (Exception $e) {
     $healthChecks['database'] = ['status' => 'ERROR', 'message' => 'Database connection failed: ' . $e->getMessage()];

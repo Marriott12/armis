@@ -6,6 +6,12 @@ if (session_status() === PHP_SESSION_NONE) {
 
 // Include RBAC system
 require_once dirname(__DIR__) . '/shared/rbac.php';
+require_once 'operations_manager.php';
+require_once 'dashboard_widgets.php';
+require_once 'notifications.php';
+require_once 'audit_log.php';
+require_once 'search_filter.php';
+require_once 'mission_history.php';
 
 // Check if user is logged in
 if (!isset($_SESSION['user_id'])) {
@@ -30,13 +36,36 @@ $sidebarLinks = [
     ['title' => 'Deployments', 'url' => '/Armis2/operations/deployments.php', 'icon' => 'plane', 'page' => 'deployments'],
     ['title' => 'Resource Allocation', 'url' => '/Armis2/operations/resources.php', 'icon' => 'boxes', 'page' => 'resources'],
     ['title' => 'Status Reports', 'url' => '/Armis2/operations/reports.php', 'icon' => 'clipboard-list', 'page' => 'reports'],
-    ['title' => 'Field Operations', 'url' => '/Armis2/operations/field.php', 'icon' => 'crosshairs', 'page' => 'field']
+    ['title' => 'Field Operations', 'url' => '/Armis2/operations/field.php', 'icon' => 'crosshairs', 'page' => 'field'],
+    ['title' => 'Setup Database', 'url' => '/Armis2/operations/setup_database.php', 'icon' => 'database', 'page' => 'setup']
 ];
 
-// Check if user is logged in
-if (!isset($_SESSION['user_id'])) {
-    header('Location: ' . dirname($_SERVER['PHP_SELF']) . '/../login.php');
-    exit();
+// Initialize operations manager
+try {
+    $operationsManager = new OperationsManager($_SESSION['user_id']);
+    
+    // Get dashboard data
+    $activeMissions = $operationsManager->getActiveMissions(5);
+    $activeDeployments = $operationsManager->getActiveDeployments(5);
+    $recentReports = $operationsManager->getRecentStatusReports(5);
+    $resourceAllocation = $operationsManager->getResourceAllocationSummary();
+    
+    // Get statistics
+    $missionStats = $operationsManager->getMissionStatistics();
+    $deploymentStats = $operationsManager->getDeploymentStatistics();
+    $resourceStats = $operationsManager->getResourceStatistics();
+    
+    // Get dashboard widgets
+    $dashboardStats = getDashboardStats();
+    $notifications = getNotifications($_SESSION['user_id']);
+    $auditTrail = getAuditTrail(10);
+
+    // Example: search/filter usage
+    $searchResults = searchMissions($_GET['search'] ?? '', $_GET['status'] ?? null);
+    $filteredDeployments = filterDeployments($_GET['dep_status'] ?? null, $_GET['location'] ?? null);
+    
+} catch (Exception $e) {
+    $error = $e->getMessage();
 }
 
 include dirname(__DIR__) . '/shared/header.php';
@@ -53,173 +82,290 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <h1 class="section-title">
                             <i class="fas fa-shield-alt"></i> Operations Dashboard
                         </h1>
-                        <span class="badge status-badge bg-success">OPERATIONAL</span>
+                        <?php if (isset($error)): ?>
+                            <div class="alert alert-danger">
+                                <?php echo $error; ?>
+                                <p>Please <a href="setup_database.php" class="alert-link">set up the operations database</a> to continue.</p>
+                            </div>
+                        <?php else: ?>
+                            <span class="badge status-badge bg-success">OPERATIONAL</span>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
             
-            <div class="row g-4">
-                <div class="col-md-6 col-lg-3">
-                    <div class="card module-card">
-                        <div class="card-body text-center">
-                            <div class="mb-3">
-                                <i class="fas fa-map-marked-alt fa-2x text-primary"></i>
+            <?php if (!isset($error)): ?>
+            <!-- Statistics Cards -->
+            <div class="row">
+                <!-- Mission Statistics -->
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="card border-left-primary shadow h-100 py-2">
+                        <div class="card-body">
+                            <div class="row no-gutters align-items-center">
+                                <div class="col mr-2">
+                                    <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                                        Missions</div>
+                                    <div class="h5 mb-0 font-weight-bold text-gray-800"><?php echo $missionStats['active_missions']; ?> Active</div>
+                                    <div class="text-xs text-muted"><?php echo $missionStats['total_missions']; ?> Total</div>
+                                </div>
+                                <div class="col-auto">
+                                    <i class="fas fa-map-marked-alt fa-2x text-gray-300"></i>
+                                </div>
                             </div>
-                            <h5 class="card-title">Mission Planning</h5>
-                            <p class="card-text">Plan and coordinate operational missions</p>
-                            <a href="/operations/missions" class="btn btn-armis">Plan Missions</a>
                         </div>
                     </div>
                 </div>
 
-                <div class="col-md-6 col-lg-3">
-                    <div class="card module-card">
-                        <div class="card-body text-center">
-                            <div class="mb-3">
-                                <i class="fas fa-plane fa-2x text-success"></i>
-                            </div>
-                            <h5 class="card-title">Deployments</h5>
-                            <p class="card-text">Track deployment status and logistics</p>
-                            <a href="/operations/deployments" class="btn btn-armis">View Deployments</a>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="col-md-6 col-lg-3">
-                    <div class="card module-card">
-                        <div class="card-body text-center">
-                            <div class="mb-3">
-                                <i class="fas fa-boxes fa-2x text-success"></i>
-                            </div>
-                            <h5 class="card-title">Resource Allocation</h5>
-                            <p class="card-text">Manage and allocate operational resources</p>
-                            <a href="/operations/resources" class="btn btn-armis">Manage Resources</a>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="col-md-6 col-lg-3">
-                    <div class="card module-card">
-                        <div class="card-body text-center">
-                            <div class="mb-3">
-                                <i class="fas fa-clipboard-list fa-2x text-warning"></i>
-                            </div>
-                            <h5 class="card-title">Status Reports</h5>
-                            <p class="card-text">Monitor operational status and reporting</p>
-                            <a href="/operations/reports" class="btn btn-armis">View Reports</a>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="col-md-6 col-lg-3">
-                    <div class="card module-card">
-                        <div class="card-body text-center">
-                            <div class="mb-3">
-                                <i class="fas fa-crosshairs fa-2x text-danger"></i>
-                            </div>
-                            <h5 class="card-title">Field Operations</h5>
-                            <p class="card-text">Real-time field operation coordination</p>
-                            <a href="/operations/field" class="btn btn-armis">Field Ops</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Operational Status -->
-            <div class="row mt-5">
-                <div class="col-12">
-                    <h3 class="section-title mb-4">Operational Status</h3>
-                </div>
-                <div class="col-md-6 col-lg-3">
-                    <div class="card bg-success text-white">
+                <!-- Deployment Statistics -->
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="card border-left-success shadow h-100 py-2">
                         <div class="card-body">
-                            <div class="d-flex justify-content-between">
-                                <div>
-                                    <h5>Active Missions</h5>
-                                    <h2>7</h2>
+                            <div class="row no-gutters align-items-center">
+                                <div class="col mr-2">
+                                    <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                                        Deployments</div>
+                                    <div class="h5 mb-0 font-weight-bold text-gray-800"><?php echo $deploymentStats['active_deployments']; ?> Active</div>
+                                    <div class="text-xs text-muted"><?php echo $deploymentStats['total_deployments']; ?> Total</div>
                                 </div>
-                                <i class="fas fa-rocket fa-2x"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-6 col-lg-3">
-                    <div class="card bg-primary text-white">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between">
-                                <div>
-                                    <h5>Resources</h5>
-                                    <h2>94%</h2>
+                                <div class="col-auto">
+                                    <i class="fas fa-plane fa-2x text-gray-300"></i>
                                 </div>
-                                <i class="fas fa-boxes fa-2x"></i>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="col-md-6 col-lg-3">
-                    <div class="card bg-warning text-white">
+
+                <!-- Resources Statistics -->
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="card border-left-info shadow h-100 py-2">
                         <div class="card-body">
-                            <div class="d-flex justify-content-between">
-                                <div>
-                                    <h5>Priority Alerts</h5>
-                                    <h2>2</h2>
-                                </div>
-                                <i class="fas fa-exclamation-triangle fa-2x"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-6 col-lg-3">
-                    <div class="card bg-info text-white">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between">
-                                <div>
-                                    <h5>Field Units</h5>
-                                    <h2>23</h2>
-                                </div>
-                                <i class="fas fa-users fa-2x"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Mission Timeline -->
-            <div class="row mt-5">
-                <div class="col-12">
-                    <h3 class="section-title mb-4">Recent Operations</h3>
-                    <div class="card">
-                        <div class="card-body">
-                            <div class="list-group list-group-flush">
-                                <div class="list-group-item d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <h6 class="mb-1">Operation Phoenix</h6>
-                                        <p class="mb-1">Strategic reconnaissance mission - Sector 7</p>
-                                        <small class="text-muted">Active - Started 6 hours ago</small>
+                            <div class="row no-gutters align-items-center">
+                                <div class="col mr-2">
+                                    <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Resources
                                     </div>
-                                    <span class="badge bg-success">Active</span>
-                                </div>
-                                <div class="list-group-item d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <h6 class="mb-1">Operation Shield</h6>
-                                        <p class="mb-1">Defensive perimeter establishment</p>
-                                        <small class="text-muted">Completed 2 days ago</small>
+                                    <div class="row no-gutters align-items-center">
+                                        <div class="col-auto">
+                                            <div class="h5 mb-0 mr-3 font-weight-bold text-gray-800"><?php echo $resourceStats['available_resources']; ?> Available</div>
+                                        </div>
                                     </div>
-                                    <span class="badge bg-primary">Completed</span>
+                                    <div class="text-xs text-muted"><?php echo $resourceStats['deployed_resources']; ?> Deployed</div>
                                 </div>
-                                <div class="list-group-item d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <h6 class="mb-1">Operation Thunder</h6>
-                                        <p class="mb-1">Equipment deployment and testing</p>
-                                        <small class="text-muted">Scheduled for next week</small>
-                                    </div>
-                                    <span class="badge bg-warning">Planned</span>
+                                <div class="col-auto">
+                                    <i class="fas fa-boxes fa-2x text-gray-300"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Reports Count -->
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="card border-left-warning shadow h-100 py-2">
+                        <div class="card-body">
+                            <div class="row no-gutters align-items-center">
+                                <div class="col mr-2">
+                                    <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                                        Status Reports</div>
+                                    <div class="h5 mb-0 font-weight-bold text-gray-800"><?php echo count($recentReports); ?> Recent</div>
+                                    <div class="text-xs text-muted">Last 30 days</div>
+                                </div>
+                                <div class="col-auto">
+                                    <i class="fas fa-clipboard-list fa-2x text-gray-300"></i>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+
+            <!-- Content Row -->
+            <div class="row">
+                <!-- Active Missions -->
+                <div class="col-lg-6 mb-4">
+                    <div class="card shadow mb-4">
+                        <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                            <h6 class="m-0 font-weight-bold text-primary">Active Missions</h6>
+                            <a href="missions.php" class="btn btn-sm btn-primary">View All</a>
+                        </div>
+                        <div class="card-body">
+                            <?php if (empty($activeMissions)): ?>
+                                <div class="text-center text-muted py-4">
+                                    <p>No active missions</p>
+                                    <a href="missions.php?action=new" class="btn btn-primary">Create Mission</a>
+                                </div>
+                            <?php else: ?>
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>Mission</th>
+                                                <th>Location</th>
+                                                <th>Status</th>
+                                                <th>Resources</th>
+                                                <th>Personnel</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($activeMissions as $mission): ?>
+                                            <tr>
+                                                <td>
+                                                    <a href="mission_details.php?id=<?php echo $mission['mission_id']; ?>">
+                                                        <?php echo htmlspecialchars($mission['mission_name']); ?>
+                                                    </a>
+                                                    <small class="d-block text-muted"><?php echo htmlspecialchars($mission['mission_code']); ?></small>
+                                                </td>
+                                                <td><?php echo htmlspecialchars($mission['location_name'] ?? 'N/A'); ?></td>
+                                                <td>
+                                                    <span class="badge badge-success"><?php echo ucfirst($mission['status']); ?></span>
+                                                    <?php if ($mission['priority'] == 'critical'): ?>
+                                                        <span class="badge badge-danger">Critical</span>
+                                                    <?php elseif ($mission['priority'] == 'high'): ?>
+                                                        <span class="badge badge-warning">High</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td><?php echo $mission['resource_count']; ?></td>
+                                                <td><?php echo $mission['personnel_count']; ?></td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active Deployments -->
+                <div class="col-lg-6 mb-4">
+                    <div class="card shadow mb-4">
+                        <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                            <h6 class="m-0 font-weight-bold text-success">Active Deployments</h6>
+                            <a href="deployments.php" class="btn btn-sm btn-success">View All</a>
+                        </div>
+                        <div class="card-body">
+                            <?php if (empty($activeDeployments)): ?>
+                                <div class="text-center text-muted py-4">
+                                    <p>No active deployments</p>
+                                    <a href="deployments.php?action=new" class="btn btn-success">Create Deployment</a>
+                                </div>
+                            <?php else: ?>
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>Deployment</th>
+                                                <th>Location</th>
+                                                <th>Status</th>
+                                                <th>Personnel</th>
+                                                <th>Dates</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($activeDeployments as $deployment): ?>
+                                            <tr>
+                                                <td>
+                                                    <a href="deployment_details.php?id=<?php echo $deployment['deployment_id']; ?>">
+                                                        <?php echo htmlspecialchars($deployment['deployment_name']); ?>
+                                                    </a>
+                                                    <small class="d-block text-muted"><?php echo htmlspecialchars($deployment['deployment_code']); ?></small>
+                                                </td>
+                                                <td><?php echo htmlspecialchars($deployment['location_name'] ?? 'N/A'); ?></td>
+                                                <td><span class="badge badge-success"><?php echo ucfirst($deployment['status']); ?></span></td>
+                                                <td><?php echo $deployment['personnel_count']; ?></td>
+                                                <td>
+                                                    <small>
+                                                        <?php echo date('M d, Y', strtotime($deployment['start_date'])); ?> -
+                                                        <?php echo date('M d, Y', strtotime($deployment['end_date'])); ?>
+                                                    </small>
+                                                </td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Second Content Row -->
+            <div class="row">
+                <!-- Resource Allocation Summary -->
+                <div class="col-lg-6 mb-4">
+                    <div class="card shadow mb-4">
+                        <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                            <h6 class="m-0 font-weight-bold text-info">Resource Allocation</h6>
+                            <a href="resources.php" class="btn btn-sm btn-info">Manage Resources</a>
+                        </div>
+                        <div class="card-body">
+                            <?php if (empty($resourceAllocation)): ?>
+                                <div class="text-center text-muted py-4">
+                                    <p>No resource data available</p>
+                                </div>
+                            <?php else: ?>
+                                <div class="table-responsive">
+                                    <table class="table table-bordered">
+                                        <thead>
+                                            <tr>
+                                                <th>Resource Type</th>
+                                                <th>Total</th>
+                                                <th>Available</th>
+                                                <th>Deployed</th>
+                                                <th>Maintenance</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($resourceAllocation as $resource): ?>
+                                            <tr>
+                                                <td><?php echo htmlspecialchars($resource['resource_type_name']); ?></td>
+                                                <td><?php echo $resource['total_resources']; ?></td>
+                                                <td><?php echo $resource['available']; ?></td>
+                                                <td><?php echo $resource['deployed']; ?></td>
+                                                <td><?php echo $resource['maintenance']; ?></td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Status Reports -->
+                <div class="col-lg-6 mb-4">
+                    <div class="card shadow mb-4">
+                        <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                            <h6 class="m-0 font-weight-bold text-warning">Recent Status Reports</h6>
+                            <a href="reports.php" class="btn btn-sm btn-warning">View All Reports</a>
+                        </div>
+                        <div class="card-body">
+                            <?php if (empty($recentReports)): ?>
+                                <div class="text-center text-muted py-4">
+                                    <p>No status reports available</p>
+                                    <a href="reports.php?action=new" class="btn btn-warning">Create Report</a>
+                                </div>
+                            <?php else: ?>
+                                <div class="list-group">
+                                    <?php foreach ($recentReports as $report): ?>
+                                    <a href="report_details.php?id=<?php echo $report['report_id']; ?>" class="list-group-item list-group-item-action">
+                                        <div class="d-flex w-100 justify-content-between">
+                                            <h6 class="mb-1"><?php echo htmlspecialchars($report['report_title']); ?></h6>
+                                            <small><?php echo date('M d, Y', strtotime($report['report_date'])); ?></small>
+                                        </div>
+                                        <p class="mb-1 text-truncate"><?php echo htmlspecialchars(substr($report['report_content'], 0, 100)); ?>...</p>
+                                        <small>Mission: <?php echo htmlspecialchars($report['mission_name'] ?? 'N/A'); ?></small>
+                                        <small class="d-block">By: <?php echo htmlspecialchars($report['submitted_by_name'] ?? 'Unknown'); ?></small>
+                                    </a>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 </div>

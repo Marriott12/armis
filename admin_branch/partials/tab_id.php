@@ -13,19 +13,8 @@
                 <div class="col-md-6 mb-3">
                     <label class="form-label" for="nrc">NRC Number <span class="text-danger">*</span></label>
                     <div class="input-group">
-                        <input type="text" name="nrc_part1" id="nrc_part1" class="form-control" 
-                               maxlength="6" placeholder="123456" value="<?=old('nrc_part1')?>" 
-                               pattern="[0-9]{6}" title="6 digits required" required>
-                        <span class="input-group-text">/</span>
-                        <input type="text" name="nrc_part2" id="nrc_part2" class="form-control" 
-                               maxlength="2" placeholder="78" value="<?=old('nrc_part2')?>" 
-                               pattern="[0-9]{2}" title="2 digits required" required>
-                        <span class="input-group-text">/</span>
-                        <input type="text" name="nrc_const" id="nrc_const" class="form-control" 
-                               value="1" readonly style="max-width: 60px;">
                     </div>
-                    <small class="form-text text-muted">Format: XXXXXX/XX/1</small>
-                    <div class="invalid-feedback" id="nrc-error"></div>
+                            <!-- NRC fields removed -->
                 </div>
                 <div class="col-md-6 mb-3">
                     <label class="form-label" for="nrc_issue_date">NRC Issue Date</label>
@@ -318,6 +307,7 @@ document.addEventListener('DOMContentLoaded', function() {
         this.value = this.value.replace(/\D/g, '').substring(0, 2);
         validateNRC();
     });
+        // NRC validation removed
     
     // Passport Number Validation
     const passportNo = document.getElementById('passport_no');

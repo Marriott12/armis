@@ -1,25 +1,44 @@
 <?php
 // Advanced AJAX filter chaining backend for reports_courses.php
 // Features: multi-select support, RBAC, role-based scoping, caching, audit logging, data quality, error handling
-require_once '../init.php';
+
+// Start session and include proper authentication
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/../config.php'; // Include database connection
+
+// Check if user is authenticated
+if (!isset($_SESSION['user_id'])) {
+    http_response_code(403);
+    echo json_encode(['error' => 'Access denied.']);
+    exit;
+}
+
+// Get user permissions - assuming permission level is stored in session
+$user_permissions = $_SESSION['permission_level'] ?? 0;
+$user_id = $_SESSION['user_id'];
+$user_unit_id = $_SESSION['unit_id'] ?? null;
 
 // --- RBAC: Only permitted users ---
 $allowed_roles = [1, 2]; // 1=admin, 2=analytics
-if (!in_array($user->data()->permissions, $allowed_roles)) {
+if (!in_array($user_permissions, $allowed_roles)) {
     http_response_code(403);
     echo json_encode(['error' => 'Access denied.']);
-    error_log("Unauthorized AJAX filter access by user ID: " . $user->data()->id);
+    error_log("Unauthorized AJAX filter access by user ID: " . $user_id);
     exit;
 }
 
 // --- Audit Logging: Log filter AJAX accesses ---
-function log_audit($user, $params) {
+function log_audit($user_id, $params) {
     $logfile = __DIR__ . '/logs/ajax_filter_audit.log';
     if (!is_dir(dirname($logfile))) mkdir(dirname($logfile), 0777, true);
-    $line = date('Y-m-d H:i:s') . ' | UserID:' . $user->data()->id . ' | ' . json_encode($params) . "\n";
+    $line = date('Y-m-d H:i:s') . ' | UserID:' . $user_id . ' | ' . json_encode($params) . "\n";
     file_put_contents($logfile, $line, FILE_APPEND | LOCK_EX);
 }
-log_audit($user, $_GET);
+log_audit($user_id, $_GET);
 
 // --- Server-side Caching: 2 min (APCu or file) ---
 function cache_get($key) {
@@ -62,14 +81,14 @@ $categories = get_filter_values('category');
 $courseIDs = get_filter_values('courseID');
 
 // --- Role-based Data Scoping: If not admin, restrict to user's unit ---
-if ($user->data()->permissions != 1 && isset($user->data()->unitID) && $user->data()->unitID) {
+if ($user_permissions != 1 && isset($user_unit_id) && $user_unit_id) {
     if (empty($unitIDs)) {
-        $unitIDs[] = $user->data()->unitID;
+        $unitIDs[] = $user_unit_id;
     }
 }
 
 // --- Caching Key ---
-$cacheKey = 'filter_opt_' . md5(json_encode([$unitIDs, $rankIDs, $categories, $courseIDs, $user->data()->id]));
+$cacheKey = 'filter_opt_' . md5(json_encode([$unitIDs, $rankIDs, $categories, $courseIDs, $user_id]));
 
 // --- Try cache first ---
 if ($cached = cache_get($cacheKey)) {
@@ -77,8 +96,6 @@ if ($cached = cache_get($cacheKey)) {
     echo $cached;
     exit;
 }
-
-$db = DB::getInstance();
 $conds = [];
 $params = [];
 if (!empty($unitIDs)) {
@@ -105,43 +122,53 @@ $where = $conds ? ('WHERE ' . implode(' AND ', $conds)) : '';
 
 try {
     // --- Units available for selection
-    $units = $db->query(
+    $stmt = $connection->prepare(
         "SELECT DISTINCT u.unitID, u.unitName FROM staff s
          LEFT JOIN units u ON s.unitID = u.unitID
          $where
-         ORDER BY u.unitName ASC", $params
-    )->results();
+         ORDER BY u.unitName ASC"
+    );
+    $stmt->execute($params);
+    $units = $stmt->fetchAll(PDO::FETCH_OBJ);
 
     // --- Ranks available for selection
-    $ranks = $db->query(
+    $stmt = $connection->prepare(
         "SELECT DISTINCT r.rankID, r.rankName FROM staff s
          LEFT JOIN ranks r ON s.rankID = r.rankID
          $where
-         ORDER BY r.rankIndex ASC", $params
-    )->results();
+         ORDER BY r.rankIndex ASC"
+    );
+    $stmt->execute($params);
+    $ranks = $stmt->fetchAll(PDO::FETCH_OBJ);
 
     // --- Categories available for selection
-    $categories_avail = $db->query(
-        "SELECT DISTINCT s.category FROM staff s $where ORDER BY s.category ASC", $params
-    )->results();
-    $categories_avail = array_map(function($row){return $row->category;}, $categories_avail);
+    $stmt = $connection->prepare(
+        "SELECT DISTINCT s.category FROM staff s $where ORDER BY s.category ASC"
+    );
+    $stmt->execute($params);
+    $categories_avail_result = $stmt->fetchAll(PDO::FETCH_OBJ);
+    $categories_avail = array_map(function($row){return $row->category;}, $categories_avail_result);
 
     // --- Courses available for selection
-    $courses = $db->query(
+    $stmt = $connection->prepare(
         "SELECT DISTINCT c.courseID, c.courseName FROM staff s
          INNER JOIN staff_courses sc ON s.svcNo = sc.svcNo
          INNER JOIN courses c ON sc.courseID = c.courseID
          $where
-         ORDER BY c.courseName ASC", $params
-    )->results();
+         ORDER BY c.courseName ASC"
+    );
+    $stmt->execute($params);
+    $courses = $stmt->fetchAll(PDO::FETCH_OBJ);
 
     // --- Data Quality: e.g. missing DOB, category, etc. ---
-    $missingData = $db->query(
+    $stmt = $connection->prepare(
         "SELECT 
             SUM(CASE WHEN (s.DOB IS NULL OR s.DOB = '') THEN 1 ELSE 0 END) as missingDOB,
             SUM(CASE WHEN (s.category IS NULL OR s.category = '') THEN 1 ELSE 0 END) as missingCategory
-         FROM staff s $where", $params
-    )->first();
+         FROM staff s $where"
+    );
+    $stmt->execute($params);
+    $missingData = $stmt->fetch(PDO::FETCH_OBJ);
 
     // --- Return results ---
     $result = json_encode([
@@ -157,7 +184,8 @@ try {
     header('Content-Type: application/json');
     cache_set($cacheKey, $result);
     echo $result;
-} catch (Exception $e) {
+} catch (PDOException $e) {
+    error_log("Database error in reports_courses_filters.php: " . $e->getMessage());
     http_response_code(500);
     echo json_encode(['error' => 'Server error. Please try again later.', 'details' => $e->getMessage()]);
 }

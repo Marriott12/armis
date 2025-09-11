@@ -3,72 +3,106 @@
  * Centralized script for dashboard functionality
  */
 
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize all tooltips
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    tooltipTriggerList.map(function(tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
-    
-    // Responsive adjustment for small screens
-    handleResponsiveLayout();
-    
-    // Listen for window resize
-    window.addEventListener('resize', handleResponsiveLayout);
-    
-    // Add smooth scrolling for mobile
-    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-        anchor.addEventListener('click', function(e) {
-            const href = this.getAttribute('href');
-            if (href !== "#" && href.startsWith('#')) {
-                e.preventDefault();
-                document.querySelector(href).scrollIntoView({
-                    behavior: 'smooth'
-                });
-            }
-        });
-    });
-    
-    // Add click handlers for unit cards
-    document.querySelectorAll('.unit-card').forEach(card => {
-        card.addEventListener('click', function() {
-            const unitName = this.querySelector('.unit-name')?.textContent;
-            if (unitName && typeof armisNotifications !== 'undefined') {
-                armisNotifications.info('Unit Details', `Loading details for ${unitName}...`);
-            }
-        });
-        
-        // Add hover effect
-        card.style.cursor = 'pointer';
-    });
-    
-    // Add click handlers for alert items
-    document.querySelectorAll('.alert-item').forEach(item => {
-        item.addEventListener('click', function() {
-            const alertTitle = this.querySelector('.alert-title')?.textContent;
-            if (alertTitle && typeof armisNotifications !== 'undefined') {
-                armisNotifications.info('Alert', `Opening: ${alertTitle}`);
-            }
-        });
-        
-        item.style.cursor = 'pointer';
-    });
-    
-    // Add click handlers for event items
-    document.querySelectorAll('.event-item').forEach(item => {
-        item.addEventListener('click', function() {
-            const eventTitle = this.querySelector('.event-title')?.textContent;
-            if (eventTitle && typeof armisNotifications !== 'undefined') {
-                armisNotifications.info('Event', `Opening: ${eventTitle}`);
-            }
-        });
-        
-        item.style.cursor = 'pointer';
-    });
+// Global declaration of refreshInterval at the top of the file
+let refreshInterval;
 
-    // Init chart data if applicable
-    initCharts();
-    
+document.addEventListener('DOMContentLoaded', function() {
+        // Populate filter dropdowns with live data
+        fetch('includes/dashboard_service.php?action=get_dashboard_data&type=filter_options')
+            .then(response => response.json())
+            .then(data => {
+                if (data.units) {
+                    const unitSelect = document.getElementById('filterUnit');
+                    data.units.forEach(u => {
+                        const opt = document.createElement('option');
+                        opt.value = u; opt.textContent = u; unitSelect.appendChild(opt);
+                    });
+                }
+                if (data.ranks) {
+                    const rankSelect = document.getElementById('filterRank');
+                    data.ranks.forEach(r => {
+                        const opt = document.createElement('option');
+                        opt.value = r; opt.textContent = r; rankSelect.appendChild(opt);
+                    });
+                }
+                if (data.statuses) {
+                    const statusSelect = document.getElementById('filterStatus');
+                    data.statuses.forEach(s => {
+                        const opt = document.createElement('option');
+                        opt.value = s; opt.textContent = s; statusSelect.appendChild(opt);
+                    });
+                }
+            });
+
+        // Filter logic
+        document.getElementById('applyFilters').addEventListener('click', function() {
+            // Fetch filtered dashboard data and update all widgets/charts/tables
+            // ...implementation...
+        });
+        document.getElementById('resetFilters').addEventListener('click', function() {
+            // ...existing code...
+
+        // Initialize all tooltips
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function(tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+
+        // Responsive adjustment for small screens
+        handleResponsiveLayout();
+
+        // Listen for window resize
+        window.addEventListener('resize', handleResponsiveLayout);
+
+        // Add smooth scrolling for mobile
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                const href = this.getAttribute('href');
+                if (href !== "#" && href.startsWith('#')) {
+                    e.preventDefault();
+                    document.querySelector(href).scrollIntoView({
+                        behavior: 'smooth'
+                    });
+                }
+            });
+        });
+
+        // Add click handlers for unit cards
+        document.querySelectorAll('.unit-card').forEach(card => {
+            card.addEventListener('click', function() {
+                const unitName = this.querySelector('.unit-name')?.textContent;
+                if (unitName && typeof armisNotifications !== 'undefined') {
+                    armisNotifications.info('Unit Details', `Loading details for ${unitName}...`);
+                }
+            });
+            // Add hover effect
+            card.style.cursor = 'pointer';
+        });
+
+        // Add click handlers for alert items
+        document.querySelectorAll('.alert-item').forEach(item => {
+            item.addEventListener('click', function() {
+                const alertTitle = this.querySelector('.alert-title')?.textContent;
+                if (alertTitle && typeof armisNotifications !== 'undefined') {
+                    armisNotifications.info('Alert', `Opening: ${alertTitle}`);
+                }
+            });
+            item.style.cursor = 'pointer';
+        });
+
+        // Add click handlers for event items
+        document.querySelectorAll('.event-item').forEach(item => {
+            item.addEventListener('click', function() {
+                const eventTitle = this.querySelector('.event-title')?.textContent;
+                if (eventTitle && typeof armisNotifications !== 'undefined') {
+                    armisNotifications.info('Event', `Opening: ${eventTitle}`);
+                }
+            });
+            item.style.cursor = 'pointer';
+        });
+
+        // Init chart data if applicable
+        initCharts();
     // Initialize auto-refresh after initial load
     setTimeout(() => {
         initializeAutoRefresh();
@@ -122,8 +156,8 @@ function generateReport() {
 }
 
 function viewAllAlerts() {
-    // Implementation for viewing all alerts
-    window.location.href = 'live_notifications.php';
+    // Implementation for viewing all alerts - redirect to reports page
+    window.location.href = 'reports_appointment.php';
 }
 
 function viewCalendar() {
@@ -167,22 +201,46 @@ function exportUnitReport() {
  * Chart initialization 
  */
 function initCharts() {
-    // Personnel Distribution Chart
-    const personnelChartElement = document.getElementById('personnelChart');
-    if (personnelChartElement) {
-        // Initialize personnel chart here
+    // Initialize empty charts on page load
+    if (window.Chart) {
+        window.personnelChart = new Chart(document.getElementById('personnelChart').getContext('2d'), {
+            type: 'doughnut',
+            data: { labels: ['Active', 'Leave', 'Training', 'Deployed', 'Retired'], datasets: [{ data: [0,0,0,0,0], backgroundColor: ['#007bff','#ffc107','#28a745','#6c757d','#343a40'] }] },
+            options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+        });
+        window.recruitmentChart = new Chart(document.getElementById('recruitmentChart').getContext('2d'), {
+            type: 'bar',
+            data: { labels: ['Jan','Feb','Mar','Apr','May','Jun'], datasets: [{ label: 'Recruits', data: [0,0,0,0,0,0], backgroundColor: '#007bff' }] },
+            options: { responsive: true, plugins: { legend: { display: false } } }
+        });
+        window.performanceChart = new Chart(document.getElementById('performanceChart').getContext('2d'), {
+            type: 'line',
+            data: { labels: ['Q1','Q2','Q3','Q4'], datasets: [{ label: 'Performance', data: [0,0,0,0], borderColor: '#28a745', backgroundColor: 'rgba(40,167,69,0.1)' }] },
+            options: { responsive: true, plugins: { legend: { display: false } } }
+        });
     }
-    
-    // Recruitment Chart
-    const recruitmentChartElement = document.getElementById('recruitmentChart');
-    if (recruitmentChartElement) {
-        // Initialize recruitment chart here
+}
+
+function updatePersonnelChart(data) {
+    if (window.personnelChart) {
+        window.personnelChart.data.datasets[0].data = [data.active, data.leave, data.training, data.deployed, data.retired];
+        window.personnelChart.update();
     }
-    
-    // Performance Chart
-    const performanceChartElement = document.getElementById('performanceChart');
-    if (performanceChartElement) {
-        // Initialize performance chart here
+}
+
+function updateRecruitmentChart(data) {
+    if (window.recruitmentChart) {
+        window.recruitmentChart.data.labels = data.labels;
+        window.recruitmentChart.data.datasets[0].data = data.data;
+        window.recruitmentChart.update();
+    }
+}
+
+function updatePerformanceChart(data) {
+    if (window.performanceChart) {
+        window.performanceChart.data.labels = data.labels;
+        window.performanceChart.data.datasets[0].data = data.data;
+        window.performanceChart.update();
     }
 }
 
@@ -194,10 +252,57 @@ function refreshDashboard() {
     document.querySelectorAll('[id$="-widget"]').forEach(widget => {
         refreshWidget(widget.id);
     });
-    
+    // Load all dashboard data from backend service
+    fetch('includes/dashboard_service.php?action=get_dashboard_data&type=all')
+        .then(response => response.json())
+        .then(data => {
+            // Update KPI cards
+            if (data.kpi) {
+                const totalPersonnel = document.querySelector('[data-kpi="total-personnel"]');
+                if (totalPersonnel) totalPersonnel.textContent = data.kpi.total_personnel ?? '-';
+                const activePersonnel = document.querySelector('[data-kpi="active-personnel"]');
+                if (activePersonnel) activePersonnel.textContent = data.kpi.active_personnel ?? '-';
+                const newRecruits = document.querySelector('[data-kpi="new-recruits"]');
+                if (newRecruits) newRecruits.textContent = data.kpi.new_recruits ?? '-';
+                const performanceAvg = document.querySelector('[data-kpi="performance-avg"]');
+                if (performanceAvg) performanceAvg.textContent = (data.kpi.performance_avg ?? '-') + '%';
+                const onLeaveTraining = document.querySelector('[data-kpi="on-leave-training"]');
+                if (onLeaveTraining) onLeaveTraining.textContent = data.kpi.on_leave_training ?? '-';
+            }
+            // Update Personnel Category Snapshot
+            if (data.personnel_categories) {
+                document.getElementById('category-officer').textContent = data.personnel_categories.Officer ?? '-';
+                document.getElementById('category-nco').textContent = data.personnel_categories.NCO ?? '-';
+                document.getElementById('category-ce').textContent = data.personnel_categories.CE ?? '-';
+                document.getElementById('category-retired').textContent = data.personnel_categories.Retired ?? '-';
+            }
+            // Update Gender Statistics for Categories
+            if (data.gender_stats) {
+                document.getElementById('category-officer-male').textContent = data.gender_stats.Officer?.male ?? '-';
+                document.getElementById('category-officer-female').textContent = data.gender_stats.Officer?.female ?? '-';
+                document.getElementById('category-nco-male').textContent = data.gender_stats.NCO?.male ?? '-';
+                document.getElementById('category-nco-female').textContent = data.gender_stats.NCO?.female ?? '-';
+                document.getElementById('category-ce-male').textContent = data.gender_stats.CE?.male ?? '-';
+                document.getElementById('category-ce-female').textContent = data.gender_stats.CE?.female ?? '-';
+                document.getElementById('category-retired-male').textContent = data.gender_stats.Retired?.male ?? '-';
+                document.getElementById('category-retired-female').textContent = data.gender_stats.Retired?.female ?? '-';
+            }
+            // Update personnel distribution chart
+            if (data.personnel_distribution) {
+                updatePersonnelChart(data.personnel_distribution);
+            }
+            if (data.recruitment_trends) {
+                updateRecruitmentChart(data.recruitment_trends);
+            }
+            if (data.performance_metrics) {
+                updatePerformanceChart(data.performance_metrics);
+            }
+        })
+        .catch(error => {
+            console.error('Error loading dashboard data:', error);
+        });
     // Load quick action stats
     loadQuickActionStats();
-    
     // Load dynamic unit data
     loadDynamicUnits();
 }
@@ -215,7 +320,7 @@ function filterChart(timeframe) {
  */
 async function loadQuickActionStats() {
     try {
-        const response = await fetch('dashboard_api.php?action=get_quick_action_stats');
+    const response = await fetch('includes/dashboard_service.php?action=get_dashboard_data&type=quick_action_stats');
         const data = await response.json();
         
         if (data.success) {
@@ -242,7 +347,7 @@ async function loadQuickActionStats() {
  */
 async function loadDynamicUnits() {
     try {
-        const response = await fetch('dashboard_api.php?action=get_dynamic_units');
+    const response = await fetch('includes/dashboard_service.php?action=get_dashboard_data&type=dynamic_unit_overview');
         const data = await response.json();
         
         if (data.success && data.data) {
@@ -262,7 +367,6 @@ async function loadDynamicUnits() {
 /**
  * Auto-refresh system
  */
-let refreshInterval = null;
 
 function initializeAutoRefresh() {
     // Check if auto-refresh is already initialized
@@ -305,6 +409,7 @@ function stopAutoRefresh() {
 }
 
 // Add unhandled promise rejection handler
+
 window.addEventListener('unhandledrejection', function(event) {
     console.error('Unhandled promise rejection:', event.reason);
     event.preventDefault(); // Prevent default browser error handling
@@ -315,41 +420,15 @@ window.addEventListener('unhandledrejection', function(event) {
 
 /**
  * Military-Grade Auto-Refresh System
+ *
+ * NOTE: Chart.js import error fix:
+ * If you see 'Cannot use import statement outside a module', ensure you are NOT using 'import' in this file.
+ * Use Chart.js via CDN in your HTML:
+ * <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+ * Do NOT use: import Chart from 'chart.js';
  */
-let refreshInterval;
-let refreshCounter = 0;
-const REFRESH_INTERVAL = 30000; // 30 seconds for real-time operations
-
-function initializeAutoRefresh() {
-    console.log('🔄 Initializing military-grade auto-refresh system...');
-    
-    // Start the auto-refresh timer
-    refreshInterval = setInterval(() => {
-        refreshCounter++;
-        console.log(`⏰ Auto-refresh cycle ${refreshCounter} initiated`);
-        
-        // Refresh dynamic components silently
-        Promise.allSettled([
-            loadDynamicAlerts(),
-            updateAlertsCount(),
-            // Only refresh heavy components every 3rd cycle (90 seconds)
-            refreshCounter % 3 === 0 ? refreshDashboard() : null
-        ]).then(results => {
-            const failures = results.filter(r => r.status === 'rejected').length;
-            if (failures > 0) {
-                console.warn(`⚠️ Auto-refresh cycle ${refreshCounter}: ${failures} operations failed`);
-            } else {
-                console.log(`✅ Auto-refresh cycle ${refreshCounter} completed successfully`);
-            }
-        });
-    }, REFRESH_INTERVAL);
-    
-    // Add visible indicator
-    const statusElement = document.querySelector('.refresh-status');
-    if (statusElement) {
-        statusElement.innerHTML = '<i class="fas fa-sync-alt fa-spin text-success"></i> Auto-refresh active';
-    }
-}
+// refreshInterval is already declared at the top of the file
+// ...existing code...
 
 /**
  * Helper functions for UI elements 
@@ -395,8 +474,8 @@ function viewAllAlerts() {
     if (typeof armisNotifications !== 'undefined') {
         armisNotifications.info('Alerts', 'Opening alerts management panel...');
     }
-    // Redirect to alerts page
-    window.location.href = 'live_notifications.php';
+    // Redirect to reports page instead of live notifications
+    window.location.href = 'reports_appointment.php';
 }
 
 function handleAlertClick(alertId) {
@@ -421,7 +500,7 @@ function updateAlertsCount() {
  */
 async function loadDynamicAlerts() {
     try {
-        const response = await fetch('dashboard_api.php?action=get_alerts');
+    const response = await fetch('includes/dashboard_service.php?action=get_dashboard_data&type=alerts');
         const data = await response.json();
         
         if (data.success) {
@@ -470,3 +549,6 @@ function viewUnitDetails(unitName) {
     }
     // Could open unit details modal or navigate to unit page
 }
+
+// Ensure the main DOMContentLoaded handler is properly closed
+});

@@ -3,6 +3,7 @@ session_start();
 
 // Include database functions
 require_once __DIR__ . '/shared/database_connection.php';
+require_once __DIR__ . '/shared/debug.php';
 
 // Debug: Log form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -19,8 +20,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = authenticateUser($username, $password);
         
         if ($user) {
-            // Check if user needs to change temporary password
-            if ($user['temp_password'] == 1 || $user['force_password_change'] == 1) {
+            // Check if user needs to change temporary password (first-time login)
+            if ($user['is_first_login'] == 1) {
                 // Store user info for password change
                 $_SESSION['temp_password_change_required'] = true;
                 $_SESSION['temp_password_user_id'] = $user['id'];
@@ -52,46 +53,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['last_name'] = $user['last_name'];
             $_SESSION['email'] = $user['email'];
             
-            // Redirect based on role
-            switch ($user['role']) {
-                case 'admin':
-                    header('Location: /Armis2/admin/index.php');
-                    break;
-                case 'admin_branch':
-                    header('Location: /Armis2/admin_branch/index.php');
-                    break;
-                case 'command':
-                    header('Location: /Armis2/command/index.php');
-                    break;
-                case 'training':
-                    header('Location: /Armis2/training/index.php');
-                    break;
-                case 'operations':
-                    header('Location: /Armis2/operations/index.php');
-                    break;
-                case 'finance':
-                    header('Location: /Armis2/finance/index.php');
-                    break;
-                case 'ordinance':
-                    header('Location: /Armis2/ordinance/index.php');
-                    break;
-                default:
-                    header('Location: /Armis2/users/index.php');
-                    break;
+            // Include RBAC functions for centralized role management
+            require_once __DIR__ . '/shared/rbac.php';
+            
+            // For admin role, always go directly to admin dashboard
+            if ($user['role'] === 'admin') {
+                $dashboardUrl = '/Armis2/admin/index.php';
+            } else {
+                // Get role-specific dashboard URL using centralized function
+                $dashboardUrl = getRoleDashboardUrl($user['role']);
             }
+            
+            // Track login redirect in session
+            $_SESSION['last_login_time'] = time();
+            $_SESSION['login_redirect'] = $dashboardUrl;
+            $_SESSION['login_complete'] = true; // Flag to indicate successful login
+            
+            // Force session write
+            session_write_close();
+            
+            // Redirect to appropriate dashboard
+            header('Location: ' . $dashboardUrl);
             exit();
         } else {
             // Fallback to hardcoded credentials for demo
             if (($username === 'admin' || $username === 'Admin') && $password === 'armis2025') {
+                // Clear any existing session data
+                $_SESSION = array();
+                
+                // Set up admin session variables
                 $_SESSION['user_id'] = 1;
+                $_SESSION['userID'] = 1; // For compatibility
                 $_SESSION['username'] = 'admin';
-                $_SESSION['role'] = 'admin'; // Changed to 'admin' for System Administrator
+                $_SESSION['role'] = 'admin'; // This is critical - must be 'admin'
                 $_SESSION['rank'] = 'Colonel';
                 $_SESSION['name'] = 'System Administrator';
                 $_SESSION['unit'] = 'HQ Command';
+                $_SESSION['first_name'] = 'System';
+                $_SESSION['last_name'] = 'Administrator';
+                $_SESSION['email'] = 'admin@armis.mil';
+                $_SESSION['service_number'] = 'AD-00001';
+                $_SESSION['last_login_time'] = time();
                 
-                // Redirect to System Admin dashboard for 'admin' role
+                // Log successful admin login
+                error_log("ADMIN LOGIN: Successful login using fallback credentials");
+                
+                // Direct redirect to admin dashboard
                 header('Location: /Armis2/admin/index.php');
+                exit();
                 exit();
             } else {
                 $error = 'Invalid username or password';

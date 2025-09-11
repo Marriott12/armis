@@ -11,7 +11,7 @@ define('ARMIS_ROLES', [
     'admin' => [
         'name' => 'Administrator',
         'level' => 100,
-        'modules' => ['admin_branch', 'command', 'operations', 'training', 'finance', 'ordinance', 'users', 'admin'],
+        'modules' => ['admin', 'admin_branch', 'command', 'operations', 'training', 'finance', 'ordinance', 'users'],
         'description' => 'Full system access'
     ],
     'command' => [
@@ -58,35 +58,66 @@ define('ARMIS_ROLES', [
     ]
 ]);
 
-/**
- * Check if current user has access to a specific module
- */
-function hasModuleAccess($module, $userRole = null) {
-    if ($userRole === null) {
-        $userRole = $_SESSION['role'] ?? 'user';
-    }
+// Only define the functions if they don't already exist
+if (!function_exists('hasModuleAccess')) {
+    /**
+     * Check if current user has access to a specific module
+     */
+    function hasModuleAccess($module, $userRole = null) {
+        if ($userRole === null) {
+            $userRole = $_SESSION['role'] ?? 'user';
+        }
+        
+        // Admin role always has access to all modules (case-insensitive check)
+        if (strtolower($userRole) === 'admin' || strtolower($userRole) === 'administrator') {
+            return true;
+        }
     
     $roles = ARMIS_ROLES;
     
-    // Check if role exists
+    // Check if role exists (try exact match first)
     if (!isset($roles[$userRole])) {
-        return false;
+        // Try case-insensitive match
+        $roleLower = strtolower($userRole);
+        $foundMatch = false;
+        
+        foreach (array_keys($roles) as $definedRole) {
+            if (strtolower($definedRole) === $roleLower) {
+                $userRole = $definedRole; // Use the correctly cased role
+                $foundMatch = true;
+                break;
+            }
+        }
+        
+        if (!$foundMatch) {
+            return false;
+        }
     }
     
     // Check if user's role has access to the module
     return in_array($module, $roles[$userRole]['modules']);
 }
+}
 
+if (!function_exists('requireModuleAccess')) {
 /**
  * Require module access or redirect
  */
 function requireModuleAccess($module, $redirectUrl = '/Armis2/unauthorized.php') {
+    // Create a debugging log for troubleshooting
+    error_log("RBAC check: Checking access to module '$module' for user role '" . ($_SESSION['role'] ?? 'none') . "'");
+    
     if (!hasModuleAccess($module)) {
-        header('Location: ' . $redirectUrl);
+        error_log("RBAC denied: User with role '" . ($_SESSION['role'] ?? 'none') . "' denied access to module '$module'");
+        header('Location: ' . $redirectUrl . '?from=' . urlencode($module));
         exit();
     }
+    
+    error_log("RBAC granted: User with role '" . ($_SESSION['role'] ?? 'none') . "' granted access to module '$module'");
+}
 }
 
+if (!function_exists('getUserModules')) {
 /**
  * Get user's accessible modules
  */
@@ -103,7 +134,9 @@ function getUserModules($userRole = null) {
     
     return $roles[$userRole]['modules'];
 }
+}
 
+if (!function_exists('hasMinimumLevel')) {
 /**
  * Check if user has higher or equal level access
  */
@@ -120,7 +153,9 @@ function hasMinimumLevel($requiredLevel, $userRole = null) {
     
     return $roles[$userRole]['level'] >= $requiredLevel;
 }
+}
 
+if (!function_exists('getFilteredSidebarNavigation')) {
 /**
  * Get filtered sidebar navigation based on user permissions
  */
@@ -154,7 +189,9 @@ function getFilteredSidebarNavigation() {
     
     return $navigation;
 }
+}
 
+if (!function_exists('getRoleDashboardUrl')) {
 /**
  * Get role-appropriate dashboard URL
  */
@@ -176,7 +213,9 @@ function getRoleDashboardUrl($userRole = null) {
     
     return $dashboards[$userRole] ?? '/Armis2/users/index.php';
 }
+}
 
+if (!function_exists('redirectToRoleDashboard')) {
 /**
  * Redirect user to their appropriate dashboard
  */
@@ -185,7 +224,9 @@ function redirectToRoleDashboard($userRole = null) {
     header('Location: ' . $dashboardUrl);
     exit();
 }
+}
 
+if (!function_exists('getRoleInfo')) {
 /**
  * Get role display information
  */
@@ -197,7 +238,9 @@ function getRoleInfo($userRole = null) {
     $roles = ARMIS_ROLES;
     return $roles[$userRole] ?? $roles['user'];
 }
+}
 
+if (!function_exists('logAccess')) {
 /**
  * Log access attempts for audit
  */
@@ -222,5 +265,6 @@ function logAccess($module, $action = 'access', $success = true) {
     ];
     
     file_put_contents($logFile, json_encode($logEntry) . "\n", FILE_APPEND | LOCK_EX);
+}
 }
 ?>

@@ -910,7 +910,7 @@
     letter-spacing: 0.5px;
 }
 
-.form-control {
+.custom-form-control {
     border: 2px solid #e9ecef;
     border-radius: 15px;
     padding: 15px 20px;

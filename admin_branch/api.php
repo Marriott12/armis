@@ -80,30 +80,11 @@ try {
             break;
             
         case 'get_notifications':
-            // Return sample notifications for now to prevent errors
-            $notifications = [
-                [
-                    'id' => 1,
-                    'title' => 'System Update',
-                    'message' => 'System maintenance scheduled for tonight',
-                    'type' => 'info',
-                    'time' => date('Y-m-d H:i:s', strtotime('-1 hour')),
-                    'read' => false
-                ],
-                [
-                    'id' => 2,
-                    'title' => 'New Staff Member',
-                    'message' => 'Welcome new personnel to the system',
-                    'type' => 'success',
-                    'time' => date('Y-m-d H:i:s', strtotime('-2 hours')),
-                    'read' => false
-                ]
-            ];
-            
+            // Notifications completely disabled
             echo json_encode([
                 'success' => true,
-                'data' => $notifications,
-                'unread_count' => 2
+                'data' => [],
+                'unread_count' => 0
             ]);
             break;
             

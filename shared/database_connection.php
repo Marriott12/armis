@@ -80,7 +80,7 @@ function authenticateUser($username, $password) {
         
         $stmt = $pdo->prepare("
             SELECT s.id, s.username, s.password, s.role, s.accStatus, 
-                   s.last_login, s.service_number,
+                   s.last_login, s.service_number, s.is_first_login,
                    s.first_name, s.last_name, s.email, s.corps,
                    r.name as rank_name, u.name as unit_name,
                    c.name as corps_name, c.abbreviation as corps_abbr

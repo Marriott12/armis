@@ -13,7 +13,7 @@ requireAuth();
 $pageTitle = "Seniority Roll as at " . date('d-M-Y');
 $moduleName = "Admin Branch";
 $moduleIcon = "users-cog";
-$currentPage = "reports";
+$currentPage = "seniority";
 
 // Sidebar navigation
 $sidebarLinks = [
@@ -21,6 +21,7 @@ $sidebarLinks = [
     ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'],
     ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create'],
     ['title' => 'Promotions', 'url' => '/Armis2/admin_branch/promote_staff.php', 'icon' => 'arrow-up', 'page' => 'promotions'],
+    ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/appointments.php', 'icon' => 'user-tie', 'page' => 'appointments'],
     ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medal.php', 'icon' => 'medal', 'page' => 'medals'],
     [
         'title' => 'Reports',
@@ -110,6 +111,8 @@ $sortable_columns = [
     'category' => 's.category',
     'DOB' => 's.DOB',
     'attestDate' => 's.attestDate',
+    'subWef' => 's.subWef',
+    'tempWef' => 's.tempWef',
     'svcStatus' => 's.svcStatus'
 ];
 $sort_col = $_GET['sort_col'] ?? '';
@@ -159,9 +162,8 @@ if ($sort_col && array_key_exists($sort_col, $sortable_columns)) {
 } else {
     $sql .= " ORDER BY 
         r.level ASC,
-        s.attestDate ASC,
-        s.last_name ASC,
-        s.first_name ASC";
+        COALESCE(s.subWef, s.tempWef, s.attestDate) ASC,
+        s.service_number ASC";
 }
 
 $sql .= " LIMIT $per_page OFFSET $offset";
@@ -181,14 +183,6 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             <h1 class="section-title mb-4">
                 <i class="fas fa-list"></i> <?= htmlspecialchars($pageTitle) ?>
             </h1>
-            <div class="alert alert-info d-flex align-items-center mb-3" role="alert">
-                <i class="fas fa-question-circle me-2"></i>
-                <span>
-                    Use the filters to narrow down staff by rank, unit, or category. 
-                    You can export data, print the report, or customize visible columns. Type in the search box to filter dynamically. Double-click a row for details.
-                </span>
-                <button type="button" class="btn btn-sm btn-outline-info ms-auto" data-bs-toggle="modal" data-bs-target="#helpModal" title="Show Help"><i class="fa fa-info-circle"></i> Help</button>
-            </div>
             <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
                 <div class="modal-dialog">
                     <div class="modal-content">
@@ -295,7 +289,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <?php if (count($staff) == 0): ?>
                             <tr><td colspan="<?= count($columns)+2 ?>" class="text-center text-muted">No staff found.</td></tr>
                         <?php else: $i=1; foreach ($staff as $s): ?>
-                            <tr ondblclick="alert('Audit/History details coming soon.')">
+                            <tr>
                                 <td>
                                     <input type="checkbox" name="selected_ids[]" value="<?= htmlspecialchars($s->id) ?>" class="rowCheckbox">
                                 </td>

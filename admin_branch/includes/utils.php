@@ -65,13 +65,13 @@ class AdminBranchUtils {
      * Get staff member by service number
      */
     public static function getStaffByServiceNumber($svcNo) {
-        $sql = "SELECT s.*, r.rankName, r.rankAbbr, r.rankIndex, u.unitName, c.corpsName, a.appointmentName
+        $sql = "SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, r.level as rankIndex, u.name as unitName, c.name as corpsName, a.name as appointmentName
                 FROM staff s
-                LEFT JOIN ranks r ON s.rankID = r.rankID
-                LEFT JOIN units u ON s.unitID = u.unitID
-                LEFT JOIN corps c ON s.corpsID = c.corpsID
-                LEFT JOIN appointments a ON s.appointmentID = a.appointmentID
-                WHERE s.svcNo = ?";
+                LEFT JOIN ranks r ON s.rank_id = r.id
+                LEFT JOIN units u ON s.unit_id = u.id
+                LEFT JOIN corps c ON s.corps_id = c.id
+                LEFT JOIN appointments a ON s.appointment_id = a.id
+                WHERE s.service_number = ?";
         return fetchOne($sql, [$svcNo]);
     }
     
@@ -84,7 +84,7 @@ class AdminBranchUtils {
         
         // Build WHERE conditions
         if (!empty($filters['search'])) {
-            $where[] = "(s.svcNo LIKE ? OR s.fname LIKE ? OR s.lname LIKE ?)";
+            $where[] = "(s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)";
             $searchTerm = '%' . $filters['search'] . '%';
             $params[] = $searchTerm;
             $params[] = $searchTerm;
@@ -92,12 +92,12 @@ class AdminBranchUtils {
         }
         
         if (!empty($filters['rankID'])) {
-            $where[] = "s.rankID = ?";
+            $where[] = "s.rank_id = ?";
             $params[] = $filters['rankID'];
         }
         
         if (!empty($filters['unitID'])) {
-            $where[] = "s.unitID = ?";
+            $where[] = "s.unit_id = ?";
             $params[] = $filters['unitID'];
         }
         
@@ -116,13 +116,13 @@ class AdminBranchUtils {
         
         $whereClause = !empty($where) ? 'WHERE ' . implode(' AND ', $where) : '';
         
-        $sql = "SELECT s.*, r.rankName, r.rankAbbr, r.rankIndex, u.unitName, c.corpsName
+        $sql = "SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, r.level as rankIndex, u.name as unitName, c.name as corpsName
                 FROM staff s
-                LEFT JOIN ranks r ON s.rankID = r.rankID
-                LEFT JOIN units u ON s.unitID = u.unitID
-                LEFT JOIN corps c ON s.corpsID = c.corpsID
+                LEFT JOIN ranks r ON s.rank_id = r.id
+                LEFT JOIN units u ON s.unit_id = u.id
+                LEFT JOIN corps c ON s.corps_id = c.id
                 $whereClause
-                ORDER BY r.rankIndex ASC, s.lname ASC, s.fname ASC
+                ORDER BY r.level ASC, s.last_name ASC, s.first_name ASC
                 LIMIT ? OFFSET ?";
         
         $params[] = $limit;
@@ -148,12 +148,12 @@ class AdminBranchUtils {
         }
         
         if (!empty($filters['rankID'])) {
-            $where[] = "s.rankID = ?";
+            $where[] = "s.rank_id = ?";
             $params[] = $filters['rankID'];
         }
         
         if (!empty($filters['unitID'])) {
-            $where[] = "s.unitID = ?";
+            $where[] = "s.unit_id = ?";
             $params[] = $filters['unitID'];
         }
         
@@ -174,7 +174,7 @@ class AdminBranchUtils {
         
         $sql = "SELECT COUNT(*) as total
                 FROM staff s
-                LEFT JOIN ranks r ON s.rankID = r.rankID
+                LEFT JOIN ranks r ON s.rank_id = r.id
                 $whereClause";
         
         $result = fetchOne($sql, $params);

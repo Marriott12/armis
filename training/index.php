@@ -34,6 +34,15 @@ $sidebarLinks = [
 
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';
+
+require_once 'training_manager.php';
+$trainingManager = new TrainingManager();
+
+// Fetch dashboard stats
+$stats = $trainingManager->getDashboardStats();
+$courses = $trainingManager->getAllCourses();
+$sessions = $trainingManager->getAllSessions();
+$assignments = $trainingManager->getAllAssignments();
 ?>
 
 <!-- Main Content -->
@@ -60,7 +69,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             </div>
                             <h5 class="card-title">Course Catalog</h5>
                             <p class="card-text">Browse available training courses and programs</p>
-                            <a href="/training/courses" class="btn btn-armis">View Courses</a>
+                            <a href="courses.php" class="btn btn-armis">View Courses</a>
                         </div>
                     </div>
                 </div>
@@ -73,7 +82,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             </div>
                             <h5 class="card-title">Training Records</h5>
                             <p class="card-text">Track individual and unit training progress</p>
-                            <a href="/training/records" class="btn btn-armis">View Records</a>
+                            <a href="records.php" class="btn btn-armis">View Records</a>
                         </div>
                     </div>
                 </div>
@@ -86,7 +95,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             </div>
                             <h5 class="card-title">Training Schedule</h5>
                             <p class="card-text">View and manage training schedules</p>
-                            <a href="/training/schedule" class="btn btn-armis">View Schedule</a>
+                            <a href="schedule.php" class="btn btn-armis">View Schedule</a>
                         </div>
                     </div>
                 </div>
@@ -99,7 +108,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             </div>
                             <h5 class="card-title">Certifications</h5>
                             <p class="card-text">Manage certifications and qualifications</p>
-                            <a href="/training/certifications" class="btn btn-armis">View Certs</a>
+                            <a href="certifications.php" class="btn btn-armis">View Certs</a>
                         </div>
                     </div>
                 </div>
@@ -116,7 +125,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             <div class="d-flex justify-content-between">
                                 <div>
                                     <h5>Active Courses</h5>
-                                    <h2>28</h2>
+                                    <h2><?php echo $stats['total_courses']; ?></h2>
                                 </div>
                                 <i class="fas fa-book-open fa-2x"></i>
                             </div>
@@ -161,6 +170,59 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+            
+            <div class="row mt-5">
+                <div class="col-md-6">
+                    <h3>Courses</h3>
+                    <ul class="list-group mb-4">
+                        <?php foreach ($courses as $course): ?>
+                            <li class="list-group-item">
+                                <strong><?php echo htmlspecialchars($course['name']); ?></strong>
+                                <span class="badge bg-secondary float-end">Sessions: <?php echo $course['session_count']; ?></span>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                    <a href="courses.php" class="btn btn-primary">Manage Courses</a>
+                </div>
+                <div class="col-md-6">
+                    <h3>Sessions</h3>
+                    <ul class="list-group mb-4">
+                        <?php foreach ($sessions as $session): ?>
+                            <li class="list-group-item">
+                                <strong><?php echo htmlspecialchars($session['title']); ?></strong>
+                                <span class="badge bg-success float-end">Assigned: <?php echo $session['assigned_count']; ?></span>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                    <a href="sessions.php" class="btn btn-success">Manage Sessions</a>
+                </div>
+            </div>
+            <div class="row mt-4">
+                <div class="col-md-12">
+                    <h3>Assignments</h3>
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th>Personnel</th>
+                                <th>Course</th>
+                                <th>Session</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($assignments as $assign): ?>
+                                <tr>
+                                    <td><?php echo htmlspecialchars($assign['personnel_name']); ?></td>
+                                    <td><?php echo htmlspecialchars($assign['course_name']); ?></td>
+                                    <td><?php echo htmlspecialchars($assign['session_title']); ?></td>
+                                    <td><?php echo htmlspecialchars($assign['status']); ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    <a href="assignments.php" class="btn btn-info">Manage Assignments</a>
                 </div>
             </div>
         </div>

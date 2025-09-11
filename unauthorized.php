@@ -35,20 +35,26 @@ include __DIR__ . '/shared/header.php';
                     
                     <h1 class="card-title text-danger mb-3">Access Denied</h1>
                     
-                    <div class="alert alert-danger" role="alert">
-                        <h4 class="alert-heading">Insufficient Permissions</h4>
-                        <p class="mb-0">You do not have the required permissions to access this resource.</p>
-                    </div>
-                    
-                    <?php if ($isLoggedIn): ?>
-                        <div class="bg-light p-3 rounded mb-4">
-                            <h6 class="mb-2">Current Access Level:</h6>
-                            <p class="mb-2">
-                                <strong>User:</strong> <?php echo htmlspecialchars($userName); ?><br>
-                                <strong>Role:</strong> <?php echo htmlspecialchars(ucfirst($userRole)); ?>
-                            </p>
-                            
-                            <?php 
+    <div class="alert alert-danger" role="alert">
+        <h4 class="alert-heading">Insufficient Permissions</h4>
+        <p class="mb-0">You do not have the required permissions to access this resource.</p>
+    </div>
+    
+    <?php if ($isLoggedIn): ?>
+        <div class="bg-light p-3 rounded mb-4">
+            <h6 class="mb-2">Current Access Level:</h6>
+            <p class="mb-2">
+                <strong>User:</strong> <?php echo htmlspecialchars($userName); ?><br>
+                <strong>Role:</strong> <?php echo htmlspecialchars(ucfirst($userRole)); ?><br>
+                <strong>Session ID:</strong> <?php echo htmlspecialchars(session_id()); ?>
+            </p>
+            
+            <?php if (isset($_GET['from'])): ?>
+            <div class="mt-2">
+                <strong>Restricted Area:</strong> 
+                <?php echo htmlspecialchars(ucfirst($_GET['from'])); ?>
+            </div>
+            <?php endif; ?>                            <?php 
                             $roleInfo = getRoleInfo($userRole);
                             $userModules = getUserModules($userRole);
                             ?>

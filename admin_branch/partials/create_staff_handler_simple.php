@@ -37,25 +37,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new Exception("Security token missing. Please refresh the page and try again.");
         }
         
-        // Validate required fields (using actual form field names)
+        // Validate required fields (using actual form field names from personal tab)
         $requiredFields = [
             'fname' => 'First Name',
-            'lname' => 'Last Name', 
+            'lname' => 'Surname',
             'email' => 'Email',
             'phone' => 'Phone',
             'DOB' => 'Date of Birth',
             'svcNo' => 'Service Number',
+            'category' => 'Category',
             'rankID' => 'Rank',
-            'unitID' => 'Unit',
-            'corps' => 'Corps'
+            'gender' => 'Gender',
+            'province' => 'Province',
+            'district' => 'District',
+            'religion' => 'Religion',
+            'village' => 'Village',
+            // Only fields present in the staff table
         ];
-        
+
         foreach ($requiredFields as $field => $label) {
             if (!isset($_POST[$field]) || trim($_POST[$field]) === '') {
                 $errors[$field] = "$label is required";
             }
         }
-        
+
         // Enhanced email validation
         if (isset($_POST['email']) && trim($_POST['email']) !== '') {
             $email = trim($_POST['email']);
@@ -63,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors['email'] = 'Please enter a valid email address';
             }
         }
-        
+
         // Enhanced phone validation
         if (isset($_POST['phone']) && trim($_POST['phone']) !== '') {
             $phone = trim($_POST['phone']);
@@ -72,6 +77,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors['phone'] = 'Please enter a valid phone number (numbers, +, -, (), spaces only)';
             }
         }
+        
+    // Height validation removed
         
         // Debug logging
         error_log("Form validation - Email: " . ($_POST['email'] ?? 'not set'));
@@ -85,15 +92,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             require_once dirname(__DIR__, 2) . '/shared/email_mailer.php';
             $mailer = new ARMISMailer();
             
-            // Generate username (service number) and temporary password
-            $username = trim($_POST['svcNo']); // Use service number as username
+            // Generate username with prefix and service number
+            $serviceNumber = trim($_POST['svcNo']);
+            $prefix = !empty($_POST['prefix']) ? trim($_POST['prefix']) : ''; // Use form prefix
+            $username = $prefix . $serviceNumber; // Combine prefix with service number for username
             $tempPassword = ARMISMailer::generateTempPassword(12);
             $hashedPassword = password_hash($tempPassword, PASSWORD_DEFAULT);
             $activationToken = ARMISMailer::generateActivationToken();
             
             // Check if username already exists
             $checkStmt = $conn->prepare("SELECT id FROM staff WHERE username = ? OR service_number = ?");
-            $checkStmt->bind_param('ss', $username, $username);
+            $checkStmt->bind_param('ss', $username, $serviceNumber);
             $checkStmt->execute();
             $existing = $checkStmt->get_result();
             
@@ -104,33 +113,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $insertData = [
                     'first_name' => trim($_POST['fname']),
                     'last_name' => trim($_POST['lname']),
-                    'NRC' => trim($_POST['nrc'] ?? ''),
                     'email' => trim($_POST['email']),
                     'tel' => trim($_POST['phone']),
                     'DOB' => $_POST['DOB'],
-                    'gender' => $_POST['gender'] ?? 'M',
-                    'service_number' => trim($_POST['svcNo']),
-                    'username' => $username,
+                    'gender' => $_POST['gender'],
+                    'service_number' => $serviceNumber, // Store original service number
+                    'category' => $_POST['category'], // Add the selected category
+                    'rank_id' => $_POST['rankID'], // Add the selected rank
+                    'province' => $_POST['province'],
+                    'district' => $_POST['district'],
+                    'religion' => $_POST['religion'],
+                    'village' => $_POST['village'],
+                    'username' => $username, // Username with prefix
                     'password' => $hashedPassword,
-                    'temp_password' => 1,
-                    'force_password_change' => 1,
-                    'activation_token' => $activationToken,
-                    'account_activated' => 0,
-                    'rank_id' => intval($_POST['rankID']),
-                    'unit_id' => intval($_POST['unitID']),
-                    'corps' => trim($_POST['corps']),
-                    'bloodGp' => $_POST['blood_group'] ?? '',
-                    'height' => intval($_POST['height'] ?? 0),
-                    'province' => $_POST['province'] ?? '',
-                    'district' => $_POST['district'] ?? '',
-                    'religion' => $_POST['religion'] ?? '',
-                    'village' => $_POST['village'] ?? '',
-                    'role' => 'user', // Default role
+                    'role' => 'user', // Default role for all new staff members
                     'svcStatus' => 'active',
-                    'accStatus' => 'pending', // Pending until email activation
+                    'accStatus' => 'active', // Set to active since we're sending credentials
                     'dateCreated' => date('Y-m-d H:i:s'),
-                    'createdBy' => $_SESSION['userID'] ?? 1
+                    'createdBy' => $_SESSION['userID'] ?? 1,
+                    'is_first_login' => 1 // Flag to require password change on first login
                 ];
+                // Add prefix if provided
+                if (!empty($_POST['prefix'])) {
+                    $insertData['prefix'] = trim($_POST['prefix']);
+                }
+                // Remove any fields not present in the form
                 
                 // Build insert query
                 $fields = array_keys($insertData);
@@ -151,62 +158,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 if ($stmt->execute()) {
                     $staffId = $conn->insert_id;
-                    $service_number = $insertData['service_number'];
-                    // Insert spouse if provided
-                    if (!empty($_POST['spouse_name'])) {
-                        $spouse_name = trim($_POST['spouse_name']);
-                        $spouse_dob = $_POST['spouse_dob'] ?? null;
-                        $spouse_nrc = $_POST['spouse_nrc'] ?? null;
-                        $spouse_occup = $_POST['spouse_occup'] ?? null;
-                        $spouse_contact = $_POST['spouse_contact'] ?? null;
-                        $spouseStmt = $conn->prepare("INSERT INTO staff_spouse (service_number, spouseName, spouseDOB, spouseNRC, spouseOccup, spouseContact) VALUES (?, ?, ?, ?, ?, ?)");
-                        $spouseStmt->bind_param('ssssss', $service_number, $spouse_name, $spouse_dob, $spouse_nrc, $spouse_occup, $spouse_contact);
-                        $spouseStmt->execute();
-                    }
-                    // Insert children if provided
-                    if (!empty($_POST['child_name']) && is_array($_POST['child_name'])) {
-                        $child_names = $_POST['child_name'];
-                        $child_dobs = $_POST['child_dob'] ?? [];
-                        $child_genders = $_POST['child_gender'] ?? [];
-                        for ($i = 0; $i < count($child_names); $i++) {
-                            $name = trim($child_names[$i] ?? '');
-                            $dob = $child_dobs[$i] ?? null;
-                            $gender = $child_genders[$i] ?? null;
-                            if ($name !== '') {
-                                $childStmt = $conn->prepare("INSERT INTO staff_family_members (staff_id, name, relationship, date_of_birth, phone, occupation, is_next_of_kin, is_emergency_contact, created_at, updated_at) VALUES (?, ?, 'Child', ?, NULL, NULL, 0, 0, NOW(), NOW())");
-                                $childStmt->bind_param('iss', $staffId, $name, $dob);
-                                $childStmt->execute();
-                            }
-                        }
-                    }
-                    // Get rank information for email
-                    $rankStmt = $conn->prepare("SELECT name as rank_name FROM ranks WHERE id = ?");
-                    $rankStmt->bind_param('i', $insertData['rankID']);
-                    $rankStmt->execute();
-                    $rankResult = $rankStmt->get_result();
-                    $rankData = $rankResult->fetch_assoc();
+                    
                     // Prepare staff data for email
-                    $staffEmailData = array_merge($insertData, [
-                        'id' => $staffId,
-                        'rank_name' => $rankData['rank_name'] ?? 'Staff'
-                    ]);
-                    // Send welcome email
-                    $emailResult = $mailer->sendWelcomeEmail($staffEmailData, $tempPassword);
-                    if ($emailResult['success']) {
-                        // Mark email as sent
-                        $updateStmt = $conn->prepare("UPDATE staff SET welcome_email_sent = 1 WHERE id = ?");
-                        $updateStmt->bind_param('i', $staffId);
-                        $updateStmt->execute();
-                        $_SESSION['success_message'] = "Staff member created successfully! Staff ID: $staffId. Welcome email sent to " . $insertData['email'] . ".";
-                    } else {
-                        $_SESSION['success_message'] = "Staff member created successfully! Staff ID: $staffId. Note: Welcome email could not be sent (" . $emailResult['message'] . ").";
-                        error_log("Failed to send welcome email: " . $emailResult['message']);
+                    $staffData = [
+                        'rank_name' => '', // Will be populated from rank lookup
+                        'first_name' => trim($_POST['fname']),
+                        'last_name' => trim($_POST['lname']),
+                        'username' => $username,
+                        'email' => trim($_POST['email']),
+                        'service_number' => trim($_POST['svcNo'])
+                    ];
+                    
+                    // Get rank name for email
+                    if (!empty($_POST['rankID'])) {
+                        $rankStmt = $conn->prepare("SELECT name as rankName FROM ranks WHERE id = ?");
+                        $rankStmt->bind_param("i", $_POST['rankID']);
+                        $rankStmt->execute();
+                        $rankResult = $rankStmt->get_result();
+                        if ($rankRow = $rankResult->fetch_assoc()) {
+                            $staffData['rank_name'] = $rankRow['rankName'];
+                        }
+                        $rankStmt->close();
                     }
-                    $_SESSION['form_success'] = true;
-                    $_SESSION['temp_password'] = $tempPassword; // For display purposes (remove in production)
+                    
+                    // Send welcome email with credentials
+                    try {
+                        $mailer = new ARMISMailer();
+                        $emailResult = $mailer->sendWelcomeEmail($staffData, $tempPassword);
+                        
+                        if ($emailResult['success']) {
+                            $_SESSION['success_message'] = "Staff member successfully created! Login credentials have been sent to their email address.";
+                            error_log("Welcome email sent successfully to: " . $staffData['email']);
+                        } else {
+                            $_SESSION['success_message'] = "Staff member created successfully, but failed to send email: " . $emailResult['message'];
+                            error_log("Failed to send welcome email: " . $emailResult['message']);
+                        }
+                    } catch (Exception $emailError) {
+                        $_SESSION['success_message'] = "Staff member created successfully, but email sending failed: " . $emailError->getMessage();
+                        error_log("Email sending error: " . $emailError->getMessage());
+                    }
+                    
+                    // Store temporary credentials in session for display
+                    $_SESSION['temp_password'] = $tempPassword;
                     $_SESSION['username'] = $username;
+                    $_SESSION['staff_name'] = trim($_POST['fname']) . ' ' . trim($_POST['lname']);
+                    $_SESSION['staff_email'] = trim($_POST['email']);
+                    
                     // Log the activity
                     error_log("New staff created - ID: $staffId, Username: $username, Email: " . $insertData['email']);
+                    
                     // Redirect to prevent resubmission
                     header('Location: ' . $_SERVER['PHP_SELF'] . '?success=1');
                     exit;
@@ -230,21 +230,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Check for success message
-if (isset($_GET['success']) && isset($_SESSION['success_message'])) {
-    $success_message = $_SESSION['success_message'];
-    $display_credentials = false;
+$success_message = '';
+$display_credentials = false;
+$temp_password = '';
+$username = '';
+$staff_name = '';
+$staff_email = '';
+
+if (isset($_GET['success']) && $_GET['success'] == '1') {
+    if (isset($_SESSION['success_message'])) {
+        $success_message = $_SESSION['success_message'];
+        unset($_SESSION['success_message']);
+    }
     
-    // Show temporary credentials for admin (remove in production for security)
+    // Show temporary credentials for the newly created staff
     if (isset($_SESSION['temp_password']) && isset($_SESSION['username'])) {
         $temp_password = $_SESSION['temp_password'];
         $username = $_SESSION['username'];
+        $staff_name = $_SESSION['staff_name'] ?? '';
+        $staff_email = $_SESSION['staff_email'] ?? '';
         $display_credentials = true;
+        
+        // Clear sensitive data from session
         unset($_SESSION['temp_password']);
         unset($_SESSION['username']);
+        unset($_SESSION['staff_name']);
+        unset($_SESSION['staff_email']);
     }
-    
-    unset($_SESSION['success_message']);
-    unset($_SESSION['form_success']);
 }
 
 // Get form errors and data

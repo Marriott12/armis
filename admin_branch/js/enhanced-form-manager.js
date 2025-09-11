@@ -473,58 +473,12 @@ class ARMISFormManager {
             }, 2000);
         }
     }
-    
-    /**
-     * Load saved form data
-     */
-    loadSavedData() {
-        const savedData = localStorage.getItem('armis_staff_form_draft');
-        if (savedData) {
-            try {
-                const data = JSON.parse(savedData);
-                const form = document.getElementById('createStaffForm');
-                
-                Object.keys(data).forEach(key => {
-                    const field = form.querySelector(`[name="${key}"]`);
-                    if (field) {
-                        field.value = data[key];
-                    }
-                });
-                
-                this.showNotification('Draft data loaded from previous session.', 'info');
-            } catch (e) {
-                console.warn('Failed to load saved form data:', e);
-            }
-        }
-    }
-    
-    /**
-     * Clear saved form data
-     */
-    clearSavedData() {
-        localStorage.removeItem('armis_staff_form_draft');
-    }
-    
-    /**
-     * Show notification
-     */
-    showNotification(message, type = 'info') {
-        // Use existing notification system if available
-        if (typeof showNotification === 'function') {
-            showNotification(message, type);
-        } else {
-            console.log(`${type.toUpperCase()}: ${message}`);
-        }
-    }
-}
+} // <-- Close ARMISFormManager class
 
 // Initialize form manager when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', function() {
     window.armisFormManager = new ARMISFormManager();
-});
-
-// Clear saved data on successful form submission
-document.addEventListener('DOMContentLoaded', () => {
+    // Clear saved data on successful form submission
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('success') === '1') {
         window.armisFormManager?.clearSavedData();

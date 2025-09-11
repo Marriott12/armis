@@ -53,12 +53,13 @@ try {
     if ($userData) {
         $userData->age = (isset($userData->DOB) && $userData->DOB) ? floor((time() - strtotime($userData->DOB)) / (365.25 * 24 * 3600)) : 'N/A';
         $userData->serviceYears = (isset($userData->attestDate) && $userData->attestDate) ? floor((time() - strtotime($userData->attestDate)) / (365.25 * 24 * 3600)) : 'N/A';
-        $userData->fullName = trim(($userData->prefix ?? '') . ' ' . ($userData->first_name ?? '') . ' ' . ($userData->last_name ?? ''));
+        $userData->fullName = trim(($userData->first_name ?? '') . ' ' . ($userData->last_name ?? '')); // No prefix in name
         
         // Map database column names to expected property names for compatibility
         $userData->fname = $userData->first_name ?? null;
         $userData->lname = $userData->last_name ?? null;
-        $userData->svcNo = $userData->service_number ?? null;
+        // Combine prefix with service number for display
+        $userData->svcNo = (!empty($userData->prefix) ? $userData->prefix : '') . ($userData->service_number ?? '');
         $userData->rankID = $userData->rank_id ?? null;
         $userData->unitID = $userData->unit_id ?? null;
         

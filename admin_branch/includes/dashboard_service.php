@@ -10,34 +10,343 @@ if (!defined('ARMIS_ADMIN_BRANCH')) {
 
 class DashboardService {
     private $db;
+    private $cache = [];
+    private $cacheExpiry = [];
+    private $defaultCacheTTL = 300; // 5 minutes
     
     public function __construct($database_connection) {
         $this->db = $database_connection;
+        
+        // Initialize session if not already started
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
     }
     
+    /**
+     * Cache-aware data retrieval method
+     */
+    private function getCachedData($key, $callback, $ttl = null) {
+        $ttl = $ttl ?? $this->defaultCacheTTL;
+        $now = time();
+        
+        // Return cached data if valid
+        if (isset($this->cache[$key]) && isset($this->cacheExpiry[$key]) && $this->cacheExpiry[$key] > $now) {
+            error_log("DashboardService: Using cached data for $key");
+            return $this->cache[$key];
+        }
+        
+        // Generate fresh data
+        $data = $callback();
+        
+        // Cache the result
+        $this->cache[$key] = $data;
+        $this->cacheExpiry[$key] = $now + $ttl;
+        
+        return $data;
+    }
+    
+    /**
+     * Validate CSRF token for secure operations
+     */
+    private function validateCSRFToken() {
+        if (!isset($_POST['csrf_token']) || !isset($_SESSION['csrf_token']) ||
+            $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'error' => 'Invalid CSRF token']);
+            exit;
+        }
+    }
+    
+    /**
+     * Send standardized error response
+     */
+    private function sendErrorResponse($message, $code = 400) {
+        http_response_code($code);
+        header('Content-Type: application/json');
+        echo json_encode([
+            'success' => false,
+            'error' => $message,
+            'code' => $code
+        ]);
+        exit;
+    }
+    
+    /**
+     * Initialize real-time data support
+     */
+    public function initializeRealTimeSupport() {
+        // Check if we need to push updates via WebSocket
+        if (isset($_GET['realtime_update']) && $_GET['realtime_update'] === 'true') {
+            // This would push to a WebSocket server in a real implementation
+            $updates = $this->getRealtimeUpdates();
+            error_log("Pushing real-time updates: " . json_encode($updates));
+            
+            // In a real implementation, you would use a WebSocket library like Ratchet
+            // Example: $this->websocketServer->broadcast(json_encode($updates));
+        }
+    }
+    
+    /**
+     * Get enhanced personnel statistics with military vs civilian separation
+     */
+    public function getEnhancedPersonnelStats($timeFilter = null) {
+        return $this->getCachedData('enhanced_personnel_stats_' . ($timeFilter ?? 'all'), function() use ($timeFilter) {
+            try {
+                $stats = [
+                    'military' => [
+                        'total' => 0,
+                        'active' => 0,
+                        'officers' => 0,
+                        'ncos' => 0,
+                        'recruits' => 0,
+                        'enlisted' => 0,
+                        'warrant' => 0,
+                        'by_gender' => ['male' => 0, 'female' => 0],
+                        'officers_by_gender' => ['male' => 0, 'female' => 0],
+                        'ncos_by_gender' => ['male' => 0, 'female' => 0],
+                        'recruit_officers' => 0,
+                        'recruit_ncos' => 0,
+                        'recruit_officers_by_gender' => ['male' => 0, 'female' => 0],
+                        'recruit_ncos_by_gender' => ['male' => 0, 'female' => 0]
+                    ],
+                    'civilian' => [
+                        'total' => 0,
+                        'active' => 0,
+                        'new_1_month' => 0,
+                        'new_3_months' => 0,
+                        'new_1_year' => 0,
+                        'by_gender' => ['male' => 0, 'female' => 0],
+                        'current_by_gender' => ['male' => 0, 'female' => 0],
+                        'new_by_gender' => ['male' => 0, 'female' => 0],
+                        'by_status' => []
+                    ],
+                    'retirees' => 0,
+                    'totals' => [
+                        'all_personnel' => 0,
+                        'active_military' => 0,
+                        'active_civilian' => 0
+                    ]
+                ];
+
+                // Military Personnel - Enhanced query for detailed breakdowns
+                $militaryQuery = "
+                    SELECT 
+                        r.category,
+                        r.name as rank_name,
+                        r.abbreviation,
+                        s.svcStatus,
+                        s.gender,
+                        COUNT(*) as count
+                    FROM staff s
+                    INNER JOIN ranks r ON s.rank_id = r.id
+                    WHERE s.service_number IS NOT NULL 
+                    AND s.svcStatus != 'Discharged'
+                    AND r.category IN ('Officer', 'NCO')
+                    GROUP BY r.category, r.name, r.abbreviation, s.svcStatus, s.gender
+                ";
+                
+                $stmt = $this->db->prepare($militaryQuery);
+                $stmt->execute();
+                $militaryResults = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                foreach ($militaryResults as $row) {
+                    $category = trim($row['category']); // Keep original case: "Officer" or "NCO"
+                    $rankName = strtolower(trim($row['rank_name']));
+                    $abbreviation = strtolower(trim($row['abbreviation']));
+                    $status = strtolower(trim($row['svcStatus']));
+                    $gender = strtolower(trim($row['gender']));
+                    $count = (int)$row['count'];
+                    
+                    $stats['military']['total'] += $count;
+                    
+                    if ($status === 'active') {
+                        $stats['military']['active'] += $count;
+                    }
+                    
+                    // Gender breakdown
+                    if ($gender === 'male' || $gender === 'female') {
+                        $stats['military']['by_gender'][$gender] += $count;
+                    }
+                    
+                    // Check if this is a recruit/training rank based on actual Zambian Army structure
+                    $isRecruit = ($abbreviation === 'o/cdt' || $abbreviation === 'rct' || 
+                                 strpos($rankName, 'cadet') !== false || 
+                                 strpos($rankName, 'recruit') !== false);
+                    
+                    // Categorize by rank type with recruit sub-categories
+                    if ($category === 'Officer') {
+                        if ($isRecruit) {
+                            // Officer Cadet is a recruit officer
+                            $stats['military']['recruit_officers'] += $count;
+                            if ($gender === 'male' || $gender === 'female') {
+                                $stats['military']['recruit_officers_by_gender'][$gender] += $count;
+                            }
+                        } else {
+                            $stats['military']['officers'] += $count;
+                            if ($gender === 'male' || $gender === 'female') {
+                                $stats['military']['officers_by_gender'][$gender] += $count;
+                            }
+                        }
+                    } elseif ($category === 'NCO') {
+                        // All NCO category including Warrant Officers, Staff Sergeants, etc.
+                        if ($isRecruit) {
+                            // Recruit is an NCO recruit
+                            $stats['military']['recruit_ncos'] += $count;
+                            if ($gender === 'male' || $gender === 'female') {
+                                $stats['military']['recruit_ncos_by_gender'][$gender] += $count;
+                            }
+                        } else {
+                            $stats['military']['ncos'] += $count;
+                            if ($gender === 'male' || $gender === 'female') {
+                                $stats['military']['ncos_by_gender'][$gender] += $count;
+                            }
+                        }
+                    }
+                }
+
+                // Civilian Personnel - Separated current staff vs new hires
+                // Current Staff (existing before last year)
+                $currentStaffQuery = "
+                    SELECT 
+                        svcStatus,
+                        gender,
+                        COUNT(*) as count
+                    FROM staff s
+                    WHERE s.category = 'CE'
+                    AND s.service_number IS NOT NULL
+                    AND s.svcStatus = 'Active'
+                    AND s.attestDate < DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
+                    GROUP BY svcStatus, gender
+                ";
+                
+                $stmt = $this->db->prepare($currentStaffQuery);
+                $stmt->execute();
+                $currentStaffResults = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                foreach ($currentStaffResults as $row) {
+                    $gender = strtolower(trim($row['gender']));
+                    $count = (int)$row['count'];
+                    
+                    $stats['civilian']['active'] += $count;
+                    $stats['civilian']['total'] += $count;
+                    
+                    if ($gender === 'male' || $gender === 'female') {
+                        $stats['civilian']['by_gender'][$gender] += $count;
+                        $stats['civilian']['current_by_gender'][$gender] += $count;
+                    }
+                }
+
+                // New Hires (within last year)
+                $newHiresQuery = "
+                    SELECT 
+                        svcStatus,
+                        gender,
+                        COUNT(*) as count
+                    FROM staff s
+                    WHERE s.category = 'CE'
+                    AND s.service_number IS NOT NULL
+                    AND s.svcStatus = 'Active'
+                    AND s.attestDate >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
+                    GROUP BY svcStatus, gender
+                ";
+                
+                $stmt = $this->db->prepare($newHiresQuery);
+                $stmt->execute();
+                $newHiresResults = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                foreach ($newHiresResults as $row) {
+                    $gender = strtolower(trim($row['gender']));
+                    $count = (int)$row['count'];
+                    
+                    $stats['civilian']['active'] += $count;
+                    $stats['civilian']['total'] += $count;
+                    $stats['civilian']['new_1_year'] += $count;
+                    
+                    if ($gender === 'male' || $gender === 'female') {
+                        $stats['civilian']['by_gender'][$gender] += $count;
+                        $stats['civilian']['new_by_gender'][$gender] += $count;
+                    }
+                }
+
+                // New civilian employees by time periods
+                $timeQueries = [
+                    'new_1_month' => "SELECT COUNT(*) as count FROM staff WHERE category = 'CE' AND svcStatus = 'Active' AND attestDate >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)",
+                    'new_3_months' => "SELECT COUNT(*) as count FROM staff WHERE category = 'CE' AND svcStatus = 'Active' AND attestDate >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)",
+                    'new_1_year' => "SELECT COUNT(*) as count FROM staff WHERE category = 'CE' AND svcStatus = 'Active' AND attestDate >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)"
+                ];
+
+                foreach ($timeQueries as $key => $query) {
+                    $stmt = $this->db->prepare($query);
+                    $stmt->execute();
+                    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+                    $stats['civilian'][$key] = (int)($result['count'] ?? 0);
+                }
+
+                // Retirees
+                $retiredQuery = "SELECT COUNT(*) as count FROM staff WHERE svcStatus = 'Retired'";
+                $stmt = $this->db->prepare($retiredQuery);
+                $stmt->execute();
+                $result = $stmt->fetch(PDO::FETCH_ASSOC);
+                $stats['retirees'] = (int)($result['count'] ?? 0);
+
+                // Calculate totals
+                $stats['totals']['all_personnel'] = $stats['military']['total'] + $stats['civilian']['total'];
+                $stats['totals']['active_military'] = $stats['military']['active'];
+                $stats['totals']['active_civilian'] = $stats['civilian']['active'];
+
+                return $stats;
+                
+            } catch (PDOException $e) {
+                error_log("Enhanced Personnel Stats Error: " . $e->getMessage());
+                return [
+                    'military' => [
+                        'total' => 0, 'active' => 0, 'officers' => 0, 'ncos' => 0, 'recruits' => 0, 'enlisted' => 0, 'warrant' => 0,
+                        'by_gender' => ['male' => 0, 'female' => 0],
+                        'officers_by_gender' => ['male' => 0, 'female' => 0],
+                        'ncos_by_gender' => ['male' => 0, 'female' => 0],
+                        'recruit_officers' => 0, 'recruit_ncos' => 0,
+                        'recruit_officers_by_gender' => ['male' => 0, 'female' => 0],
+                        'recruit_ncos_by_gender' => ['male' => 0, 'female' => 0]
+                    ],
+                    'civilian' => [
+                        'total' => 0, 'active' => 0, 'new_1_month' => 0, 'new_3_months' => 0, 'new_1_year' => 0,
+                        'by_gender' => ['male' => 0, 'female' => 0],
+                        'current_by_gender' => ['male' => 0, 'female' => 0],
+                        'new_by_gender' => ['male' => 0, 'female' => 0],
+                        'by_status' => []
+                    ],
+                    'retirees' => 0,
+                    'totals' => ['all_personnel' => 0, 'active_military' => 0, 'active_civilian' => 0]
+                ];
+            }
+        }, 120); // Cache for 2 minutes
+    }
+
     /**
      * Get KPI (Key Performance Indicator) data
      */
     public function getKPIData() {
-        try {
-            $kpis = [];
-            
-            // Debug logging
-            error_log("DashboardService: Starting KPI data collection");
-            
-            // Total Personnel - using svcStatus and service_number
+        return $this->getCachedData('kpi_data', function() {
+            try {
+                $kpis = [];
+                
+                // Debug logging
+                error_log("DashboardService: Starting KPI data collection");
+                
+                // Total Personnel - using svcStatus and service_number
             $stmt = $this->db->prepare("SELECT COUNT(*) as total FROM staff WHERE svcStatus IS NOT NULL AND svcStatus != 'Discharged' AND service_number IS NOT NULL");
             $stmt->execute();
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
             $kpis['total_personnel'] = (int)($result['total'] ?? 0);
             error_log("DashboardService: Total personnel = " . $kpis['total_personnel']);
             
-            // Active Personnel - using exact case 'Active' and service_number
-            $stmt = $this->db->prepare("SELECT COUNT(*) as active FROM staff WHERE svcStatus = 'Active' AND service_number IS NOT NULL");
+            // Active Personnel - case-insensitive and robust to variations
+            $stmt = $this->db->prepare("SELECT COUNT(*) as active FROM staff WHERE LOWER(TRIM(svcStatus)) = 'active' AND service_number IS NOT NULL");
             $stmt->execute();
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
             $kpis['active_personnel'] = (int)($result['active'] ?? 0);
-            error_log("DashboardService: Active personnel = " . $kpis['active_personnel']);
+            error_log("DashboardService: Active personnel (case-insensitive) = " . $kpis['active_personnel']);
             
             // New Recruits (last 30 days) - using attestDate (date of enlistment)
             $stmt = $this->db->prepare("
@@ -102,14 +411,16 @@ class DashboardService {
                 ]
             ];
         }
+        }, 120); // Cache KPI data for 2 minutes
     }
     
     /**
      * Get personnel distribution data for charts
      */
     public function getPersonnelDistribution() {
-        try {
-            $stmt = $this->db->prepare("
+        return $this->getCachedData('personnel_distribution', function() {
+            try {
+                $stmt = $this->db->prepare("
                 SELECT 
                     svcStatus,
                     COUNT(*) as count 
@@ -149,12 +460,426 @@ class DashboardService {
             error_log("Personnel Distribution Error: " . $e->getMessage());
             return ['active' => 0, 'leave' => 0, 'training' => 0, 'deployed' => 0, 'retired' => 0];
         }
+        }, 300); // Cache for 5 minutes
+    }
+    
+    /**
+     * Get enhanced analytics data for graphical distribution
+     */
+    public function getAnalyticsData() {
+        return $this->getCachedData('analytics_data', function() {
+            try {
+                $analytics = [
+                    'rank_distribution' => $this->getRankDistribution(),
+                    'unit_distribution' => $this->getUnitDistribution(),
+                    'gender_distribution' => $this->getGenderDistribution(),
+                    'age_distribution' => $this->getAgeDistribution(),
+                    'corps_distribution' => $this->getCorpsDistribution(),
+                    'service_length_distribution' => $this->getServiceLengthDistribution(),
+                    'marital_status_distribution' => $this->getMaritalStatusDistribution(),
+                    'military_vs_civilian' => $this->getMilitaryCivilianDistribution()
+                ];
+                
+                return $analytics;
+                
+            } catch (Exception $e) {
+                error_log("Analytics Data Error: " . $e->getMessage());
+                return [
+                    'rank_distribution' => [],
+                    'unit_distribution' => [],
+                    'gender_distribution' => [],
+                    'age_distribution' => [],
+                    'corps_distribution' => [],
+                    'service_length_distribution' => [],
+                    'marital_status_distribution' => [],
+                    'military_vs_civilian' => []
+                ];
+            }
+        }, 300);
+    }
+    
+    /**
+     * Get rank distribution for analytics
+     */
+    private function getRankDistribution() {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT 
+                    r.name as rank_name,
+                    r.category,
+                    COUNT(*) as count
+                FROM staff s
+                INNER JOIN ranks r ON s.rank_id = r.id
+                WHERE s.svcStatus != 'Discharged' AND s.service_number IS NOT NULL
+                GROUP BY r.id, r.name, r.category
+                ORDER BY r.level ASC
+            ");
+            $stmt->execute();
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $distribution = [
+                'labels' => [],
+                'data' => [],
+                'categories' => [],
+                'colors' => []
+            ];
+            
+            $categoryColors = [
+                'officer' => '#007bff',
+                'general' => '#6f42c1',
+                'nco' => '#fd7e14',
+                'enlisted' => '#fd7e14',
+                'warrant' => '#fd7e14',
+                'civilian' => '#6c757d'
+            ];
+            
+            foreach ($results as $row) {
+                $distribution['labels'][] = $row['rank_name'];
+                $distribution['data'][] = (int)$row['count'];
+                $distribution['categories'][] = $row['category'];
+                $distribution['colors'][] = $categoryColors[$row['category']] ?? '#6c757d';
+            }
+            
+            return $distribution;
+            
+        } catch (PDOException $e) {
+            error_log("Rank Distribution Error: " . $e->getMessage());
+            return ['labels' => [], 'data' => [], 'categories' => [], 'colors' => []];
+        }
+    }
+    
+    /**
+     * Get unit distribution for analytics
+     */
+    private function getUnitDistribution() {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT 
+                    u.name as unit_name,
+                    COUNT(*) as count
+                FROM staff s
+                INNER JOIN units u ON s.unit_id = u.id
+                WHERE s.svcStatus != 'Discharged' AND s.service_number IS NOT NULL
+                GROUP BY u.id, u.name
+                ORDER BY count DESC
+                LIMIT 15
+            ");
+            $stmt->execute();
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $distribution = [
+                'labels' => [],
+                'data' => [],
+                'colors' => []
+            ];
+            
+            $colors = ['#007bff', '#28a745', '#dc3545', '#ffc107', '#6f42c1', '#fd7e14', '#17a2b8', '#e83e8c', '#20c997', '#6c757d'];
+            
+            foreach ($results as $index => $row) {
+                $distribution['labels'][] = $row['unit_name'];
+                $distribution['data'][] = (int)$row['count'];
+                $distribution['colors'][] = $colors[$index % count($colors)];
+            }
+            
+            return $distribution;
+            
+        } catch (PDOException $e) {
+            error_log("Unit Distribution Error: " . $e->getMessage());
+            return ['labels' => [], 'data' => [], 'colors' => []];
+        }
+    }
+    
+    /**
+     * Get gender distribution for analytics
+     */
+    private function getGenderDistribution() {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT 
+                    gender,
+                    COUNT(*) as count
+                FROM staff 
+                WHERE svcStatus != 'Discharged' AND service_number IS NOT NULL
+                AND gender IS NOT NULL AND gender != ''
+                GROUP BY gender
+            ");
+            $stmt->execute();
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $distribution = [
+                'labels' => [],
+                'data' => [],
+                'colors' => []
+            ];
+            
+            $genderColors = [
+                'Male' => '#007bff',
+                'Female' => '#e83e8c'
+            ];
+            
+            foreach ($results as $row) {
+                $gender = ucfirst(strtolower($row['gender']));
+                $distribution['labels'][] = $gender;
+                $distribution['data'][] = (int)$row['count'];
+                $distribution['colors'][] = $genderColors[$gender] ?? '#6c757d';
+            }
+            
+            return $distribution;
+            
+        } catch (PDOException $e) {
+            error_log("Gender Distribution Error: " . $e->getMessage());
+            return ['labels' => [], 'data' => [], 'colors' => []];
+        }
+    }
+    
+    /**
+     * Get age distribution for analytics
+     */
+    private function getAgeDistribution() {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT 
+                    CASE 
+                        WHEN TIMESTAMPDIFF(YEAR, dateOfBirth, CURDATE()) < 25 THEN 'Under 25'
+                        WHEN TIMESTAMPDIFF(YEAR, dateOfBirth, CURDATE()) BETWEEN 25 AND 34 THEN '25-34'
+                        WHEN TIMESTAMPDIFF(YEAR, dateOfBirth, CURDATE()) BETWEEN 35 AND 44 THEN '35-44'
+                        WHEN TIMESTAMPDIFF(YEAR, dateOfBirth, CURDATE()) BETWEEN 45 AND 54 THEN '45-54'
+                        WHEN TIMESTAMPDIFF(YEAR, dateOfBirth, CURDATE()) >= 55 THEN '55+'
+                        ELSE 'Unknown'
+                    END as age_group,
+                    COUNT(*) as count
+                FROM staff 
+                WHERE svcStatus != 'Discharged' AND service_number IS NOT NULL
+                AND dateOfBirth IS NOT NULL
+                GROUP BY age_group
+                ORDER BY age_group
+            ");
+            $stmt->execute();
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $distribution = [
+                'labels' => [],
+                'data' => [],
+                'colors' => []
+            ];
+            
+            $ageColors = [
+                'Under 25' => '#28a745',
+                '25-34' => '#007bff',
+                '35-44' => '#ffc107',
+                '45-54' => '#fd7e14',
+                '55+' => '#dc3545',
+                'Unknown' => '#6c757d'
+            ];
+            
+            foreach ($results as $row) {
+                $distribution['labels'][] = $row['age_group'];
+                $distribution['data'][] = (int)$row['count'];
+                $distribution['colors'][] = $ageColors[$row['age_group']] ?? '#6c757d';
+            }
+            
+            return $distribution;
+            
+        } catch (PDOException $e) {
+            error_log("Age Distribution Error: " . $e->getMessage());
+            return ['labels' => [], 'data' => [], 'colors' => []];
+        }
+    }
+    
+    /**
+     * Get corps distribution for analytics
+     */
+    private function getCorpsDistribution() {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT 
+                    corps,
+                    COUNT(*) as count
+                FROM staff 
+                WHERE svcStatus != 'Discharged' AND service_number IS NOT NULL
+                AND corps IS NOT NULL AND corps != ''
+                GROUP BY corps
+                ORDER BY count DESC
+                LIMIT 10
+            ");
+            $stmt->execute();
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $distribution = [
+                'labels' => [],
+                'data' => [],
+                'colors' => []
+            ];
+            
+            $colors = ['#007bff', '#28a745', '#dc3545', '#ffc107', '#6f42c1', '#fd7e14', '#17a2b8', '#e83e8c', '#20c997', '#6c757d'];
+            
+            foreach ($results as $index => $row) {
+                $distribution['labels'][] = $row['corps'];
+                $distribution['data'][] = (int)$row['count'];
+                $distribution['colors'][] = $colors[$index % count($colors)];
+            }
+            
+            return $distribution;
+            
+        } catch (PDOException $e) {
+            error_log("Corps Distribution Error: " . $e->getMessage());
+            return ['labels' => [], 'data' => [], 'colors' => []];
+        }
+    }
+    
+    /**
+     * Get service length distribution for analytics
+     */
+    private function getServiceLengthDistribution() {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT 
+                    CASE 
+                        WHEN TIMESTAMPDIFF(YEAR, attestDate, CURDATE()) < 2 THEN 'Under 2 years'
+                        WHEN TIMESTAMPDIFF(YEAR, attestDate, CURDATE()) BETWEEN 2 AND 5 THEN '2-5 years'
+                        WHEN TIMESTAMPDIFF(YEAR, attestDate, CURDATE()) BETWEEN 6 AND 10 THEN '6-10 years'
+                        WHEN TIMESTAMPDIFF(YEAR, attestDate, CURDATE()) BETWEEN 11 AND 20 THEN '11-20 years'
+                        WHEN TIMESTAMPDIFF(YEAR, attestDate, CURDATE()) > 20 THEN '20+ years'
+                        ELSE 'Unknown'
+                    END as service_length,
+                    COUNT(*) as count
+                FROM staff 
+                WHERE svcStatus != 'Discharged' AND service_number IS NOT NULL
+                AND attestDate IS NOT NULL
+                GROUP BY service_length
+                ORDER BY service_length
+            ");
+            $stmt->execute();
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $distribution = [
+                'labels' => [],
+                'data' => [],
+                'colors' => []
+            ];
+            
+            $serviceColors = [
+                'Under 2 years' => '#28a745',
+                '2-5 years' => '#007bff',
+                '6-10 years' => '#ffc107',
+                '11-20 years' => '#fd7e14',
+                '20+ years' => '#dc3545',
+                'Unknown' => '#6c757d'
+            ];
+            
+            foreach ($results as $row) {
+                $distribution['labels'][] = $row['service_length'];
+                $distribution['data'][] = (int)$row['count'];
+                $distribution['colors'][] = $serviceColors[$row['service_length']] ?? '#6c757d';
+            }
+            
+            return $distribution;
+            
+        } catch (PDOException $e) {
+            error_log("Service Length Distribution Error: " . $e->getMessage());
+            return ['labels' => [], 'data' => [], 'colors' => []];
+        }
+    }
+    
+    /**
+     * Get marital status distribution for analytics
+     */
+    private function getMaritalStatusDistribution() {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT 
+                    maritalStatus,
+                    COUNT(*) as count
+                FROM staff 
+                WHERE svcStatus != 'Discharged' AND service_number IS NOT NULL
+                AND maritalStatus IS NOT NULL AND maritalStatus != ''
+                GROUP BY maritalStatus
+                ORDER BY count DESC
+            ");
+            $stmt->execute();
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $distribution = [
+                'labels' => [],
+                'data' => [],
+                'colors' => []
+            ];
+            
+            $maritalColors = [
+                'Single' => '#007bff',
+                'Married' => '#28a745',
+                'Divorced' => '#dc3545',
+                'Widowed' => '#6c757d',
+                'Separated' => '#ffc107'
+            ];
+            
+            foreach ($results as $row) {
+                $status = ucfirst(strtolower($row['maritalStatus']));
+                $distribution['labels'][] = $status;
+                $distribution['data'][] = (int)$row['count'];
+                $distribution['colors'][] = $maritalColors[$status] ?? '#6c757d';
+            }
+            
+            return $distribution;
+            
+        } catch (PDOException $e) {
+            error_log("Marital Status Distribution Error: " . $e->getMessage());
+            return ['labels' => [], 'data' => [], 'colors' => []];
+        }
+    }
+    
+    /**
+     * Get military vs civilian distribution for analytics
+     */
+    private function getMilitaryCivilianDistribution() {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT 
+                    CASE 
+                        WHEN r.category IN ('officer', 'general', 'nco', 'enlisted', 'warrant') THEN 'Military'
+                        WHEN s.category IN ('CE', 'Civilian Employee', 'Civilian') THEN 'Civilian'
+                        ELSE 'Other'
+                    END as personnel_type,
+                    COUNT(*) as count
+                FROM staff s
+                LEFT JOIN ranks r ON s.rank_id = r.id
+                WHERE s.svcStatus != 'Discharged' AND s.service_number IS NOT NULL
+                GROUP BY personnel_type
+            ");
+            $stmt->execute();
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $distribution = [
+                'labels' => [],
+                'data' => [],
+                'colors' => []
+            ];
+            
+            $typeColors = [
+                'Military' => '#007bff',
+                'Civilian' => '#17a2b8',
+                'Other' => '#6c757d'
+            ];
+            
+            foreach ($results as $row) {
+                $distribution['labels'][] = $row['personnel_type'];
+                $distribution['data'][] = (int)$row['count'];
+                $distribution['colors'][] = $typeColors[$row['personnel_type']] ?? '#6c757d';
+            }
+            
+            return $distribution;
+            
+        } catch (PDOException $e) {
+            error_log("Military vs Civilian Distribution Error: " . $e->getMessage());
+            return ['labels' => [], 'data' => [], 'colors' => []];
+        }
     }
     
     /**
      * Get recruitment trends for the last 6 months
      */
     public function getRecruitmentTrends() {
+        return $this->getCachedData('recruitment_trends', function() {
         try {
             $stmt = $this->db->prepare("
                 SELECT 
@@ -197,12 +922,14 @@ class DashboardService {
                 'data' => [0, 0, 0, 0, 0, 0]
             ];
         }
+        }, 600); // Cache recruitment trends for 10 minutes
     }
     
     /**
      * Get performance metrics by quarter
      */
     public function getPerformanceMetrics() {
+        return $this->getCachedData('performance_metrics', function() {
         try {
             // Try to get real performance data
             $stmt = $this->db->prepare("
@@ -245,14 +972,16 @@ class DashboardService {
                 'data' => [85, 88, 92, 89]
             ];
         }
+        }, 600); // Cache performance metrics for 10 minutes
     }
     
     /**
      * Get recent activities from activity logs
      */
     public function getRecentActivities($limit = 10) {
-        try {
-            $stmt = $this->db->prepare("
+        return $this->getCachedData('recent_activities_'.$limit, function() use ($limit) {
+            try {
+                $stmt = $this->db->prepare("
                 SELECT 
                     sa.action,
                     sa.description,
@@ -290,41 +1019,7 @@ class DashboardService {
             // Return sample activities
             return $this->getSampleActivities();
         }
-    }
-    
-    /**
-     * Get rank distribution
-     */
-    public function getRankDistribution() {
-        try {
-            $stmt = $this->db->prepare("
-                SELECT 
-                    r.name as rank,
-                    COUNT(s.id) as count
-                FROM ranks r
-                LEFT JOIN staff s ON r.id = s.rankID AND s.svcStatus = 'Active'
-                GROUP BY r.id, r.name
-                ORDER BY r.level DESC
-            ");
-            $stmt->execute();
-            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
-            $distribution = [];
-            foreach ($results as $row) {
-                if ($row['count'] > 0) {
-                    $distribution[] = [
-                        'rank' => $row['rank'],
-                        'count' => (int)$row['count']
-                    ];
-                }
-            }
-            
-            return $distribution;
-            
-        } catch (PDOException $e) {
-            error_log("Rank Distribution Error: " . $e->getMessage());
-            return [];
-        }
+        }, 60); // Cache for 1 minute only since activities are frequently updated
     }
     
     /**
@@ -859,6 +1554,418 @@ class DashboardService {
             return [];
         }
     }
+    
+    /**
+     * Get personnel categories summary
+     */
+    public function getPersonnelCategories() {
+        $categories = [
+            'Officer' => 0,
+            'NCO' => 0,
+            'CE' => 0,
+            'Retired' => 0
+        ];
+        $stmt = $this->db->prepare("SELECT category, svcStatus, COUNT(*) as count FROM staff GROUP BY category, svcStatus");
+        $stmt->execute();
+        $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($results as $row) {
+            $cat = strtolower(trim($row['category'] ?? ''));
+            $status = strtolower(trim($row['svcStatus'] ?? ''));
+            if ($status === 'retired') {
+                $categories['Retired'] += (int)$row['count'];
+            } elseif ($cat === 'officer') {
+                $categories['Officer'] += (int)$row['count'];
+            } elseif ($cat === 'nco') {
+                $categories['NCO'] += (int)$row['count'];
+            } elseif ($cat === 'ce') {
+                $categories['CE'] += (int)$row['count'];
+            }
+        }
+        return $categories;
+    }
+    
+    /**
+     * Get gender statistics for all categories
+     */
+    public function getGenderStats() {
+        $stats = [
+            'Officer' => ['male' => 0, 'female' => 0],
+            'NCO' => ['male' => 0, 'female' => 0],
+            'CE' => ['male' => 0, 'female' => 0],
+            'Retired' => ['male' => 0, 'female' => 0]
+        ];
+        $stmt = $this->db->prepare("SELECT category, svcStatus, gender, COUNT(*) as count FROM staff GROUP BY category, svcStatus, gender");
+        $stmt->execute();
+        $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($results as $row) {
+            $cat = strtolower(trim($row['category'] ?? ''));
+            $status = strtolower(trim($row['svcStatus'] ?? ''));
+            $gender = strtolower(trim($row['gender'] ?? ''));
+            if ($status === 'retired') {
+                if ($gender === 'male') $stats['Retired']['male'] += (int)$row['count'];
+                if ($gender === 'female') $stats['Retired']['female'] += (int)$row['count'];
+            } elseif ($cat === 'officer') {
+                if ($gender === 'male') $stats['Officer']['male'] += (int)$row['count'];
+                if ($gender === 'female') $stats['Officer']['female'] += (int)$row['count'];
+            } elseif ($cat === 'nco') {
+                if ($gender === 'male') $stats['NCO']['male'] += (int)$row['count'];
+                if ($gender === 'female') $stats['NCO']['female'] += (int)$row['count'];
+            } elseif ($cat === 'ce') {
+                if ($gender === 'male') $stats['CE']['male'] += (int)$row['count'];
+                if ($gender === 'female') $stats['CE']['female'] += (int)$row['count'];
+            }
+        }
+        return $stats;
+    }
+    
+    /**
+     * Get real-time updates for dashboard
+     * @return array Updates since last check
+     */
+    public function getRealtimeUpdates() {
+        // Get changes since last check
+        $lastCheck = $_SESSION['last_realtime_check'] ?? date('Y-m-d H:i:s', strtotime('-5 minutes'));
+        $currentTime = date('Y-m-d H:i:s');
+        
+        try {
+            $stmt = $this->db->prepare("
+                SELECT 'activity' as update_type, id, action, time 
+                FROM activity_log 
+                WHERE time > ?
+                ORDER BY time DESC
+                LIMIT 10
+            ");
+            $stmt->execute([$lastCheck]);
+            $activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Update last check time
+            $_SESSION['last_realtime_check'] = $currentTime;
+            
+            return [
+                'timestamp' => $currentTime,
+                'updates' => $activities,
+                'counts' => [
+                    'new_activities' => count($activities)
+                ]
+            ];
+        } catch (PDOException $e) {
+            error_log("Real-time Updates Error: " . $e->getMessage());
+            return [
+                'timestamp' => $currentTime,
+                'updates' => [],
+                'counts' => ['new_activities' => 0]
+            ];
+        }
+    }
+    
+    /**
+     * Get predictive analytics for recruitment trends
+     * Uses simple linear regression for future predictions
+     */
+    public function getPredictiveRecruitmentTrends() {
+        return $this->getCachedData('predictive_recruitment', function() {
+            $historicalData = $this->getRecruitmentTrends();
+            
+            // Simple linear regression for prediction
+            $sumX = 0;
+            $sumY = 0;
+            $sumXY = 0;
+            $sumXX = 0;
+            $n = count($historicalData['data']);
+            
+            for ($i = 0; $i < $n; $i++) {
+                $sumX += $i;
+                $sumY += $historicalData['data'][$i];
+                $sumXY += $i * $historicalData['data'][$i];
+                $sumXX += $i * $i;
+            }
+            
+            $slope = ($n * $sumXY - $sumX * $sumY) / ($n * $sumXX - $sumX * $sumX);
+            $intercept = ($sumY - $slope * $sumX) / $n;
+            
+            // Predict next 3 months
+            $predictions = [];
+            for ($i = $n; $i < $n + 3; $i++) {
+                $predictions[] = round($slope * $i + $intercept);
+            }
+            
+            return [
+                'historical' => $historicalData,
+                'predictions' => $predictions,
+                'prediction_labels' => ['Next Month', 'Month +2', 'Month +3']
+            ];
+        }, 1800); // Cache for 30 minutes
+    }
+    
+    /**
+     * Get cohort analysis of personnel retention by enlistment year
+     */
+    public function getCohortAnalysis() {
+        return $this->getCachedData('cohort_analysis', function() {
+            try {
+                // Group retention rates by enlistment year
+                $stmt = $this->db->prepare("
+                    SELECT 
+                        YEAR(attestDate) as cohort_year,
+                        COUNT(*) as total_recruits,
+                        SUM(CASE WHEN LOWER(TRIM(svcStatus)) = 'active' THEN 1 ELSE 0 END) as still_active,
+                        ROUND(SUM(CASE WHEN LOWER(TRIM(svcStatus)) = 'active' THEN 1 ELSE 0 END) / COUNT(*) * 100, 1) as retention_rate
+                    FROM staff
+                    WHERE attestDate IS NOT NULL
+                    GROUP BY YEAR(attestDate)
+                    ORDER BY cohort_year DESC
+                    LIMIT 10
+                ");
+                $stmt->execute();
+                return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch (PDOException $e) {
+                error_log("Cohort Analysis Error: " . $e->getMessage());
+                return [];
+            }
+        }, 3600); // Cache for 1 hour
+    }
+    
+    /**
+     * Enhanced function to get personnel table data with pagination and filtering
+     */
+    public function getPersonnelTableData($params) {
+        // Extract and sanitize parameters
+        $page = isset($params['page']) ? intval($params['page']) : 1;
+        $limit = isset($params['limit']) ? intval($params['limit']) : 10;
+        $offset = ($page - 1) * $limit;
+        
+        try {
+            // Handle filters
+            $filters = [];
+            $filterParams = [];
+            
+            if (!empty($params['rank'])) {
+                $filters[] = "rank = ?";
+                $filterParams[] = $params['rank'];
+            }
+            
+            if (!empty($params['category'])) {
+                $filters[] = "category = ?";
+                $filterParams[] = $params['category'];
+            }
+            
+            // Build WHERE clause
+            $where = "";
+            if (!empty($filters)) {
+                $where = "WHERE " . implode(" AND ", $filters);
+            }
+            
+            // Get total count for pagination
+            $countSql = "SELECT COUNT(*) as total FROM staff $where";
+            $stmt = $this->db->prepare($countSql);
+            if (!empty($filterParams)) {
+                $stmt->execute($filterParams);
+            } else {
+                $stmt->execute();
+            }
+            $total = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+            
+            // Get data with pagination
+            $sql = "SELECT id, name, rank, service_number, category, unit FROM staff $where ORDER BY name LIMIT ? OFFSET ?";
+            $stmt = $this->db->prepare($sql);
+            
+            // Combine parameters
+            $execParams = array_merge($filterParams, [$limit, $offset]);
+            $stmt->execute($execParams);
+            $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            return [
+                'data' => $data,
+                'pagination' => [
+                    'total' => $total,
+                    'page' => $page,
+                    'limit' => $limit,
+                    'pages' => ceil($total / $limit)
+                ]
+            ];
+        } catch (PDOException $e) {
+            error_log("Personnel Table Error: " . $e->getMessage());
+            return [
+                'data' => [],
+                'pagination' => [
+                    'total' => 0,
+                    'page' => $page,
+                    'limit' => $limit,
+                    'pages' => 0
+                ],
+                'error' => 'Database error'
+            ];
+        }
+    }
+    
+    /**
+     * Enhanced export functionality with multiple formats
+     */
+    public function exportDashboardData($params) {
+        $format = strtolower($params['format'] ?? 'csv');
+        $exportType = $params['type'] ?? 'personnel';
+        $filename = "armis_export_{$exportType}_" . date('Y-m-d') . "." . $format;
+        
+        try {
+            // Get data based on export type
+            switch ($exportType) {
+                case 'personnel':
+                    $sql = "SELECT name, rank, service_number, category, unit FROM staff ORDER BY name";
+                    break;
+                case 'activities':
+                    $sql = "SELECT action, description, staff, time FROM activity_log ORDER BY time DESC LIMIT 1000";
+                    break;
+                default:
+                    return ['success' => false, 'message' => 'Invalid export type'];
+            }
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute();
+            $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Generate output in requested format
+            switch ($format) {
+                case 'csv':
+                    return $this->generateCSV($data, $filename);
+                case 'json':
+                    return $this->generateJSON($data, $filename);
+                case 'excel':
+                    return $this->generateExcel($data, $filename);
+                default:
+                    return ['success' => false, 'message' => 'Unsupported export format'];
+            }
+        } catch (PDOException $e) {
+            error_log("Export Error: " . $e->getMessage());
+            return ['success' => false, 'message' => 'Database error during export'];
+        }
+    }
+    
+    /**
+     * Helper function for CSV generation
+     */
+    private function generateCSV($data, $filename) {
+        if (empty($data)) return ['success' => false, 'message' => 'No data to export'];
+        
+        $output = fopen('php://temp', 'r+');
+        
+        // Add headers
+        fputcsv($output, array_keys($data[0]));
+        
+        // Add data rows
+        foreach ($data as $row) {
+            fputcsv($output, $row);
+        }
+        
+        rewind($output);
+        $csvContent = stream_get_contents($output);
+        fclose($output);
+        
+        // In a real implementation, you would send this as a download
+        // header('Content-Type: text/csv');
+        // header('Content-Disposition: attachment; filename="' . $filename . '"');
+        // echo $csvContent;
+        
+        return ['success' => true, 'message' => 'CSV export ready', 'filename' => $filename];
+    }
+    
+    /**
+     * Helper function for JSON generation
+     */
+    private function generateJSON($data, $filename) {
+        if (empty($data)) return ['success' => false, 'message' => 'No data to export'];
+        
+        $jsonContent = json_encode($data, JSON_PRETTY_PRINT);
+        
+        // In a real implementation, you would send this as a download
+        // header('Content-Type: application/json');
+        // header('Content-Disposition: attachment; filename="' . $filename . '"');
+        // echo $jsonContent;
+        
+        return ['success' => true, 'message' => 'JSON export ready', 'filename' => $filename];
+    }
+    
+    /**
+     * Helper function for Excel generation (stub)
+     */
+    private function generateExcel($data, $filename) {
+        // In a real implementation, you would use a library like PhpSpreadsheet
+        return ['success' => true, 'message' => 'Excel export ready (simulation)', 'filename' => $filename];
+    }
+    
+    /**
+     * Enhanced widget state management with user preferences
+     */
+    public function handleWidgetState($params) {
+        // Get user ID from session
+        $userId = $_SESSION['user_id'] ?? 0;
+        if (!$userId) {
+            return ['success' => false, 'message' => 'User not authenticated'];
+        }
+        
+        $action = $params['action'] ?? '';
+        $widgetId = $params['widget_id'] ?? '';
+        
+        if (empty($widgetId)) {
+            return ['success' => false, 'message' => 'No widget specified'];
+        }
+        
+        try {
+            switch ($action) {
+                case 'save':
+                    $state = $params['state'] ?? '';
+                    $position = $params['position'] ?? '';
+                    $visible = isset($params['visible']) ? (int)$params['visible'] : 1;
+                    
+                    // Check if state exists
+                    $stmt = $this->db->prepare("SELECT COUNT(*) as count FROM user_widget_state WHERE user_id = ? AND widget_id = ?");
+                    $stmt->execute([$userId, $widgetId]);
+                    $exists = $stmt->fetch(PDO::FETCH_ASSOC)['count'] > 0;
+                    
+                    if ($exists) {
+                        $stmt = $this->db->prepare("
+                            UPDATE user_widget_state 
+                            SET state = ?, position = ?, visible = ?, updated_at = NOW()
+                            WHERE user_id = ? AND widget_id = ?
+                        ");
+                        $stmt->execute([$state, $position, $visible, $userId, $widgetId]);
+                    } else {
+                        $stmt = $this->db->prepare("
+                            INSERT INTO user_widget_state (user_id, widget_id, state, position, visible, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+                        ");
+                        $stmt->execute([$userId, $widgetId, $state, $position, $visible]);
+                    }
+                    
+                    return ['success' => true, 'message' => 'Widget state saved'];
+                    
+                case 'load':
+                    $stmt = $this->db->prepare("
+                        SELECT state, position, visible 
+                        FROM user_widget_state 
+                        WHERE user_id = ? AND widget_id = ?
+                    ");
+                    $stmt->execute([$userId, $widgetId]);
+                    $state = $stmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    if ($state) {
+                        return ['success' => true, 'state' => $state];
+                    } else {
+                        return ['success' => false, 'message' => 'No saved state found'];
+                    }
+                    
+                case 'reset':
+                    $stmt = $this->db->prepare("DELETE FROM user_widget_state WHERE user_id = ? AND widget_id = ?");
+                    $stmt->execute([$userId, $widgetId]);
+                    return ['success' => true, 'message' => 'Widget state reset to default'];
+                    
+                default:
+                    return ['success' => false, 'message' => 'Invalid action'];
+            }
+        } catch (PDOException $e) {
+            error_log("Widget State Error: " . $e->getMessage());
+            return ['success' => false, 'message' => 'Database error'];
+        }
+    }
 }
 
 /**
@@ -898,7 +2005,11 @@ function getDashboardDataJSON($type = 'all') {
                     'recruitment_trends' => $service->getRecruitmentTrends(),
                     'performance_metrics' => $service->getPerformanceMetrics(),
                     'recent_activities' => $service->getRecentActivities(),
-                    'rank_distribution' => $service->getRankDistribution()
+                    'rank_distribution' => $service->getRankDistribution(),
+                    // Add personnel categories summary
+                    'personnel_categories' => $service->getPersonnelCategories(),
+                    // Add gender statistics for all categories
+                    'gender_stats' => $service->getGenderStats()
                 ];
                 break;
         }
@@ -914,10 +2025,114 @@ function getDashboardDataJSON($type = 'all') {
     }
 }
 
-// Handle AJAX requests
+// Handle AJAX requests for dashboard data
 if (isset($_GET['action']) && $_GET['action'] === 'get_dashboard_data') {
     $type = $_GET['type'] ?? 'all';
+    
+    // Handle additional endpoint types
+    if ($type === 'personnel_table') {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'data' => getPersonnelTableData($_GET)]);
+        exit;
+    }
+    
+    if ($type === 'activities_table') {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'data' => getActivitiesTableData($_GET)]);
+        exit;
+    }
+    
+    if ($type === 'alerts_table') {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'data' => getAlertsTableData($_GET)]);
+        exit;
+    }
+    
+    if ($type === 'drilldown') {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'data' => getDrilldownData($_GET)]);
+        exit;
+    }
+    
+    if ($type === 'export') {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'message' => exportDashboardData($_GET)]);
+        exit;
+    }
+    
+    if ($type === 'widget_state') {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'message' => handleWidgetState($_GET)]);
+        exit;
+    }
+    
+    if ($type === 'activity_feed') {
+        // Return recent user activity feed
+        $feed = getRecentActivityFeed();
+        echo json_encode(['success' => true, 'feed' => $feed]);
+        exit;
+    }
+    
+    if ($type === 'heatmap') {
+        // Return heatmap data
+        $heatmap = getHeatmapData();
+        echo json_encode(['success' => true, 'heatmap' => $heatmap]);
+        exit;
+    }
+    
+    if ($type === 'filter_options') {
+        // Return units, ranks, statuses for filter dropdowns
+        $units = getDistinctValues('unit');
+        $ranks = getDistinctValues('rank');
+        $statuses = getDistinctValues('svcStatus');
+        echo json_encode(['success' => true, 'units' => $units, 'ranks' => $ranks, 'statuses' => $statuses]);
+        exit;
+    }
+    
+    // Default: handle standard dashboard data via the existing method
     getDashboardDataJSON($type);
     exit;
+}
+
+/**
+ * Helper function to get distinct values from a staff field
+ */
+function getDistinctValues($field) {
+    global $db;
+    $values = [];
+    $sql = "SELECT DISTINCT `$field` FROM staff WHERE `$field` IS NOT NULL AND `$field` <> ''";
+    $result = $db->query($sql);
+    while ($row = $result->fetch_assoc()) {
+        $values[] = $row[$field];
+    }
+    return $values;
+}
+
+/**
+ * Get recent activity feed for dashboard
+ */
+function getRecentActivityFeed() {
+    global $db;
+    $feed = [];
+    $sql = "SELECT user, action, time FROM activity_log ORDER BY time DESC LIMIT 20";
+    $result = $db->query($sql);
+    while ($row = $result->fetch_assoc()) {
+        $feed[] = $row;
+    }
+    return $feed;
+}
+
+/**
+ * Get heatmap data for dashboard performance visualization
+ */
+function getHeatmapData() {
+    global $db;
+    $data = [];
+    $sql = "SELECT date, activity_count FROM performance_heatmap ORDER BY date ASC";
+    $result = $db->query($sql);
+    while ($row = $result->fetch_assoc()) {
+        $data[] = $row;
+    }
+    return $data;
 }
 ?>

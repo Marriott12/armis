@@ -3,6 +3,11 @@
     <div class="row mb-3">
         <input type="hidden" name="svcStatus" value="Serving">
         <div class="col-md-4 mb-2">
+            <label class="form-label form-label-sm" for="service_number">Service Number *</label>
+            <input type="text" name="service_number" id="service_number" class="form-control form-control-sm" required maxlength="20" pattern="[0-9]+" aria-label="Service Number" value="<?=old('service_number') ?>" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'');">
+            <small class="form-text text-warning">Please enter numbers only for the Service Number.</small>
+        </div>
+        <div class="col-md-4 mb-2">
             <label class="form-label form-label-sm" for="unitID">Unit *</label>
             <select name="unitID" id="unitID" class="form-select form-select-sm" aria-label="Unit" required data-validate="true">
                 <option value="">Select Unit</option>
@@ -61,29 +66,7 @@
 
     <h5 class="mb-3 text-success">Current Appointment</h5>
     <div class="row mb-3">
-        <div class="col-md-3 mb-2">
-            <label class="form-label form-label-sm" for="current_appointment_name">Appointment Name</label>
-            <input type="text" name="current_appointment_name" id="current_appointment_name" class="form-control form-control-sm" value="<?=old('current_appointment_name')?>">
-        </div>
-        <div class="col-md-3 mb-2">
-            <label class="form-label form-label-sm" for="current_appointment_unit">Unit</label>
-            <input type="text" name="current_appointment_unit" id="current_appointment_unit" class="form-control form-control-sm" value="<?=old('current_appointment_unit')?>">
-        </div>
-        <div class="col-md-3 mb-2">
-            <label class="form-label form-label-sm" for="current_appointment_start">Start Date</label>
-            <input type="date" name="current_appointment_start" id="current_appointment_start" class="form-control form-control-sm" value="<?=old('current_appointment_start')?>">
-        </div>
-        <div class="col-md-3 mb-2">
-            <label class="form-label form-label-sm" for="current_appointment_authority">Authority</label>
-            <input type="text" name="current_appointment_authority" id="current_appointment_authority" class="form-control form-control-sm" value="<?=old('current_appointment_authority')?>">
-        </div>
-    </div>
-
-    <h5 class="mb-3 text-success">Past Appointments</h5>
-    <div id="appointmentList"></div>
-    <button type="button" class="btn btn-outline-secondary btn-sm mb-3" onclick="addAppointment()">Add Appointment</button>
-
-    <h5 class="mb-3 text-success">Current Promotion</h5>
+    <!-- NRC field removed -->
     <div class="row mb-3">
         <div class="col-md-3 mb-2">
             <label class="form-label form-label-sm" for="current_promotion_rank">Rank</label>

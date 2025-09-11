@@ -82,7 +82,7 @@ function handleSearch() {
         'service_number' => 's.service_number',
         'rank_id' => 'r.id',
         'unit_id' => 'u.id',
-        'date_of_birth' => 's.date_of_birth',
+        'DOB' => 's.DOB',
         'attestDate' => 's.attestDate',
         'created_at' => 's.dateCreated'
     ];
@@ -164,12 +164,12 @@ function handleSearch() {
             s.updated_at,
             s.last_login,
             s.password_changed_at,
-            s.date_of_birth,
+            s.DOB,
             s.status,
             s.last_profile_update,
             r.name AS rank_name,
             r.level AS rank_level,
-            u.unitName AS unit_name
+            u.name AS unit_name
         FROM staff s
         LEFT JOIN ranks r ON s.rank_id = r.id
         LEFT JOIN units u ON s.unit_id = u.id
@@ -256,11 +256,11 @@ function handleExport() {
                 s.email,
                 s.svcStatus,
                 s.gender,
-                s.date_of_birth,
+                s.DOB,
                 s.attestDate,
                 r.name AS rank_name,
                 r.level AS rank_level,
-                u.unitName AS unit_name,
+                u.name AS unit_name,
                 s.corps
             FROM staff s
             LEFT JOIN ranks r ON s.rank_id = r.id
@@ -320,7 +320,7 @@ function exportToCSV($results, $setHeaders = true) {
             $row['rank_level'] ?? '',
             $row['unit_name'] ?? '',
             $row['gender'] ?? '',
-            $row['date_of_birth'] ?? '',
+            $row['DOB'] ?? '',
             $row['svcStatus'] ?? '',
             $row['email'] ?? '',
             $row['corps'] ?? '',
@@ -418,7 +418,7 @@ function handleDropdownByRank() {
         $params[] = "%$q%";
         $types .= 'sss';
     }
-    $sql = "SELECT s.id, s.service_number, s.first_name, s.last_name, r.name AS rank_name, r.level AS rank_level, u.unitName AS unit_name FROM staff s LEFT JOIN ranks r ON s.rank_id = r.id LEFT JOIN units u ON s.unit_id = u.id WHERE $where ORDER BY s.last_name, s.first_name LIMIT 50";
+    $sql = "SELECT s.id, s.service_number, s.first_name, s.last_name, r.name AS rank_name, r.level AS rank_level, u.name AS unit_name FROM staff s LEFT JOIN ranks r ON s.rank_id = r.id LEFT JOIN units u ON s.unit_id = u.id WHERE $where ORDER BY s.last_name, s.first_name LIMIT 50";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param($types, ...$params);
     $stmt->execute();

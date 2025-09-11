@@ -30,8 +30,10 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Chart.js for modern dashboards -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.min.js"></script>
+    
+    <?php if (!defined('ARMIS_SCRIPTS_LOADED')): ?>
+    <!-- Chart.js for modern dashboards (UMD version to avoid ESM import errors) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.44.0/dist/apexcharts.min.js"></script>
     
     <!-- ARMIS Dashboard Utilities -->
@@ -39,6 +41,7 @@
     
     <!-- ARMIS Notifications System -->
     <script src="/Armis2/shared/notifications.js"></script>
+    <?php endif; ?>
     
     <script>
         // Scroll to Top functionality
@@ -75,19 +78,23 @@
         
         // Initialize notifications when page loads
         document.addEventListener('DOMContentLoaded', function() {
-            // Show welcome notification for new sessions
+            // Welcome notification deactivated
+            console.log('ARMIS: Welcome notification disabled');
+            
+            // Original code commented out:
+            // // Show welcome notification for new sessions
             if (sessionStorage.getItem('armis_welcome_shown') !== 'true') {
-                setTimeout(() => {
-                    if (typeof armisNotifications !== 'undefined') {
-                        armisNotifications.success(
-                            'Welcome to ARMIS',
-                            'All systems operational. Ready for efficient military resource management.',
-                            5000
-                        );
-                        sessionStorage.setItem('armis_welcome_shown', 'true');
-                    }
-                }, 1000);
-            }
+                 setTimeout(() => {
+                     if (typeof armisNotifications !== 'undefined') {
+                         armisNotifications.success(
+                             'Welcome to ARMIS',
+                             'All systems operational. Ready for efficient military resource management.',
+                             5000
+                         );
+                         sessionStorage.setItem('armis_welcome_shown', 'true');
+                     }
+                 }, 1000);
+             }
         });
     </script>
 </body>

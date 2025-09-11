@@ -15,7 +15,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $profileManager = new UserProfileManager($_SESSION['user_id']);
-$personalInfo = $profileManager->getPersonalInfo();
+$personalInfo = $profileManager->getUserProfile();
 $contactInfo = $profileManager->getContactInfo();
 
 // Handle form submission
@@ -77,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Refresh data after update
-$personalInfo = $profileManager->getPersonalInfo();
+$personalInfo = $profileManager->getUserProfile();
 $contactInfo = $profileManager->getContactInfo();
 ?>
 

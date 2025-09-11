@@ -12,6 +12,9 @@ require_once __DIR__ . '/config/scalability.php';
 // Include military formatting functions
 require_once __DIR__ . '/shared/military_formatting.php';
 
+// Include database connection
+require_once __DIR__ . '/shared/database_connection.php';
+
 // Start session if not already started
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -51,7 +54,7 @@ $currentPage = "dashboard";
 
 $sidebarLinks = [
     ['title' => 'Dashboard', 'url' => '/Armis2/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'System Admin', 'url' => '/Armis2/system_admin/index.php', 'icon' => 'user-shield', 'page' => 'system_admin'],
+    ['title' => 'System Admin', 'url' => '/Armis2/admin/index.php', 'icon' => 'user-shield', 'page' => 'system_admin'],
     ['title' => 'Admin Branch', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'users-cog', 'page' => 'admin_branch'],
     ['title' => 'Command', 'url' => '/Armis2/command/index.php', 'icon' => 'chess-king', 'page' => 'command'],
     ['title' => 'Operations', 'url' => '/Armis2/operations/index.php', 'icon' => 'map-marked-alt', 'page' => 'operations'],
@@ -118,73 +121,6 @@ include __DIR__ . '/shared/sidebar.php';
                         <div class="text-end">
                             <div class="badge bg-success mb-2">System Online</div><br>
                             <small class="text-muted">Last login: <?php echo date('d M Y, H:i', strtotime($userInfo['last_login'])); ?></small>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- System Status Cards -->
-            <div class="row">
-                <div class="col-lg-3 col-md-6 mb-4">
-                    <div class="card dashboard-card h-100 border-left-primary">
-                        <div class="card-body">
-                            <div class="row no-gutters align-items-center">
-                                <div class="col mr-2">
-                                    <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Active Personnel</div>
-                                    <div class="h5 mb-0 font-weight-bold text-gray-800">15,247</div>
-                                </div>
-                                <div class="col-auto">
-                                    <i class="fas fa-users fa-2x text-primary"></i>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-lg-3 col-md-6 mb-4">
-                    <div class="card dashboard-card h-100 border-left-success">
-                        <div class="card-body">
-                            <div class="row no-gutters align-items-center">
-                                <div class="col mr-2">
-                                    <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Units Deployed</div>
-                                    <div class="h5 mb-0 font-weight-bold text-gray-800">42</div>
-                                </div>
-                                <div class="col-auto">
-                                    <i class="fas fa-map-marked-alt fa-2x text-success"></i>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-lg-3 col-md-6 mb-4">
-                    <div class="card dashboard-card h-100 border-left-info">
-                        <div class="card-body">
-                            <div class="row no-gutters align-items-center">
-                                <div class="col mr-2">
-                                    <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Training Programs</div>
-                                    <div class="h5 mb-0 font-weight-bold text-gray-800">128</div>
-                                </div>
-                                <div class="col-auto">
-                                    <i class="fas fa-graduation-cap fa-2x text-info"></i>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-lg-3 col-md-6 mb-4">
-                    <div class="card dashboard-card h-100 border-left-warning">
-                        <div class="card-body">
-                            <div class="row no-gutters align-items-center">
-                                <div class="col mr-2">
-                                    <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">Active Missions</div>
-                                    <div class="h5 mb-0 font-weight-bold text-gray-800">7</div>
-                                </div>
-                                <div class="col-auto">
-                                    <i class="fas fa-crosshairs fa-2x text-warning"></i>
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </div>

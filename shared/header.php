@@ -8,8 +8,8 @@ require_once dirname(__DIR__) . '/shared/session_init.php';
 // Include military formatting functions
 require_once dirname(__DIR__) . '/shared/military_formatting.php';
 
-// Include RBAC system for role-based navigation
-require_once dirname(__DIR__) . '/shared/rbac.php';
+// Include RBAC compatibility layer
+require_once dirname(__DIR__) . '/shared/rbac_compat.php';
 
 // Include database functions for user profile data
 require_once dirname(__DIR__) . '/shared/database_connection.php';
@@ -190,7 +190,6 @@ header('X-Response-Time: ' . (microtime(true) - $startTime));
             <div class="spinner-border text-primary" role="status">
                 <span class="visually-hidden">Loading ARMIS...</span>
             </div>
-            <div class="mt-2 text-muted">Loading ARMIS...</div>
         </div>
     </div>
 

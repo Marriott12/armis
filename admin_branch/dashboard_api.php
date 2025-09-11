@@ -115,6 +115,82 @@ try {
             $response['data'] = $service->getDynamicUnitOverview();
             break;
             
+        // Advanced analytics endpoints
+        case 'get_predictive_attrition':
+            $response['data'] = $service->getPredictiveAttrition();
+            break;
+            
+        case 'get_training_completion':
+            $response['data'] = $service->getTrainingCompletionRates();
+            break;
+            
+        case 'get_cohort_analysis':
+            $response['data'] = $service->getCohortAnalysis();
+            break;
+            
+        // Data table with pagination and filtering
+        case 'get_personnel_table':
+            $params = $_GET;
+            $response['data'] = $service->getPersonnelTableData($params);
+            break;
+            
+        // Export functionality
+        case 'export_data':
+            if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                $params = $_POST;
+                // Verify CSRF token if implemented
+                $exportResult = $service->exportDashboardData($params);
+                
+                // Handle file download if requested
+                if ($exportResult['success'] && isset($_POST['download']) && $_POST['download'] == 1) {
+                    $response['data'] = $exportResult;
+                    $response['data']['download_url'] = 'downloads/' . $exportResult['filename'];
+                } else {
+                    $response['data'] = $exportResult;
+                }
+            } else {
+                $response['success'] = false;
+                $response['message'] = 'Export requires POST method';
+            }
+            break;
+            
+        // Widget state management
+        case 'widget_state':
+            if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                $params = $_POST;
+                // Verify CSRF token if implemented
+                $response['data'] = $service->handleWidgetState($params);
+            } else {
+                // For GET requests, load widget states
+                $widgetId = $_GET['widget_id'] ?? '';
+                if ($widgetId) {
+                    $params = ['action' => 'load', 'widget_id' => $widgetId];
+                    $response['data'] = $service->handleWidgetState($params);
+                } else {
+                    $response['success'] = false;
+                    $response['message'] = 'No widget specified';
+                }
+            }
+            break;
+            
+        // Real-time notifications - DISABLED
+        case 'get_notifications':
+            // Notifications completely disabled
+            $response['data'] = ['notifications' => [], 'count' => 0, 'unread' => 0];
+            break;
+            
+        // Mark notification as read - DISABLED
+        case 'mark_notification_read':
+            // Notifications completely disabled
+            $response['data'] = ['message' => 'Notifications are disabled'];
+                    $response['message'] = 'Database error';
+                }
+            } else {
+                $response['success'] = false;
+                $response['message'] = 'Invalid request';
+            }
+            break;
+            
         case 'get_all_dashboard_data':
         default:
             $response['data'] = [

@@ -55,36 +55,81 @@ class UserProfileManager {
      */
     public function getUserProfile() {
         try {
-            // Main profile data with rank and unit information
-            $stmt = $this->pdo->prepare("
-                SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, 
-                       u.name as unitName, u.code as unitCode, u.type as unitType,
-                       c.name as corps_name
-                FROM staff s 
-                LEFT JOIN ranks r ON s.rank_id = r.id
-                LEFT JOIN units u ON s.unit_id = u.id
-                LEFT JOIN corps c ON s.corps = c.abbreviation
-                WHERE s.id = ?
-            ");
+            // First get basic staff data
+            $stmt = $this->pdo->prepare("SELECT * FROM staff WHERE id = ?");
             $stmt->execute([$this->userId]);
             $profile = $stmt->fetch(PDO::FETCH_OBJ);
             
             if (!$profile) {
+                error_log("No staff record found for user ID: " . $this->userId);
                 return null;
             }
             
-            // Add calculated fields with proper field mapping
-            $profile->age = $this->calculateAge($profile->DOB);
-            $profile->serviceYears = $this->calculateServiceYears($profile->attestDate);
-            $profile->fullName = trim(($profile->prefix ?? '') . ' ' . $profile->first_name . ' ' . $profile->last_name);
+            // Try to get rank information
+            try {
+                if (!empty($profile->rank_id)) {
+                    $rankStmt = $this->pdo->prepare("SELECT name as rankName, abbreviation as rankAbbr FROM ranks WHERE id = ?");
+                    $rankStmt->execute([$profile->rank_id]);
+                    $rank = $rankStmt->fetch(PDO::FETCH_OBJ);
+                    if ($rank) {
+                        $profile->rankName = $rank->rankName;
+                        $profile->rankAbbr = $rank->rankAbbr;
+                    }
+                }
+            } catch (PDOException $e) {
+                error_log("Rank lookup failed: " . $e->getMessage());
+            }
+            
+            // Try to get unit information
+            try {
+                if (!empty($profile->unit_id)) {
+                    $unitStmt = $this->pdo->prepare("SELECT name as unitName, code as unitCode, type as unitType FROM units WHERE id = ?");
+                    $unitStmt->execute([$profile->unit_id]);
+                    $unit = $unitStmt->fetch(PDO::FETCH_OBJ);
+                    if ($unit) {
+                        $profile->unitName = $unit->unitName;
+                        $profile->unitCode = $unit->unitCode;
+                        $profile->unitType = $unit->unitType;
+                    }
+                }
+            } catch (PDOException $e) {
+                error_log("Unit lookup failed: " . $e->getMessage());
+            }
+            
+            // Try to get corps information
+            try {
+                if (!empty($profile->corps)) {
+                    $corpsStmt = $this->pdo->prepare("SELECT name as corps_name FROM corps WHERE abbreviation = ?");
+                    $corpsStmt->execute([$profile->corps]);
+                    $corps = $corpsStmt->fetch(PDO::FETCH_OBJ);
+                    if ($corps) {
+                        $profile->corps_name = $corps->corps_name;
+                    }
+                }
+            } catch (PDOException $e) {
+                error_log("Corps lookup failed: " . $e->getMessage());
+            }
+            
+            // Add calculated fields with proper error handling
+            $profile->age = $this->calculateAge($profile->DOB ?? null);
+            $profile->serviceYears = $this->calculateServiceYears($profile->attestDate ?? $profile->date_of_enlistment ?? null);
+            $profile->fullName = trim(($profile->first_name ?? '') . ' ' . ($profile->last_name ?? '')); // No prefix in name
             $profile->displayRank = $profile->rankName ?? $profile->rankAbbr ?? 'N/A';
             
             // Add legacy field mappings for compatibility
-            $profile->fname = $profile->first_name;
-            $profile->lname = $profile->last_name;
-            $profile->svcNo = $profile->service_number;
-            $profile->rankID = $profile->rank_id;
-            $profile->unitID = $profile->unit_id;
+            $profile->fname = $profile->first_name ?? '';
+            $profile->lname = $profile->last_name ?? '';
+            // Combine prefix with service number for display
+            $profile->svcNo = (!empty($profile->prefix) ? $profile->prefix : '') . ($profile->service_number ?? $profile->svcNo ?? '');
+            $profile->rankID = $profile->rank_id ?? null;
+            $profile->unitID = $profile->unit_id ?? null;
+            
+            // Ensure combat size has proper mapping
+            if (empty($profile->combatSize) && !empty($profile->combat_size)) {
+                $profile->combatSize = $profile->combat_size;
+            } elseif (empty($profile->combat_size) && !empty($profile->combatSize)) {
+                $profile->combat_size = $profile->combatSize;
+            }
             
             return $profile;
             
@@ -105,7 +150,15 @@ class UserProfileManager {
                 ORDER BY year_completed DESC, level DESC
             ");
             $stmt->execute([$this->userId]);
-            return $stmt->fetchAll(PDO::FETCH_OBJ);
+            $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Ensure each record has all required properties to prevent JS errors
+            foreach ($records as &$record) {
+                // Convert to ensure boolean values are properly set
+                $record['is_highest_qualification'] = !empty($record['is_highest_qualification']);
+            }
+            
+            return $records;
         } catch (PDOException $e) {
             error_log("Error fetching education records: " . $e->getMessage());
             return [];
@@ -113,8 +166,317 @@ class UserProfileManager {
     }
     
     /**
-     * Upload and process profile photo
+     * Update education records with change detection
      */
+    public function updateEducationRecords($educationData) {
+        try {
+            $this->pdo->beginTransaction();
+            
+            // Get existing education records
+            $existingRecords = $this->getEducationRecords();
+            $existingById = [];
+            foreach ($existingRecords as $record) {
+                $existingById[$record->id] = $record;
+            }
+            
+            $updatedCount = 0;
+            $insertedCount = 0;
+            $deletedCount = 0;
+            
+            // Process submitted education data
+            $submittedIds = [];
+            
+            foreach ($educationData as $education) {
+                // Skip empty records
+                if (empty($education['institution']) && empty($education['qualification'])) {
+                    continue;
+                }
+                
+                $educationId = !empty($education['id']) ? (int)$education['id'] : null;
+                $submittedIds[] = $educationId;
+                
+                $data = [
+                    'staff_id' => $this->userId,
+                    'institution' => trim($education['institution'] ?? ''),
+                    'qualification' => trim($education['qualification'] ?? ''),
+                    'level' => $education['level'] ?? null,
+                    'field_of_study' => trim($education['field_of_study'] ?? ''),
+                    'year_started' => !empty($education['year_started']) ? (int)$education['year_started'] : null,
+                    'year_completed' => !empty($education['year_completed']) ? (int)$education['year_completed'] : null,
+                    'grade_obtained' => trim($education['grade_obtained'] ?? ''),
+                    'status' => $education['status'] ?? 'Completed'
+                ];
+                
+                if ($educationId && isset($existingById[$educationId])) {
+                    // Update existing record only if changed
+                    $existing = $existingById[$educationId];
+                    $hasChanges = false;
+                    
+                    // Check for changes
+                    foreach ($data as $key => $value) {
+                        if ($key !== 'staff_id' && $existing->$key != $value) {
+                            $hasChanges = true;
+                            break;
+                        }
+                    }
+                    
+                    if ($hasChanges) {
+                        $updateFields = [];
+                        $updateValues = [];
+                        
+                        foreach ($data as $key => $value) {
+                            if ($key !== 'staff_id') {
+                                $updateFields[] = "$key = ?";
+                                $updateValues[] = $value;
+                            }
+                        }
+                        
+                        $updateValues[] = $educationId;
+                        
+                        $updateSQL = "UPDATE staff_education SET " . implode(', ', $updateFields) . ", updated_at = NOW() WHERE id = ?";
+                        $stmt = $this->pdo->prepare($updateSQL);
+                        $stmt->execute($updateValues);
+                        $updatedCount++;
+                    }
+                } else {
+                    // Insert new record
+                    $insertSQL = "INSERT INTO staff_education (staff_id, institution, qualification, level, field_of_study, year_started, year_completed, grade_obtained, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    $stmt = $this->pdo->prepare($insertSQL);
+                    $stmt->execute(array_values($data));
+                    $insertedCount++;
+                }
+            }
+            
+            // Delete records that were not submitted (removed by user)
+            foreach ($existingById as $id => $record) {
+                if (!in_array($id, $submittedIds)) {
+                    $deleteStmt = $this->pdo->prepare("DELETE FROM staff_education WHERE id = ?");
+                    $deleteStmt->execute([$id]);
+                    $deletedCount++;
+                }
+            }
+            
+            $this->pdo->commit();
+            
+            return [
+                'success' => true,
+                'updated' => $updatedCount,
+                'inserted' => $insertedCount,
+                'deleted' => $deletedCount,
+                'message' => "Education records updated successfully. Updated: $updatedCount, Added: $insertedCount, Removed: $deletedCount"
+            ];
+            
+        } catch (PDOException $e) {
+            $this->pdo->rollback();
+            error_log("Error updating education records: " . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Error updating education records: ' . $e->getMessage()
+            ];
+        }
+    }
+    
+    /**
+     * Update personal information with change detection
+     */
+    public function updatePersonalInfo($personalData) {
+        try {
+            // Get current profile data
+            $currentProfile = $this->getUserProfile();
+            if (!$currentProfile) {
+                return ['success' => false, 'message' => 'Profile not found'];
+            }
+            
+            // Define field mappings between form fields and database columns
+            $fieldMappings = [
+                'first_name' => 'first_name',
+                'last_name' => 'last_name',
+                'middle_name' => 'middle_name',
+                'nrc' => 'nrc',
+                'DOB' => 'DOB',
+                'gender' => 'gender',
+                'nationality' => 'nationality',
+                'religion' => 'religion',
+                'marital_status' => 'marital_status',
+                'address' => 'address',
+                'tel' => 'tel',
+                'email' => 'email',
+                'height' => 'height',
+                'weight' => 'weight',
+                'combatSize' => 'combatSize', // Use the existing column first
+                'bsize' => 'bsize',
+                'ssize' => 'ssize',
+                'hdress' => 'hdress',
+                'blood_group' => 'bloodGp',
+                'province' => 'province',
+                'district' => 'district'
+            ];
+            
+            // Add combat_size mapping to ensure both columns are updated
+            $extraFieldMappings = [
+                'combatSize' => 'combat_size' // Ensure combat_size is also updated
+            ];
+            
+            // Check for changes
+            $changedFields = [];
+            $updateValues = [];
+            
+            foreach ($fieldMappings as $formField => $dbField) {
+                if (isset($personalData[$formField])) {
+                    $newValue = trim($personalData[$formField]);
+                    $currentValue = $currentProfile->$dbField ?? '';
+                    
+                    // Only include if there's a change
+                    if ($newValue !== $currentValue) {
+                        $changedFields[] = "$dbField = ?";
+                        $updateValues[] = $newValue;
+                    }
+                }
+            }
+            
+            // Handle extra field mappings for synchronization
+            foreach ($extraFieldMappings as $formField => $dbField) {
+                if (isset($personalData[$formField])) {
+                    $newValue = trim($personalData[$formField]);
+                    // Add the extra field to ensure both columns are updated
+                    $changedFields[] = "$dbField = ?";
+                    $updateValues[] = $newValue;
+                }
+            }
+            
+            // If no changes, return success without updating
+            if (empty($changedFields)) {
+                return ['success' => true, 'message' => 'No changes detected', 'updated' => 0];
+            }
+            
+            // Add user ID for WHERE clause
+            $updateValues[] = $this->userId;
+            
+            // Perform update
+            $updateSQL = "UPDATE staff SET " . implode(', ', $changedFields) . ", updated_at = NOW() WHERE id = ?";
+            $stmt = $this->pdo->prepare($updateSQL);
+            $result = $stmt->execute($updateValues);
+            
+            if ($result) {
+                return [
+                    'success' => true, 
+                    'message' => 'Personal information updated successfully', 
+                    'updated' => count($changedFields)
+                ];
+            } else {
+                return ['success' => false, 'message' => 'Failed to update personal information'];
+            }
+            
+        } catch (PDOException $e) {
+            error_log("Error updating personal info: " . $e->getMessage());
+            return ['success' => false, 'message' => 'Database error: ' . $e->getMessage()];
+        }
+    }
+    
+    /**
+     * Get contact information
+     */
+    public function getContactInfo() {
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT * FROM staff_contact_info 
+                WHERE staff_id = ? 
+                ORDER BY is_primary DESC, contact_type, id
+            ");
+            $stmt->execute([$this->userId]);
+            return $stmt->fetchAll(PDO::FETCH_OBJ);
+        } catch (PDOException $e) {
+            error_log("Error fetching contact info: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Update contact information with change detection
+     */
+    public function updateContactInfo($contactData) {
+        try {
+            $this->pdo->beginTransaction();
+            $existingContacts = $this->getContactInfo();
+            $existingById = [];
+            foreach ($existingContacts as $contact) {
+                $existingById[$contact->id] = $contact;
+            }
+            $updatedCount = 0;
+            $insertedCount = 0;
+            $deletedCount = 0;
+            $submittedIds = [];
+            foreach ($contactData as $contact) {
+                // Skip empty records
+                if (empty($contact['contact_value']) || empty($contact['contact_type'])) {
+                    continue;
+                }
+                $contactId = !empty($contact['id']) ? (int)$contact['id'] : null;
+                $submittedIds[] = $contactId;
+                $data = [
+                    'staff_id' => $this->userId,
+                    'contact_type' => $contact['contact_type'],
+                    'contact_value' => trim($contact['contact_value']),
+                    'is_primary' => !empty($contact['is_primary']) ? 1 : 0,
+                    'is_verified' => !empty($contact['is_verified']) ? 1 : 0,
+                    'notes' => trim($contact['notes'] ?? '')
+                ];
+                if ($contactId && isset($existingById[$contactId])) {
+                    $existing = $existingById[$contactId];
+                    $hasChanges = false;
+                    foreach ($data as $key => $value) {
+                        if ($key !== 'staff_id' && $existing->$key != $value) {
+                            $hasChanges = true;
+                            break;
+                        }
+                    }
+                    if ($hasChanges) {
+                        $updateFields = [];
+                        $updateValues = [];
+                        foreach ($data as $key => $value) {
+                            if ($key !== 'staff_id') {
+                                $updateFields[] = "$key = ?";
+                                $updateValues[] = $value;
+                            }
+                        }
+                        $updateValues[] = $contactId;
+                        $updateSQL = "UPDATE staff_contact_info SET " . implode(', ', $updateFields) . ", updated_at = NOW() WHERE id = ?";
+                        $stmt = $this->pdo->prepare($updateSQL);
+                        $stmt->execute($updateValues);
+                        $updatedCount++;
+                    }
+                } else {
+                    $insertSQL = "INSERT INTO staff_contact_info (staff_id, contact_type, contact_value, is_primary, is_verified, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())";
+                    $stmt = $this->pdo->prepare($insertSQL);
+                    $stmt->execute(array_values($data));
+                    $insertedCount++;
+                }
+            }
+            foreach ($existingById as $id => $record) {
+                if (!in_array($id, $submittedIds)) {
+                    $deleteStmt = $this->pdo->prepare("DELETE FROM staff_contact_info WHERE id = ?");
+                    $deleteStmt->execute([$id]);
+                    $deletedCount++;
+                }
+            }
+            $this->pdo->commit();
+            return [
+                'success' => true,
+                'updated' => $updatedCount,
+                'inserted' => $insertedCount,
+                'deleted' => $deletedCount,
+                'message' => "Contact information updated successfully. Updated: $updatedCount, Added: $insertedCount, Removed: $deletedCount"
+            ];
+        } catch (PDOException $e) {
+            $this->pdo->rollback();
+            error_log("Error updating contact info: " . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Error updating contact information: ' . $e->getMessage()
+            ];
+        }
+    }
+    
     public function uploadProfilePhoto($file) {
         try {
             // Validate file
@@ -463,24 +825,6 @@ class UserProfileManager {
     }
     
     /**
-     * Get user's contact information
-     */
-    public function getContactInfo() {
-        try {
-            $stmt = $this->pdo->prepare("
-                SELECT * FROM staff_contact_info 
-                WHERE staff_id = ? 
-                ORDER BY is_primary DESC, contact_type ASC
-            ");
-            $stmt->execute([$this->userId]);
-            return $stmt->fetchAll(PDO::FETCH_OBJ);
-        } catch (PDOException $e) {
-            error_log("Error fetching contact info: " . $e->getMessage());
-            return [];
-        }
-    }
-    
-    /**
      * Get user's addresses
      */
     public function getAddresses() {
@@ -730,9 +1074,10 @@ class UserProfileManager {
     }
     
     /**
-     * Update contact information
+     * Update contact information (simple version)
+     * This is a simpler version that replaces all contact records
      */
-    public function updateContactInfo($contactData) {
+    public function updateContactInfoSimple($contactData) {
         try {
             $this->pdo->beginTransaction();
             
@@ -785,34 +1130,162 @@ class UserProfileManager {
     }
     
     /**
+     * Validate Next of Kin (NOK) rules
+     * - Must have exactly 2 NOK: 1 Primary, 1 Secondary
+     * - Cannot have duplicate NOK types
+     */
+    public function validateNOKRules($familyData, $excludeMemberId = null) {
+        try {
+            // Get current NOK designations
+            $query = "SELECT id, is_next_of_kin, nok_type FROM staff_family_members WHERE staff_id = ? AND is_next_of_kin = 1";
+            $params = [$this->userId];
+            
+            if ($excludeMemberId) {
+                $query .= " AND id != ?";
+                $params[] = $excludeMemberId;
+            }
+            
+            $stmt = $this->pdo->prepare($query);
+            $stmt->execute($params);
+            $currentNOKs = $stmt->fetchAll(PDO::FETCH_OBJ);
+            
+            // Check if trying to add/update as NOK
+            if (isset($familyData['is_next_of_kin']) && $familyData['is_next_of_kin']) {
+                $requestedNOKType = $familyData['nok_type'] ?? '';
+                
+                // Validate NOK type is provided
+                if (empty($requestedNOKType) || !in_array($requestedNOKType, ['Primary', 'Secondary'])) {
+                    return ['valid' => false, 'message' => 'NOK type must be either Primary or Secondary.'];
+                }
+                
+                // Check for duplicate NOK type
+                foreach ($currentNOKs as $nok) {
+                    if ($nok->nok_type === $requestedNOKType) {
+                        return ['valid' => false, 'message' => "A {$requestedNOKType} Next of Kin is already designated."];
+                    }
+                }
+                
+                // Check if adding would exceed 2 NOKs
+                if (count($currentNOKs) >= 2) {
+                    return ['valid' => false, 'message' => 'Maximum of 2 Next of Kin allowed (1 Primary, 1 Secondary).'];
+                }
+            }
+            
+            // If removing NOK designation, check if it would leave less than 2
+            if (isset($familyData['is_next_of_kin']) && !$familyData['is_next_of_kin'] && count($currentNOKs) <= 1) {
+                return ['valid' => false, 'message' => 'At least 1 Next of Kin must be maintained.'];
+            }
+            
+            return ['valid' => true];
+            
+        } catch (PDOException $e) {
+            error_log("Error validating NOK rules: " . $e->getMessage());
+            return ['valid' => false, 'message' => 'Error validating Next of Kin rules.'];
+        }
+    }
+    
+    /**
+     * Get current NOK status summary
+     */
+    public function getNOKStatus() {
+        try {
+            // Get NOK counts and names
+            $stmt = $this->pdo->prepare("
+                SELECT name, nok_type 
+                FROM staff_family_members 
+                WHERE staff_id = ? AND is_next_of_kin = 1 
+                ORDER BY nok_type
+            ");
+            $stmt->execute([$this->userId]);
+            $noks = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $primary = null;
+            $secondary = null;
+            $primaryCount = 0;
+            $secondaryCount = 0;
+            
+            foreach ($noks as $nok) {
+                if ($nok['nok_type'] === 'Primary') {
+                    $primary = $nok['name'];
+                    $primaryCount++;
+                } elseif ($nok['nok_type'] === 'Secondary') {
+                    $secondary = $nok['name'];
+                    $secondaryCount++;
+                }
+            }
+            
+            $totalCount = $primaryCount + $secondaryCount;
+            $availableSlots = 2 - $totalCount;
+            
+            return [
+                'primary' => $primary,
+                'secondary' => $secondary,
+                'primary_count' => $primaryCount,
+                'secondary_count' => $secondaryCount,
+                'total_count' => $totalCount,
+                'available_slots' => max(0, $availableSlots),
+                'has_primary' => $primaryCount > 0,
+                'has_secondary' => $secondaryCount > 0,
+                'is_complete' => $primaryCount == 1 && $secondaryCount == 1
+            ];
+        } catch (PDOException $e) {
+            error_log("Error getting NOK status: " . $e->getMessage());
+            return [
+                'primary' => null,
+                'secondary' => null,
+                'primary_count' => 0,
+                'secondary_count' => 0,
+                'total_count' => 0,
+                'available_slots' => 2,
+                'has_primary' => false,
+                'has_secondary' => false,
+                'is_complete' => false
+            ];
+        }
+    }
+
+    /**
      * Add new family member
      */
     public function addFamilyMember($familyData) {
         try {
-            $stmt = $this->pdo->prepare("
-                INSERT INTO staff_family_members 
-                (staff_id, name, relationship, date_of_birth, phone, email, address, 
-                 is_emergency_contact, is_dependent, notes, created_at) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-            ");
+            // Validate NOK rules if this member is designated as NOK
+            if (isset($familyData['is_next_of_kin']) && $familyData['is_next_of_kin']) {
+                $nokValidation = $this->validateNOKRules($familyData);
+                if (!$nokValidation['valid']) {
+                    return ['success' => false, 'message' => $nokValidation['message']];
+                }
+            }
             
+            // Check for duplicate family member (by name and relationship for this user)
+            $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM staff_family_members WHERE staff_id = ? AND name = ? AND relationship = ?");
+            $stmt->execute([
+                $this->userId,
+                $familyData['name'],
+                $familyData['relationship']
+            ]);
+            if ($stmt->fetchColumn() > 0) {
+                return ['success' => false, 'message' => 'This family member already exists.'];
+            }
+            
+            $stmt = $this->pdo->prepare(
+                "INSERT INTO staff_family_members 
+                (staff_id, name, relationship, date_of_birth, phone, occupation, is_next_of_kin, nok_type, is_emergency_contact, created_at, updated_at) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())"
+            );
             $stmt->execute([
                 $this->userId,
                 $familyData['name'],
                 $familyData['relationship'],
                 $familyData['date_of_birth'] ?: null,
                 $familyData['phone'],
-                $familyData['email'],
-                $familyData['address'],
-                $familyData['is_emergency_contact'],
-                $familyData['is_dependent'],
-                $familyData['notes']
+                $familyData['occupation'] ?? '',
+                isset($familyData['is_next_of_kin']) ? (int)$familyData['is_next_of_kin'] : 0,
+                (isset($familyData['is_next_of_kin']) && $familyData['is_next_of_kin']) ? ($familyData['nok_type'] ?? null) : null,
+                $familyData['is_emergency_contact']
             ]);
-            
             $this->logActivity('family_add', 'Added family member: ' . $familyData['name']);
-            
             return ['success' => true, 'message' => 'Family member added successfully'];
-            
         } catch (PDOException $e) {
             error_log("Error adding family member: " . $e->getMessage());
             return ['success' => false, 'message' => 'Error adding family member'];
@@ -832,11 +1305,19 @@ class UserProfileManager {
                 return ['success' => false, 'message' => 'Family member not found or unauthorized'];
             }
             
+            // Validate NOK rules if this member is being designated as NOK
+            if (isset($familyData['is_next_of_kin']) && $familyData['is_next_of_kin']) {
+                $nokValidation = $this->validateNOKRules($familyData, $memberId);
+                if (!$nokValidation['valid']) {
+                    return ['success' => false, 'message' => $nokValidation['message']];
+                }
+            }
+            
             $stmt = $this->pdo->prepare("
                 UPDATE staff_family_members 
                 SET name = ?, relationship = ?, date_of_birth = ?, phone = ?, email = ?, 
                     address = ?, is_emergency_contact = ?, is_dependent = ?, notes = ?, 
-                    updated_at = NOW()
+                    is_next_of_kin = ?, nok_type = ?, updated_at = NOW()
                 WHERE id = ? AND staff_id = ?
             ");
             
@@ -850,6 +1331,8 @@ class UserProfileManager {
                 $familyData['is_emergency_contact'],
                 $familyData['is_dependent'],
                 $familyData['notes'],
+                isset($familyData['is_next_of_kin']) ? (int)$familyData['is_next_of_kin'] : 0,
+                (isset($familyData['is_next_of_kin']) && $familyData['is_next_of_kin']) ? ($familyData['nok_type'] ?? null) : null,
                 $memberId,
                 $this->userId
             ]);
@@ -1264,4 +1747,112 @@ class UserProfileManager {
             return ['success' => false, 'message' => 'Failed to update CV status: ' . $e->getMessage()];
         }
     }
-}
+    
+    /**
+     * Get language records for user
+     */
+    public function getLanguageRecords() {
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT * FROM staff_languages 
+                WHERE staff_id = ? 
+                ORDER BY language_name ASC
+            ");
+            $stmt->execute([$this->userId]);
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error fetching language records: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Update language records with change detection
+     */
+    public function updateLanguageRecords($languageData) {
+        try {
+            $this->pdo->beginTransaction();
+            $existingLanguages = $this->getLanguageRecords();
+            $existingMap = [];
+            foreach ($existingLanguages as $lang) {
+                $existingMap[$lang['id']] = $lang;
+            }
+            $processedIds = [];
+            $changesMade = false;
+            $now = date('Y-m-d H:i:s');
+            if (!empty($languageData)) {
+                foreach ($languageData as $index => $langInfo) {
+                    if (empty($langInfo['language_name'])) continue;
+                    $langId = $langInfo['id'] ?? null;
+                    $languageRecord = [
+                        'language_name' => trim($langInfo['language_name']),
+                        'proficiency_level' => $langInfo['proficiency_level'] ?? '',
+                        'can_read' => isset($langInfo['can_read']) ? 1 : 0,
+                        'can_write' => isset($langInfo['can_write']) ? 1 : 0,
+                        'can_speak' => isset($langInfo['can_speak']) ? 1 : 0,
+                        'can_understand' => isset($langInfo['can_understand']) ? 1 : 0
+                    ];
+                    if ($langId && isset($existingMap[$langId])) {
+                        $existing = $existingMap[$langId];
+                        $hasChanges = false;
+                        foreach ($languageRecord as $field => $value) {
+                            if ($existing[$field] != $value) {
+                                $hasChanges = true;
+                                break;
+                            }
+                        }
+                        if ($hasChanges) {
+                            $stmt = $this->pdo->prepare(
+                                "UPDATE staff_languages SET language_name = ?, proficiency_level = ?, can_read = ?, can_write = ?, can_speak = ?, can_understand = ?, updated_at = ? WHERE id = ? AND staff_id = ?"
+                            );
+                            $stmt->execute([
+                                $languageRecord['language_name'],
+                                $languageRecord['proficiency_level'],
+                                $languageRecord['can_read'],
+                                $languageRecord['can_write'],
+                                $languageRecord['can_speak'],
+                                $languageRecord['can_understand'],
+                                $now,
+                                $langId
+                            ]);
+                            $changesMade = true;
+                        }
+                        $processedIds[] = $langId;
+                    } else {
+                        $stmt = $this->pdo->prepare(
+                            "INSERT INTO staff_languages (staff_id, language_name, proficiency_level, can_read, can_write, can_speak, can_understand, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                        );
+                        $stmt->execute([
+                            $this->userId,
+                            $languageRecord['language_name'],
+                            $languageRecord['proficiency_level'],
+                            $languageRecord['can_read'],
+                            $languageRecord['can_write'],
+                            $languageRecord['can_speak'],
+                            $languageRecord['can_understand'],
+                            $now,
+                            $now
+                        ]);
+                        $changesMade = true;
+                    }
+                }
+            }
+            foreach ($existingMap as $id => $existing) {
+                if (!in_array($id, $processedIds)) {
+                    $stmt = $this->pdo->prepare("DELETE FROM staff_languages WHERE id = ? AND staff_id = ?");
+                    $stmt->execute([$id, $this->userId]);
+                    $changesMade = true;
+                }
+            }
+            $this->pdo->commit();
+            if ($changesMade) {
+                $this->logActivity('language_update', "Language information updated");
+            }
+            return ['success' => true, 'message' => 'Language information updated successfully'];
+        } catch (Exception $e) {
+            $this->pdo->rollBack();
+            error_log("Error updating language records: " . $e->getMessage());
+            return ['success' => false, 'message' => 'Failed to update language information: ' . $e->getMessage()];
+        }
+    }
+} // End of class

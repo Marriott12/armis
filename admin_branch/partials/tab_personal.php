@@ -4,11 +4,11 @@ if (!isset($_SESSION['csrf_token'])) {
 }
 ?>
 <div class="tab-pane fade show <?=!$tabErrors || isset($tabErrors['personal']) ? 'active' : ''?> p-3 border rounded" id="personal" role="tabpanel">
-    <h5 class="mb-3 text-success">Personal Details</h5>
+  <h5 class="mb-3 text-success">Personal Details</h5>
     <div class="row mb-3">
         <div class="col-md-4 mb-2">
-            <label class="form-label form-label-sm" for="prefix">Prefix *</label>
-            <select name="prefix" id="prefix" class="form-select form-select-sm" required>
+            <label class="form-label form-label-sm" for="prefix">Prefix</label>
+            <select name="prefix" id="prefix" class="form-select form-select-sm">
                 <option value="">Select Prefix</option>
                 <?php foreach ($prefixOptions as $p): ?>
                 <option value="<?=$p?>" <?=old('prefix')==$p?'selected':''?>><?=$p?></option>
@@ -17,7 +17,8 @@ if (!isset($_SESSION['csrf_token'])) {
         </div>
             <div class="col-md-4 mb-2">
               <label class="form-label form-label-sm" for="svcNo">Service Number *</label>
-              <input type="text" name="svcNo" id="svcNo" class="form-control form-control-sm" required maxlength="20" pattern="[A-Za-z0-9\-\/]+" aria-label="Service Number" value="<?=old('svcNo')?>">
+              <input type="text" name="svcNo" id="svcNo" class="form-control form-control-sm" required maxlength="20" pattern="[0-9]+" aria-label="Service Number" value="<?=old('svcNo') ?>" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'');">
+              <small class="form-text text-warning">Please enter numbers only for the Service Number.</small>
             </div>
             <div class="col-md-4 mb-2">
               <label class="form-label form-label-sm" for="categorySelect">Category *</label>
@@ -37,36 +38,40 @@ if (!isset($_SESSION['csrf_token'])) {
                 $seenCivilian = false;
                 $rankOptionsByCategory = [];
                 foreach ($ranks as $rank):
-                    $cat = trim($rank->category);
-                    if (strtolower($cat) === 'civilian employee' || strtolower($cat) === 'ce' || strtolower($cat) === 'civilian') {
-                        if (!isset($rankOptionsByCategory['Civilian Employee'])) {
-                            $rankOptionsByCategory['Civilian Employee'] = [
-                                '<option value="mr" ' . (old('rankID')=='mr'?'selected':'') . '>Mr</option>',
-                                '<option value="ms" ' . (old('rankID')=='ms'?'selected':'') . '>Ms</option>'
-                            ];
-                        }
-                        continue;
+                  $cat = trim($rank->category);
+                  // Normalize NCO category for optgroup
+                  if (strtolower($cat) === 'nco' || strtolower($cat) === 'non-commissioned officer') {
+                    $cat = 'Non-Commissioned Officer';
+                  }
+                  if (strtolower($cat) === 'civilian employee' || strtolower($cat) === 'ce' || strtolower($cat) === 'civilian') {
+                    if (!isset($rankOptionsByCategory['Civilian Employee'])) {
+                      $rankOptionsByCategory['Civilian Employee'] = [
+                        '<option value="mr" ' . (old('rankID')=='mr'?'selected':'') . '>Mr</option>',
+                        '<option value="ms" ' . (old('rankID')=='ms'?'selected':'') . '>Ms</option>'
+                      ];
                     }
-                    if (!isset($rankOptionsByCategory[$cat])) $rankOptionsByCategory[$cat] = [];
-                    ob_start();
-                    ?>
-                    <option value="<?=$rank->rankID?>" 
-                            data-rankindex="<?=$rank->rankIndex ?? $rank->level ?? ''?>" 
-                            data-category="<?=htmlspecialchars($rank->category)?>"
-                            data-abbreviation="<?=htmlspecialchars($rank->abbreviation ?? '')?>"
-                            data-staff-count="<?=$rank->staff_count ?? 0?>"
-                            <?=old('rankID')==$rank->rankID?'selected':''?>>
-                        <?=htmlspecialchars($rank->rankName)?>
-                        <?php if (!empty($rank->abbreviation)): ?> (<?=htmlspecialchars($rank->abbreviation)?>)<?php endif; ?>
-                    </option>
-                    <?php
-                    $rankOptionsByCategory[$cat][] = trim(ob_get_clean());
+                    continue;
+                  }
+                  if (!isset($rankOptionsByCategory[$cat])) $rankOptionsByCategory[$cat] = [];
+                  ob_start();
+                  ?>
+                  <option value="<?=$rank->rankID?>" 
+                      data-rankindex="<?=$rank->rankIndex ?? $rank->level ?? ''?>" 
+                      data-category="<?=htmlspecialchars($rank->category)?>"
+                      data-abbreviation="<?=htmlspecialchars($rank->abbreviation ?? '')?>"
+                      data-staff-count="<?=$rank->staff_count ?? 0?>"
+                      <?=old('rankID')==$rank->rankID?'selected':''?>>
+                    <?=htmlspecialchars($rank->rankName)?>
+                    <?php if (!empty($rank->abbreviation)): ?> (<?=htmlspecialchars($rank->abbreviation)?>)<?php endif; ?>
+                  </option>
+                  <?php
+                  $rankOptionsByCategory[$cat][] = trim(ob_get_clean());
                 endforeach; 
                 // Output all options for all categories, but hide with JS
                 foreach ($rankOptionsByCategory as $cat => $options) {
-                    echo '<optgroup label="' . htmlspecialchars($cat) . '" data-category="' . htmlspecialchars($cat) . '">';
-                    foreach ($options as $opt) echo $opt;
-                    echo '</optgroup>';
+                  echo '<optgroup label="' . htmlspecialchars($cat) . '" data-category="' . htmlspecialchars($cat) . '">';
+                  foreach ($options as $opt) echo $opt;
+                  echo '</optgroup>';
                 }
                 ?>
               </select>
@@ -78,13 +83,12 @@ if (!isset($_SESSION['csrf_token'])) {
               <input type="text" name="lname" id="lname" class="form-control form-control-sm" required maxlength="100" aria-label="Surname" value="<?=old('lname')?>">
             </div>
             <div class="col-md-4 mb-2">
-              <label class="form-label form-label-sm" for="fname">Forename(s) *</label>
-              <input type="text" name="fname" id="fname" class="form-control form-control-sm" required maxlength="100" aria-label="First Name(s)" value="<?=old('fname')?>">
+              <label class="form-label form-label-sm" for="fname">First Name *</label>
+              <input type="text" name="fname" id="fname" class="form-control form-control-sm" required maxlength="100" aria-label="First Name" value="<?=old('fname')?>">
             </div>
             <div class="col-md-4 mb-2">
               <label class="form-label form-label-sm" for="email">Email Address *</label>
               <input type="email" name="email" id="email" class="form-control form-control-sm <?= hasError('email') ? 'is-invalid' : '' ?>" required maxlength="100" aria-label="Email Address" value="<?=old('email')?>" data-validate="true">
-              <div class="validation-feedback"><?= getError('email') ?></div>
               <?php if (hasError('email')): ?>
                 <div class="invalid-feedback"><?= getError('email') ?></div>
               <?php endif; ?>
@@ -92,14 +96,9 @@ if (!isset($_SESSION['csrf_token'])) {
             <div class="col-md-4 mb-2">
               <label class="form-label form-label-sm" for="phone">Phone Number *</label>
               <input type="tel" name="phone" id="phone" class="form-control form-control-sm <?= hasError('phone') ? 'is-invalid' : '' ?>" required maxlength="20" aria-label="Phone Number" value="<?=old('phone')?>" placeholder="+260 XX XXX XXXX" data-validate="true">
-              <div class="validation-feedback"><?= getError('phone') ?></div>
               <?php if (hasError('phone')): ?>
                 <div class="invalid-feedback"><?= getError('phone') ?></div>
               <?php endif; ?>
-            </div>
-            <div class="col-md-4 mb-2">
-              <label class="form-label form-label-sm" for="titles">Titles</label>
-              <input type="text" name="titles" id="titles" class="form-control form-control-sm" maxlength="50" value="<?=old('titles')?>">
             </div>
             <div class="col-md-4 mb-2">
               <label class="form-label form-label-sm" for="gender">Gender *</label>
@@ -111,7 +110,7 @@ if (!isset($_SESSION['csrf_token'])) {
             </div>
             <div class="col-md-4 mb-2">
               <label class="form-label form-label-sm" for="DOB">Date of Birth *</label>
-              <input type="date" name="DOB" id="DOB" class="form-control form-control-sm" required aria-label="Date of Birth" value="<?=old('DOB')?>">
+              <input type="date" name="DOB" id="DOB" class="form-control form-control-sm" required aria-label="Date of Birth" value="<?=old('DOB')?>" min="1900-01-01" max="<?=date('Y-m-d', strtotime('-18 years'))?>">
             </div>
             <div class="col-md-4 mb-2">
               <label class="form-label form-label-sm" for="blood_group">Blood Group *</label>
@@ -163,48 +162,8 @@ if (!isset($_SESSION['csrf_token'])) {
           <label class="form-label form-label-sm" for="village">Village</label>
           <input type="text" name="village" id="village" class="form-control form-control-sm" value="<?=old('village')?>">
         </div>
-        <div class="col-md-4 mb-2">
-          <label class="form-label form-label-sm" for="height">Height (cm) *</label>
-          <input type="number" min="100" max="250" name="height" id="height" class="form-control form-control-sm" required value="<?=old('height')?>">
-        </div>
-        <div class="col-md-4 mb-2">
-          <label class="form-label form-label-sm" for="combat_size">Combat Size *</label>
-          <select name="combat_size" id="combat_size" class="form-select form-select-sm" required>
-          <option value="">Select</option>
-          <?php foreach($combatSizes as $size): ?>
-            <option value="<?=$size?>" <?=old('combat_size')==$size?'selected':''?>><?=$size?></option>
-          <?php endforeach; ?>
-        </select>
-        </div>
-        <div class="col-md-4 mb-2">
-          <label class="form-label form-label-sm" for="boot_size">Boot Size *</label>
-          <select name="boot_size" id="boot_size" class="form-select form-select-sm" required>
-          <option value="">Select</option>
-          <?php foreach($bootSizes as $size): ?>
-            <option value="<?=$size?>" <?=old('boot_size')==$size?'selected':''?>><?=$size?></option>
-          <?php endforeach; ?>
-        </select>
-        </div>
-        <div class="col-md-4 mb-2">
-          <label class="form-label form-label-sm" for="shoe_size">Staff Shoe Size *</label>
-          <select name="shoe_size" id="shoe_size" class="form-select form-select-sm" required>
-          <option value="">Select</option>
-          <?php foreach($shoeSizes as $size): ?>
-            <option value="<?=$size?>" <?=old('shoe_size')==$size?'selected':''?>><?=$size?></option>
-          <?php endforeach; ?>
-        </select>
-        </div>
-        <div class="col-md-4 mb-2">
-          <label class="form-label form-label-sm" for="headdress_size">Headdress Size *</label>
-          <select name="headdress_size" id="headdress_size" class="form-select form-select-sm" required>
-            <option value="">Select</option>
-            <?php foreach($headdressSizes as $size): ?>
-              <option value="<?=$size?>" <?=old('headdress_size')==$size?'selected':''?>><?=$size?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
+      </div>
     </div>
-</div>
 <script>
 // Update district options based on selected province
 document.getElementById('province').addEventListener('change', function() {
@@ -224,24 +183,39 @@ document.getElementById('province').addEventListener('change', function() {
 
 // Filter ranks by category
 document.getElementById('categorySelect').addEventListener('change', function() {
-    var selectedCat = this.value.trim();
-    var rankSelect = document.getElementById('rankSelect');
-    var optgroups = rankSelect.querySelectorAll('optgroup');
-    var found = false;
-    rankSelect.value = '';
-    optgroups.forEach(function(optgroup) {
-        var cat = optgroup.getAttribute('label').trim();
-        if (cat === selectedCat || (selectedCat === 'Civilian Employee' && cat === 'Civilian Employee')) {
-            optgroup.style.display = '';
-            found = true;
-        } else {
-            optgroup.style.display = 'none';
-        }
-    });
-    // If no match, show all
-    if (!found) {
-        optgroups.forEach(function(optgroup) { optgroup.style.display = ''; });
+  var selectedCat = this.value.trim();
+  // Normalize NCO category label for matching optgroup
+  var normalizedCat = selectedCat;
+  if (selectedCat === 'NCO' || selectedCat === 'Non-Commissioned Officer') {
+    normalizedCat = 'Non-Commissioned Officer';
+  }
+  var rankSelect = document.getElementById('rankSelect');
+  var optgroups = rankSelect.querySelectorAll('optgroup');
+  rankSelect.value = '';
+  optgroups.forEach(function(optgroup) {
+    var cat = optgroup.getAttribute('label').trim();
+    // Match normalized category
+    if (cat === normalizedCat) {
+      optgroup.style.display = '';
+    } else {
+      optgroup.style.display = 'none';
     }
+  });
+  // Hide all options not in the selected optgroup
+  var options = rankSelect.querySelectorAll('option');
+  options.forEach(function(option) {
+    var parentGroup = option.parentElement;
+    if (parentGroup.tagName === 'OPTGROUP') {
+      if (parentGroup.getAttribute('label').trim() === normalizedCat) {
+        option.style.display = '';
+      } else {
+        option.style.display = 'none';
+      }
+    } else {
+      // Hide the default "Select Rank" option if category is selected
+      option.style.display = selectedCat ? '' : '';
+    }
+  });
 });
 // On page load, trigger filter if category is preselected
 window.addEventListener('DOMContentLoaded', function() {

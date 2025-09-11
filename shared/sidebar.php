@@ -1071,18 +1071,18 @@ document.addEventListener('DOMContentLoaded', function() {
         const helpBtn = document.getElementById('helpBtn');
 
         notificationsBtn.addEventListener('click', function() {
-            // Simulate notification panel
-            alert('Notifications:\n• System maintenance scheduled\n• New training available\n• Budget approval pending');
+            // Notifications disabled for cleaner interface
+            console.log('Notifications panel disabled');
         });
 
         messagesBtn.addEventListener('click', function() {
-            // Simulate messages panel  
-            alert('Messages:\n• Commander briefing at 0800\n• Equipment inspection reminder\n• Training completion certificate ready');
+            // Messages panel disabled for cleaner interface
+            console.log('Messages panel disabled');
         });
 
         helpBtn.addEventListener('click', function() {
-            // Simulate help system
-            alert('ARMIS Help:\n• Press F1 for keyboard shortcuts\n• Use Ctrl+/ to search\n• Right-click items for options');
+            // Help system disabled for cleaner interface
+            console.log('Help system disabled');
         });
     }
 

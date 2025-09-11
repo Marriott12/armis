@@ -1,15 +1,6 @@
 // NOK and ALT NOK real-time validation
 document.addEventListener('DOMContentLoaded', function() {
-    // NOK NRC
-    const nokNrcInput = document.querySelector('[name="nok_nrc"]');
-    if (nokNrcInput) {
-        nokNrcInput.addEventListener('blur', function() {
-            clearFieldError('nok_nrc');
-            if (nokNrcInput.value && !validateNRC(nokNrcInput.value)) {
-                showFieldError('nok_nrc', 'Invalid NRC format for Next of Kin.');
-            }
-        });
-    }
+    // NOK NRC removed
     // NOK phone
     const nokPhoneInput = document.querySelector('[name="nok_phone"]');
     if (nokPhoneInput) {
@@ -30,16 +21,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-    // ALT NOK NRC
-    const altnokNrcInput = document.querySelector('[name="altnok_nrc"]');
-    if (altnokNrcInput) {
-        altnokNrcInput.addEventListener('blur', function() {
-            clearFieldError('altnok_nrc');
-            if (altnokNrcInput.value && !validateNRC(altnokNrcInput.value)) {
-                showFieldError('altnok_nrc', 'Invalid NRC format for Alternate Next of Kin.');
-            }
-        });
-    }
+    // ALT NOK NRC removed
     // ALT NOK phone
     const altnokPhoneInput = document.querySelector('[name="altnok_phone"]');
     if (altnokPhoneInput) {
@@ -62,9 +44,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 // Real-time validation helpers
-function validateNRC(nrc) {
-    return /^\d{2}\/\w{3,}\d{4,}\/\d{2}$/i.test(nrc);
-}
+// validateNRC removed
 function validateEmail(email) {
     return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
 }
@@ -107,17 +87,7 @@ function clearFieldError(field) {
 
 // Attach real-time validation events
 document.addEventListener('DOMContentLoaded', function() {
-    const nrcInput = document.querySelector('[name="nrc"]');
-    if (nrcInput) {
-        nrcInput.addEventListener('blur', function() {
-            clearFieldError('nrc');
-            if (!validateRequired(nrcInput.value)) {
-                showFieldError('nrc', 'NRC is required.');
-            } else if (!validateNRC(nrcInput.value)) {
-                showFieldError('nrc', 'Invalid NRC format.');
-            }
-        });
-    }
+    // NRC input removed
     const emailInput = document.querySelector('[name="email"]');
     if (emailInput) {
         emailInput.addEventListener('blur', function() {
@@ -180,15 +150,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     function setupDuplicateChecks() {
-        var nrcInput = document.getElementById('nrc');
-        var emailInput = document.getElementById('email');
-        if (nrcInput) {
-            nrcInput.addEventListener('blur', function() {
-                checkDuplicate('nrc', nrcInput.value, function(exists) {
-                    showDuplicateError(nrcInput, exists, 'A staff member with this NRC already exists.');
-                });
-            });
-        }
+    var emailInput = document.getElementById('email');
         if (emailInput) {
             emailInput.addEventListener('blur', function() {
                 checkDuplicate('email', emailInput.value, function(exists) {
@@ -208,7 +170,7 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .then(response => response.json())
         .then(json => {
-            if (type === 'nrc') callback(json.nrc_exists);
+            // NRC duplicate callback removed
             if (type === 'email') callback(json.email_exists);
         })
         .catch(() => callback(false));
@@ -270,8 +232,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 updateFormStatistics();
             });
         });
-        // Load saved draft if exists
-        loadDraftFromStorage();
         // Initialize timer
         formStartTime = new Date();
         updateTimeSpent();
@@ -320,6 +280,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         // Form submission validation
         form.addEventListener('submit', function(e) {
+            window.formSubmitted = true;
+            //try { localStorage.removeItem('staffDraft'); } catch(e){}
+            sessionStorage.setItem('formJustSubmitted', '1');
+            setTimeout(function(){ sessionStorage.removeItem('formJustSubmitted'); }, 5000);
             if (!validateAllFields()) {
                 e.preventDefault();
                 showValidationSummary();
@@ -355,32 +319,7 @@ document.addEventListener('DOMContentLoaded', function() {
             updateFormStatistics();
         }
     }
-    function setupDraftManagement() {
-        const loadDraftBtn = document.getElementById('loadDraftBtn');
-        const saveDraftBtn = document.getElementById('saveDraftBtn');
-        const clearFormBtn = document.getElementById('clearFormBtn');
-        const saveAndContinueBtn = document.getElementById('saveAndContinueBtn');
-        if (loadDraftBtn) {
-            loadDraftBtn.addEventListener('click', function() { try { loadDraftFromStorage(); } catch(e){} });
-        }
-        if (saveDraftBtn) {
-            saveDraftBtn.addEventListener('click', function() { try { saveDraft(true); } catch(e){} });
-        }
-        if (clearFormBtn) {
-            clearFormBtn.addEventListener('click', function() {
-                if (confirm('Are you sure you want to clear the entire form? This action cannot be undone.')) {
-                    try { clearForm(); } catch(e){}
-                }
-            });
-        }
-        if (saveAndContinueBtn) {
-            saveAndContinueBtn.addEventListener('click', function() {
-                try { saveDraft(true); } catch(e){}
-                navigateTab(1);
-                showNotification('Progress saved! Moving to next section.', 'success');
-            });
-        }
-    }
+
     function validateField(field) {
         if (!field.name) return true;
         const value = field.value.trim();
@@ -563,52 +502,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-    function saveDraft(showNotification = false) {
-        const form = document.getElementById('createStaffForm');
-        if (!form) return;
-        const formData = new FormData(form);
-        const draftData = {};
-        for (let [key, value] of formData.entries()) {
-            draftData[key] = value;
-        }
-        // Save to localStorage
-        const draftInfo = {
-            data: draftData,
-            timestamp: new Date().toISOString(),
-            progress: document.getElementById('completionPercentage')?.textContent || '0%'
-        };
-        try {
-            localStorage.setItem('staffDraft', JSON.stringify(draftInfo));
-        } catch (e) {
-            console.error('localStorage error', e);
-        }
-        if (showNotification) {
-            showAutoSaveNotification();
-        }
-    }
-    function loadDraftFromStorage() {
-        try {
-            const saved = localStorage.getItem('staffDraft');
-            if (saved) {
-                const draft = JSON.parse(saved);
-                const timestamp = new Date(draft.timestamp).toLocaleString();
-                if (confirm(`Found a saved draft from ${timestamp} with ${draft.progress} completion. Would you like to load it?`)) {
-                    loadDraft(draft.data);
-                }
-            }
-        } catch (e) { console.error('Draft load error', e); }
-    }
-    function loadDraft(data) {
-        const form = document.getElementById('createStaffForm');
-        if (!form) return;
-        Object.entries(data).forEach(([key, value]) => {
-            const field = form.querySelector(`[name="${key}"]`);
-            if (field) {
-                field.value = value;
-            }
-        });
-        updateFormStatistics();
-    }
+   
     function clearForm() {
         const form = document.getElementById('createStaffForm');
         if (form) {
@@ -619,33 +513,16 @@ document.addEventListener('DOMContentLoaded', function() {
             form.querySelectorAll('[id$="-error"]').forEach(errorDiv => {
                 errorDiv.textContent = '';
             });
-            try { localStorage.removeItem('staffDraft'); } catch(e){}
+            
             updateFormStatistics();
         }
     }
     function showAutoSaveNotification() {
-        const indicator = document.getElementById('autoSaveIndicator');
-        if (indicator) {
-            indicator.classList.add('show');
-            const toast = new bootstrap.Toast(indicator.querySelector('.toast'));
-            toast.show();
-            setTimeout(() => {
-                indicator.classList.remove('show');
-            }, 3000);
-        }
+        // Auto-save notifications disabled
+        return;
     }
     function hasFormChanged() {
-        const form = document.getElementById('createStaffForm');
-        if (!form) return false;
-        const currentData = new FormData(form);
-        const currentString = JSON.stringify(Object.fromEntries(currentData));
-        let savedString = '';
-        try { savedString = localStorage.getItem('staffDraftString'); } catch(e){}
-        if (currentString !== savedString) {
-            try { localStorage.setItem('staffDraftString', currentString); } catch(e){}
-            return true;
-        }
-        return false;
+    return false;
     }
     function updateTimeSpent() {
         const now = new Date();

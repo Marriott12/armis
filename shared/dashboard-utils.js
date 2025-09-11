@@ -115,15 +115,21 @@ class ARMISDashboard {
     }
 
     loadChartLibrary() {
+        // Chart.js should already be loaded from the CDN in the main HTML
+        // This prevents duplicate loading issues and import errors
         if (typeof Chart === 'undefined') {
-            const script = document.createElement('script');
-            script.src = 'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js';
-            script.onload = () => {
-                console.log('Chart.js loaded successfully');
-                this.initializeCharts();
-            };
-            document.head.appendChild(script);
+            console.warn('Chart.js not found. Charts will be initialized when Chart.js becomes available.');
+            // We won't load it dynamically anymore to avoid conflicts
+            setTimeout(() => {
+                if (typeof Chart !== 'undefined') {
+                    console.log('Chart.js became available');
+                    this.initializeCharts();
+                } else {
+                    console.error('Chart.js still not available after delay');
+                }
+            }, 1000);
         } else {
+            console.log('Charts ready for initialization');
             this.initializeCharts();
         }
     }

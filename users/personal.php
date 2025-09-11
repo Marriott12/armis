@@ -4,6 +4,11 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// Enable error reporting for debugging
+error_reporting(E_ALL);
+ini_set('display_errors', 0); // Set to 1 for debugging
+ini_set('log_errors', 1);
+
 // Check if user is logged in
 if (!isset($_SESSION['user_id'])) {
     header('Location: ' . dirname($_SERVER['PHP_SELF']) . '/../login.php');
@@ -25,199 +30,140 @@ $sidebarLinks = [
     ['title' => 'Account Settings', 'url' => '/Armis2/users/settings.php', 'icon' => 'cogs', 'page' => 'settings']
 ];
 
-// Load user profile data
-require_once __DIR__ . '/profile_manager.php';
-
+// Initialize variables
 $success = false;
 $errors = [];
+$userData = null;
+$contactInfo = [];
+$educationRecords = [];
+$languageRecords = [];
 
+// Load user profile data
 try {
+    require_once __DIR__ . '/profile_manager.php';
     require_once dirname(__DIR__) . '/shared/database_connection.php';
-    $pdo = getDbConnection();
+    
     $profileManager = new UserProfileManager($_SESSION['user_id']);
     $userData = $profileManager->getUserProfile();
-    $contactInfo = $profileManager->getContactInfo();
-    $addresses = $profileManager->getAddresses();
     
-    // Handle form submission
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        if (isset($_POST['update_basic'])) {
-            // Update staff table with new personal info
-            $staff_id = $_SESSION['user_id'];
-            $now = date('Y-m-d H:i:s');
-            $service_number = $userData->svcNo ?? null;
-            $fields = [
-                'nrc' => $_POST['nrc'] ?? null,
-                'dob' => $_POST['dob'] ?? null,
-                'gender' => $_POST['gender'] ?? null,
-                'marital_status' => $_POST['marital'] ?? null,
-                'religion' => $_POST['religion'] ?? null,
-                'bloodGp' => $_POST['bloodGp'] ?? null,
-                'height' => $_POST['height'] ?? null,
-                'email' => $_POST['email'] ?? null,
-                'tel' => $_POST['tel'] ?? null,
-                'combatSize' => $_POST['combatSize'] ?? null,
-                'bsize' => $_POST['bsize'] ?? null,
-                'ssize' => $_POST['ssize'] ?? null,
-                'hdress' => $_POST['hdress'] ?? null,
-                'updated_at' => $now
-            ];
-            $set = [];
-            $params = [];
-            foreach ($fields as $col => $val) {
-                $set[] = "$col = ?";
-                $params[] = $val;
-            }
-            $params[] = $service_number;
-            $stmt = $pdo->prepare("UPDATE staff SET ".implode(',', $set)." WHERE service_number = ?");
-            $stmt->execute($params);
+    if (!$userData) {
+        $errors[] = "Unable to load profile information. Please contact system administrator.";
+        error_log("Profile not found for user ID: " . $_SESSION['user_id']);
+    } else {
+        $contactInfo = $profileManager->getContactInfo();
+        $educationRecords = $profileManager->getEducationRecords();
+        $languageRecords = $profileManager->getLanguageRecords();
+    }
+    
+} catch (Exception $e) {
+    $errors[] = "Error loading profile information: " . $e->getMessage();
+    error_log("Profile loading error for user " . $_SESSION['user_id'] . ": " . $e->getMessage());
+}
 
-            // --- Insert/Update Spouse in staff_spouse and Children in staff_family_members ---
-            $spouse_name = trim($_POST['spouse_name'] ?? '');
-            $spouse_dob = $_POST['spouse_dob'] ?? null;
-            $spouse_nrc = $_POST['spouse_nrc'] ?? null;
-            $spouse_occup = $_POST['spouse_occup'] ?? null;
-            $spouse_contact = $_POST['spouse_contact'] ?? null;
-            if ($spouse_name !== '' && $service_number) {
-                // Upsert spouse (one per staff)
-                $stmt = $pdo->prepare("SELECT id FROM staff_spouse WHERE service_number = ?");
-                $stmt->execute([$service_number]);
-                $spouse_id = $stmt->fetchColumn();
-                if ($spouse_id) {
-                    $stmt = $pdo->prepare("UPDATE staff_spouse SET spouseName=?, spouseDOB=?, spouseNRC=?, spouseOccup=?, spouseContact=? WHERE id=?");
-                    $stmt->execute([$spouse_name, $spouse_dob, $spouse_nrc, $spouse_occup, $spouse_contact, $spouse_id]);
-                } else {
-                    $stmt = $pdo->prepare("INSERT INTO staff_spouse (service_number, spouseName, spouseDOB, spouseNRC, spouseOccup, spouseContact) VALUES (?, ?, ?, ?, ?, ?)");
-                    $stmt->execute([$service_number, $spouse_name, $spouse_dob, $spouse_nrc, $spouse_occup, $spouse_contact]);
-                }
-            }
-            // Children (staff_family_members)
-            $child_names = $_POST['child_name'] ?? [];
-            $child_dobs = $_POST['child_dob'] ?? [];
-            $child_genders = $_POST['child_gender'] ?? [];
-            // Remove all previous children for this staff (to avoid duplicates)
-            $pdo->prepare("DELETE FROM staff_family_members WHERE staff_id = ? AND relationship = 'Child'")->execute([$staff_id]);
-            for ($i = 0; $i < count($child_names); $i++) {
-                $name = trim($child_names[$i] ?? '');
-                $dob = $child_dobs[$i] ?? null;
-                $gender = $child_genders[$i] ?? null;
-                if ($name !== '') {
-                    $stmt = $pdo->prepare("INSERT INTO staff_family_members (staff_id, name, relationship, date_of_birth, gender, phone, occupation, is_next_of_kin, is_emergency_contact, created_at, updated_at) VALUES (?, ?, 'Child', ?, ?, NULL, NULL, 0, 0, ?, ?)");
-                    $stmt->execute([$staff_id, $name, $dob, $gender, $now, $now]);
-                }
-            }
-            // --- Education (staff_education) ---
-            $pdo->prepare("DELETE FROM staff_education WHERE staff_id = ?")->execute([$staff_id]);
-            $edu_institutions = $_POST['edu_institution'] ?? [];
-            $edu_qualifications = $_POST['edu_qualification'] ?? [];
-            $edu_levels = $_POST['edu_level'] ?? [];
-            $edu_fields = $_POST['edu_field'] ?? [];
-            $edu_year_started = $_POST['edu_year_started'] ?? [];
-            $edu_year_completed = $_POST['edu_year_completed'] ?? [];
-            $edu_grades = $_POST['edu_grade'] ?? [];
-            $edu_is_highest = $_POST['edu_is_highest'] ?? [];
-            for ($i = 0; $i < count($edu_institutions); $i++) {
-                $institution = trim($edu_institutions[$i] ?? '');
-                $qualification = trim($edu_qualifications[$i] ?? '');
-                $level = trim($edu_levels[$i] ?? '');
-                $field = trim($edu_fields[$i] ?? '');
-                $year_started = $edu_year_started[$i] ?? null;
-                $year_completed = $edu_year_completed[$i] ?? null;
-                $grade = trim($edu_grades[$i] ?? '');
-                $is_highest = isset($edu_is_highest[$i]) ? 1 : 0;
-                if ($institution !== '' && $qualification !== '') {
-                    $stmt = $pdo->prepare("INSERT INTO staff_education (staff_id, institution, qualification, level, field_of_study, year_started, year_completed, grade_obtained, is_highest_qualification, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                    $stmt->execute([$staff_id, $institution, $qualification, $level, $field, $year_started, $year_completed, $grade, $is_highest, $now, $now]);
-                }
-            }
-            // --- Languages (staff_languages) ---
-            $pdo->prepare("DELETE FROM staff_languages WHERE staff_id = ?")->execute([$staff_id]);
-            $lang_names = $_POST['lang_name'] ?? [];
-            $lang_proficiency = $_POST['lang_proficiency'] ?? [];
-            $lang_can_read = $_POST['lang_can_read'] ?? [];
-            $lang_can_write = $_POST['lang_can_write'] ?? [];
-            $lang_can_speak = $_POST['lang_can_speak'] ?? [];
-            $lang_can_understand = $_POST['lang_can_understand'] ?? [];
-            for ($i = 0; $i < count($lang_names); $i++) {
-                $name = trim($lang_names[$i] ?? '');
-                $proficiency = $lang_proficiency[$i] ?? '';
-                $can_read = isset($lang_can_read[$i]) ? 1 : 0;
-                $can_write = isset($lang_can_write[$i]) ? 1 : 0;
-                $can_speak = isset($lang_can_speak[$i]) ? 1 : 0;
-                $can_understand = isset($lang_can_understand[$i]) ? 1 : 0;
-                if ($name !== '') {
-                    $stmt = $pdo->prepare("INSERT INTO staff_languages (staff_id, language_name, proficiency_level, can_read, can_write, can_speak, can_understand, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                    $stmt->execute([$staff_id, $name, $proficiency, $can_read, $can_write, $can_speak, $can_understand, $now, $now]);
-                }
-            }
-            // --- End family members logic ---
-            $success = true;
-            // Reload data
-            $userData = $profileManager->getUserProfile();
-        } elseif (isset($_POST['upload_photo'])) {
-            if (isset($_FILES['profile_photo']) && $_FILES['profile_photo']['error'] === UPLOAD_ERR_OK) {
-                $service_number = $userData->svcNo ?? null;
-                if (!$service_number) {
-                    $errors[] = 'Service number not found.';
-                } else {
-                    $uploadDir = __DIR__ . '/uploads/profile_photo/';
-                    if (!is_dir($uploadDir)) {
-                        mkdir($uploadDir, 0775, true);
-                    }
-                    $ext = strtolower(pathinfo($_FILES['profile_photo']['name'], PATHINFO_EXTENSION));
-                    $allowed = ['jpg','jpeg','png','gif','webp'];
-                    if (!in_array($ext, $allowed)) {
-                        $errors[] = 'Invalid file type.';
-                    } else {
-                        $newName = $service_number . '.' . $ext;
-                        $targetPath = $uploadDir . $newName;
-                        if (move_uploaded_file($_FILES['profile_photo']['tmp_name'], $targetPath)) {
-                            // Save relative path in DB
-                            $relativePath = 'users/uploads/profile_photo/' . $newName;
-                            $stmt = $pdo->prepare("UPDATE staff SET profile_photo = ? WHERE service_number = ?");
-                            $stmt->execute([$relativePath, $service_number]);
-                            $success = true;
-                            // Reload data to get updated photo
-                            $userData = $profileManager->getUserProfile();
-                        } else {
-                            $errors[] = 'Failed to upload photo.';
-                        }
-                    }
-                }
-            } else {
-                $errors[] = 'Please select a photo to upload';
-            }
-        } elseif (isset($_POST['update_contact'])) {
-            $contactData = [];
-            if (!empty($_POST['contact_types'])) {
-                foreach ($_POST['contact_types'] as $index => $type) {
-                    if (!empty($_POST['contact_values'][$index])) {
-                        $contactData[] = [
-                            'type' => $type,
-                            'value' => $_POST['contact_values'][$index],
-                            'contact_name' => $_POST['contact_names'][$index] ?? '',
-                            'relationship' => $_POST['contact_relationships'][$index] ?? '',
-                            'is_primary' => isset($_POST['contact_primary'][$index])
-                        ];
-                    }
-                }
-            }
+// Handle form submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $userData) {
+    try {
+        if (isset($_POST['update_basic'])) {
+            // Update personal information
+            $personalData = [
+                'nrc' => $_POST['nrc'] ?? '',
+                'DOB' => $_POST['dob'] ?? '', // Map to correct field name in DB
+                'gender' => $_POST['gender'] ?? '',
+                'nationality' => $_POST['nationality'] ?? '',
+                'religion' => $_POST['religion'] ?? '',
+                'marital_status' => $_POST['marital_status'] ?? '',
+                'address' => $_POST['address'] ?? '',
+                'tel' => $_POST['tel'] ?? '',
+                'email' => $_POST['email'] ?? '',
+                'height' => $_POST['height'] ?? '',
+                'weight' => $_POST['weight'] ?? '',
+                'combatSize' => $_POST['combatSize'] ?? '',
+                'bsize' => $_POST['bsize'] ?? '',
+                'ssize' => $_POST['ssize'] ?? '',
+                'hdress' => $_POST['hdress'] ?? '',
+                'blood_group' => $_POST['bloodGp'] ?? '',
+                'province' => $_POST['province'] ?? '',
+                'district' => $_POST['district'] ?? ''
+            ];
             
+            $result = $profileManager->updatePersonalInfo($personalData);
+            
+            if ($result['success']) {
+                $success = $result['message'];
+                // Reload profile data to show updated information
+                $userData = $profileManager->getUserProfile();
+            } else {
+                $errors[] = $result['message'];
+            }
+        }
+        
+        if (isset($_POST['update_contacts'])) {
+            $contactData = [];
+            $types = $_POST['contact_types'] ?? [];
+            $values = $_POST['contact_values'] ?? [];
+            $primaries = $_POST['contact_primary'] ?? [];
+            $verifieds = $_POST['contact_verified'] ?? [];
+            $notes = $_POST['contact_notes'] ?? [];
+            $ids = $_POST['contact_ids'] ?? [];
+            $count = count($types);
+            for ($i = 0; $i < $count; $i++) {
+                if (empty($types[$i]) || empty($values[$i])) continue;
+                $contactData[] = [
+                    'id' => $ids[$i] ?? null,
+                    'contact_type' => $types[$i],
+                    'contact_value' => $values[$i],
+                    'is_primary' => !empty($primaries[$i]) ? 1 : 0,
+                    'is_verified' => !empty($verifieds[$i]) ? 1 : 0,
+                    'notes' => $notes[$i] ?? ''
+                ];
+            }
             $result = $profileManager->updateContactInfo($contactData);
             if ($result['success']) {
-                $success = true;
-                // Reload data
+                $success = $result['message'];
                 $contactInfo = $profileManager->getContactInfo();
             } else {
                 $errors[] = $result['message'];
             }
         }
+        
+        if (isset($_POST['update_education'])) {
+            // Update education records
+            $educationData = $_POST['education'] ?? [];
+            $result = $profileManager->updateEducationRecords($educationData);
+            
+            if ($result['success']) {
+                $success = $result['message'];
+                // Reload education data
+                $educationRecords = $profileManager->getEducationRecords();
+            } else {
+                $errors[] = $result['message'];
+            }
+        }
+        
+        if (isset($_POST['update_languages'])) {
+            // Update language records
+            $languageData = $_POST['languages'] ?? [];
+            $result = $profileManager->updateLanguageRecords($languageData);
+            
+            if ($result['success']) {
+                $success = $result['message'];
+                // Reload language data
+                $languageRecords = $profileManager->getLanguageRecords();
+            } else {
+                $errors[] = $result['message'];
+            }
+        }
+        
+    } catch (Exception $e) {
+        $errors[] = "Error updating profile: " . $e->getMessage();
+        error_log("Profile update error for user " . $_SESSION['user_id'] . ": " . $e->getMessage());
     }
-    
-} catch (Exception $e) {
+}
+
+/*} catch (Exception $e) {
     error_log("Personal info page error: " . $e->getMessage());
     $errors[] = "Error loading profile information";
-}
+}*/
 
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';
@@ -286,11 +232,11 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <div class="row">
                                     <div class="col-md-4 mb-3">
                                         <label class="form-label">NRC</label>
-                                        <input type="text" class="form-control" name="nrc" value="<?= htmlspecialchars($userData->nrc ?? '') ?>">
+                                        <input type="text" class="form-control" name="nrc" value="<?= htmlspecialchars($userData->NRC ?? '') ?>">
                                     </div>
                                     <div class="col-md-4 mb-3">
                                         <label class="form-label">Date of Birth</label>
-                                        <input type="date" class="form-control" name="dob" value="<?= htmlspecialchars($userData->dob ?? '') ?>">
+                                        <input type="date" class="form-control" name="dob" value="<?= htmlspecialchars($userData->DOB ?? '') ?>">
                                     </div>
                                     <div class="col-md-4 mb-3">
                                         <label class="form-label">Gender</label>
@@ -319,7 +265,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         <label class="form-label">Religion</label>
                                         <select class="form-select" name="religion">
                                             <option value="">Select Religion</option>
-                                            <?php $religions = ['Christianity','Islam','Hinduism','Buddhism','Judaism','Traditional','Other'];
+                                            <?php $religions = ['Christian','Islam','Hinduism','Buddhism','Judaism','Traditional','Other'];
                                             foreach ($religions as $rel): ?>
                                                 <option value="<?= $rel ?>" <?= ($userData->religion ?? '') === $rel ? 'selected' : '' ?>><?= $rel ?></option>
                                             <?php endforeach; ?>
@@ -338,7 +284,12 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                     </div>
                                     <div class="col-md-4 mb-3">
                                         <label class="form-label">Height (cm)</label>
-                                        <input type="number" class="form-control" name="height" value="<?= htmlspecialchars($userData->height ?? '') ?>" min="100" max="250">
+                                        <select class="form-select" name="height">
+                                            <option value="">Select Height</option>
+                                            <?php for ($h = 140; $h <= 210; $h++): ?>
+                                                <option value="<?= $h ?>" <?= ($userData->height ?? '') == $h ? 'selected' : '' ?>><?= $h ?> cm</option>
+                                            <?php endfor; ?>
+                                        </select>
                                     </div>
                                 </div>
                                 
@@ -416,23 +367,29 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <!-- Academic Information -->
                                 <div class="row">
                                     <div class="col-12 mb-3">
-                                        <label class="form-label">Education History</label>
-                                        <div id="educationList"></div>
-                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="addEducation()">Add Education</button>
+                                        <label class="form-label fw-bold">
+                                            <i class="fa fa-graduation-cap me-2"></i>Education History
+                                        </label>
+                                        <div id="educationContainer" class="border rounded p-3 bg-light">
+                                            <div id="educationList">
+                                                <!-- Education records will be populated here -->
+                                            </div>
+                                            <button type="button" class="btn btn-outline-primary btn-sm mt-2" onclick="addEducationRecord()">
+                                                <i class="fa fa-plus me-1"></i>Add Education Record
+                                            </button>
+                                        </div>
+                                        <small class="text-muted">Add your educational qualifications starting from the highest level.</small>
                                     </div>
                                 </div>
                                 <div class="row">
                                     <div class="col-12 mb-3">
-                                        <label class="form-label">Languages</label>
+                                        <label class="form-label fw-bold">
+                                            <i class="fa fa-language text-info me-1"></i>Languages
+                                        </label>
                                         <div id="languageList"></div>
-                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="addLanguage()">Add Language</button>
-                                    </div>
-                                </div>
-                                <div class="row">
-                                    <div class="col-md-6 mb-3">
-                                        <label class="form-label">Service Number</label>
-                                        <input type="text" class="form-control" value="<?= htmlspecialchars($userData->svcNo ?? '') ?>" readonly>
-                                        <small class="text-muted">Cannot be changed</small>
+                                        <button type="button" class="btn btn-outline-primary btn-sm mt-2" onclick="addLanguageRecord()">
+                                            <i class="fa fa-plus me-1"></i>Add Language
+                                        </button>
                                     </div>
                                 </div>
                                 <div class="text-end">
@@ -458,38 +415,274 @@ document.addEventListener('DOMContentLoaded', function() {
     toggleSpouseSection();
     marital.addEventListener('change', toggleSpouseSection);
 });
-// --- Dynamic Education Fields ---
-function addEducation(prefill) {
-    const div = document.createElement('div');
-    div.className = 'row mb-2 align-items-end education-block';
-    div.innerHTML = `
-        <div class="col-md-3 mb-2"><input type="text" name="edu_institution[]" class="form-control" placeholder="Institution" value="${prefill?.institution||''}"></div>
-        <div class="col-md-2 mb-2"><input type="text" name="edu_qualification[]" class="form-control" placeholder="Qualification" value="${prefill?.qualification||''}"></div>
-        <div class="col-md-2 mb-2"><input type="text" name="edu_level[]" class="form-control" placeholder="Level" value="${prefill?.level||''}"></div>
-        <div class="col-md-2 mb-2"><input type="text" name="edu_field[]" class="form-control" placeholder="Field of Study" value="${prefill?.field_of_study||''}"></div>
-        <div class="col-md-1 mb-2"><input type="number" name="edu_year_started[]" class="form-control" placeholder="Start" value="${prefill?.year_started||''}"></div>
-        <div class="col-md-1 mb-2"><input type="number" name="edu_year_completed[]" class="form-control" placeholder="End" value="${prefill?.year_completed||''}"></div>
-        <div class="col-md-1 mb-2"><input type="text" name="edu_grade[]" class="form-control" placeholder="Grade" value="${prefill?.grade_obtained||''}"></div>
-        <div class="col-auto mb-2"><div class="form-check"><input class="form-check-input" type="checkbox" name="edu_is_highest[]" value="1" ${prefill?.is_highest_qualification?'checked':''}> <label class="form-check-label">Highest</label></div></div>
-        <div class="col-auto mb-2"><button type="button" class="btn btn-danger btn-sm btn-remove-block" title="Remove"><i class="fa fa-times"></i></button></div>
+// --- Enhanced Dynamic Education Fields ---
+let educationIndex = 0;
+
+function addEducationRecord(existingData = null) {
+    const container = document.getElementById('educationList');
+    const index = educationIndex++;
+    
+    const educationDiv = document.createElement('div');
+    educationDiv.className = 'education-record border rounded p-3 mb-3 bg-white position-relative';
+    educationDiv.dataset.index = index;
+    
+    educationDiv.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0 text-primary">
+                <i class="fa fa-graduation-cap me-1"></i>Education Record ${index + 1}
+            </h6>
+            <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeEducationRecord(this)" title="Remove this education record">
+                <i class="fa fa-trash"></i>
+            </button>
+        </div>
+        
+        ${existingData?.id ? `<input type="hidden" name="education[${index}][id]" value="${existingData.id}">` : ''}
+        
+        <div class="row">
+            <div class="col-md-6 mb-2">
+                <label class="form-label">Institution/School <span class="text-danger">*</span></label>
+                <input type="text" name="education[${index}][institution]" class="form-control" 
+                       value="${existingData?.institution || ''}" 
+                       placeholder="e.g., University of Zambia" required>
+                <div class="invalid-feedback">Please provide the institution name</div>
+            </div>
+            <div class="col-md-6 mb-2">
+                <label class="form-label">Qualification <span class="text-danger">*</span></label>
+                <input type="text" name="education[${index}][qualification]" class="form-control" 
+                       value="${existingData?.qualification || ''}" 
+                       placeholder="e.g., Bachelor of Science" required>
+                <div class="invalid-feedback">Please provide the qualification</div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-4 mb-2">
+                <label class="form-label">Education Level</label>
+                <select name="education[${index}][level]" class="form-select">
+                    <option value="">Select Level</option>
+                    <option value="Primary" ${existingData?.level === 'Primary' ? 'selected' : ''}>Primary Education</option>
+                    <option value="Secondary" ${existingData?.level === 'Secondary' ? 'selected' : ''}>Secondary Education</option>
+                    <option value="Certificate" ${existingData?.level === 'Certificate' ? 'selected' : ''}>Certificate</option>
+                    <option value="Diploma" ${existingData?.level === 'Diploma' ? 'selected' : ''}>Diploma</option>
+                    <option value="Degree" ${existingData?.level === 'Degree' ? 'selected' : ''}>Bachelor's Degree</option>
+                    <option value="Masters" ${existingData?.level === 'Masters' ? 'selected' : ''}>Master's Degree</option>
+                    <option value="PhD" ${existingData?.level === 'PhD' ? 'selected' : ''}>PhD/Doctorate</option>
+                    <option value="Other" ${existingData?.level === 'Other' ? 'selected' : ''}>Other</option>
+                </select>
+            </div>
+            <div class="col-md-4 mb-2">
+                <label class="form-label">Field of Study</label>
+                <input type="text" name="education[${index}][field_of_study]" class="form-control" 
+                       value="${existingData?.field_of_study || ''}" 
+                       placeholder="e.g., Computer Science">
+            </div>
+            <div class="col-md-4 mb-2">
+                <label class="form-label">Status</label>
+                <select name="education[${index}][status]" class="form-select">
+                    <option value="Completed" ${existingData?.status === 'Completed' ? 'selected' : ''}>Completed</option>
+                    <option value="In Progress" ${existingData?.status === 'In Progress' ? 'selected' : ''}>In Progress</option>
+                    <option value="Discontinued" ${existingData?.status === 'Discontinued' ? 'selected' : ''}>Discontinued</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-3 mb-2">
+                <label class="form-label">Year Started</label>
+                <input type="number" name="education[${index}][year_started]" class="form-control" 
+                       value="${existingData?.year_started || ''}" 
+                       min="1950" max="${new Date().getFullYear()}" 
+                       placeholder="e.g., 2015">
+            </div>
+            <div class="col-md-3 mb-2">
+                <label class="form-label">Year Completed</label>
+                <input type="number" name="education[${index}][year_completed]" class="form-control" 
+                       value="${existingData?.year_completed || ''}" 
+                       min="1950" max="${new Date().getFullYear() + 10}" 
+                       placeholder="e.g., 2019">
+            </div>
+            <div class="col-md-3 mb-2">
+                <label class="form-label">Grade/Result</label>
+                <input type="text" name="education[${index}][grade_obtained]" class="form-control" 
+                       value="${existingData?.grade_obtained || ''}" 
+                       placeholder="e.g., First Class, 3.8 GPA">
+            </div>
+            <div class="col-md-3 mb-2 d-flex align-items-end">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" 
+                           name="education[${index}][is_highest]" value="1" 
+                           ${existingData?.is_highest_qualification ? 'checked' : ''}>
+                    <label class="form-check-label">
+                        Highest Qualification
+                    </label>
+                </div>
+            </div>
+        </div>
     `;
-    document.getElementById('educationList').appendChild(div);
+    
+    container.appendChild(educationDiv);
+    
+    // Add form validation
+    const form = educationDiv.closest('form');
+    if (form) {
+        form.classList.add('needs-validation');
+    }
 }
 
-// --- Dynamic Language Fields ---
-function addLanguage(prefill) {
-    const div = document.createElement('div');
-    div.className = 'row mb-2 align-items-end language-block';
-    div.innerHTML = `
-        <div class="col-md-3 mb-2"><input type="text" name="lang_name[]" class="form-control" placeholder="Language" value="${prefill?.language_name||''}"></div>
-        <div class="col-md-2 mb-2"><select name="lang_proficiency[]" class="form-select"><option value="">Proficiency</option><option value="Basic" ${prefill?.proficiency_level==='Basic'?'selected':''}>Basic</option><option value="Intermediate" ${prefill?.proficiency_level==='Intermediate'?'selected':''}>Intermediate</option><option value="Advanced" ${prefill?.proficiency_level==='Advanced'?'selected':''}>Advanced</option><option value="Fluent" ${prefill?.proficiency_level==='Fluent'?'selected':''}>Fluent</option></select></div>
-        <div class="col-auto mb-2"><div class="form-check"><input class="form-check-input" type="checkbox" name="lang_can_read[]" value="1" ${prefill?.can_read?'checked':''}> <label class="form-check-label">Read</label></div></div>
-        <div class="col-auto mb-2"><div class="form-check"><input class="form-check-input" type="checkbox" name="lang_can_write[]" value="1" ${prefill?.can_write?'checked':''}> <label class="form-check-label">Write</label></div></div>
-        <div class="col-auto mb-2"><div class="form-check"><input class="form-check-input" type="checkbox" name="lang_can_speak[]" value="1" ${prefill?.can_speak?'checked':''}> <label class="form-check-label">Speak</label></div></div>
-        <div class="col-auto mb-2"><div class="form-check"><input class="form-check-input" type="checkbox" name="lang_can_understand[]" value="1" ${prefill?.can_understand?'checked':''}> <label class="form-check-label">Understand</label></div></div>
-        <div class="col-auto mb-2"><button type="button" class="btn btn-danger btn-sm btn-remove-block" title="Remove"><i class="fa fa-times"></i></button></div>
+function removeEducationRecord(button) {
+    if (confirm('Are you sure you want to remove this education record?')) {
+        button.closest('.education-record').remove();
+        updateEducationNumbers();
+    }
+}
+
+function updateEducationNumbers() {
+    const records = document.querySelectorAll('.education-record');
+    records.forEach((record, index) => {
+        const header = record.querySelector('h6');
+        if (header) {
+            header.innerHTML = `<i class="fa fa-graduation-cap me-1"></i>Education Record ${index + 1}`;
+        }
+    });
+}
+
+// Load existing education records
+function loadEducationRecords() {
+    const existingEducation = <?= json_encode($educationRecords, JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    if (existingEducation && existingEducation.length > 0) {
+        existingEducation.forEach(edu => {
+            addEducationRecord(edu);
+        });
+    } else {
+        // Add one empty record if no existing records
+        addEducationRecord();
+    }
+}
+
+// Initialize education records when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadEducationRecords();
+});
+
+// --- Enhanced Dynamic Language Fields ---
+let languageIndex = 0;
+
+function addLanguageRecord(existingData = null) {
+    const container = document.getElementById('languageList');
+    const index = languageIndex++;
+    
+    const languageDiv = document.createElement('div');
+    languageDiv.className = 'language-record border rounded p-3 mb-3 bg-white position-relative';
+    languageDiv.dataset.index = index;
+    
+    languageDiv.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0 text-info">
+                <i class="fa fa-language me-1"></i>Language ${index + 1}
+            </h6>
+            <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeLanguageRecord(this)" title="Remove this language">
+                <i class="fa fa-trash"></i>
+            </button>
+        </div>
+        
+        ${existingData?.id ? `<input type="hidden" name="languages[${index}][id]" value="${existingData.id}">` : ''}
+        
+        <div class="row">
+            <div class="col-md-4 mb-2">
+                <label class="form-label">Language <span class="text-danger">*</span></label>
+                <input type="text" name="languages[${index}][language_name]" class="form-control" 
+                       value="${existingData?.language_name || ''}" 
+                       placeholder="e.g., English, Bemba, Nyanja" required>
+                <div class="invalid-feedback">Please provide the language name</div>
+            </div>
+            <div class="col-md-4 mb-2">
+                <label class="form-label">Proficiency Level</label>
+                <select name="languages[${index}][proficiency_level]" class="form-select">
+                    <option value="">Select Level</option>
+                    <option value="Basic" ${existingData?.proficiency_level === 'Basic' ? 'selected' : ''}>Basic</option>
+                    <option value="Intermediate" ${existingData?.proficiency_level === 'Intermediate' ? 'selected' : ''}>Intermediate</option>
+                    <option value="Advanced" ${existingData?.proficiency_level === 'Advanced' ? 'selected' : ''}>Advanced</option>
+                    <option value="Fluent" ${existingData?.proficiency_level === 'Fluent' ? 'selected' : ''}>Fluent</option>
+                    <option value="Native" ${existingData?.proficiency_level === 'Native' ? 'selected' : ''}>Native</option>
+                </select>
+            </div>
+            <div class="col-md-4 mb-2">
+                <label class="form-label">Skills</label>
+                <div class="row g-2 mt-1">
+                    <div class="col-6">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" 
+                                   name="languages[${index}][can_read]" value="1" 
+                                   ${existingData?.can_read ? 'checked' : ''}>
+                            <label class="form-check-label">Read</label>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" 
+                                   name="languages[${index}][can_write]" value="1" 
+                                   ${existingData?.can_write ? 'checked' : ''}>
+                            <label class="form-check-label">Write</label>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" 
+                                   name="languages[${index}][can_speak]" value="1" 
+                                   ${existingData?.can_speak ? 'checked' : ''}>
+                            <label class="form-check-label">Speak</label>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" 
+                                   name="languages[${index}][can_understand]" value="1" 
+                                   ${existingData?.can_understand ? 'checked' : ''}>
+                            <label class="form-check-label">Understand</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     `;
-    document.getElementById('languageList').appendChild(div);
+    
+    container.appendChild(languageDiv);
+    
+    // Add form validation
+    const form = languageDiv.closest('form');
+    if (form) {
+        form.classList.add('needs-validation');
+    }
+}
+
+function removeLanguageRecord(button) {
+    if (confirm('Are you sure you want to remove this language?')) {
+        button.closest('.language-record').remove();
+        updateLanguageNumbers();
+    }
+}
+
+function updateLanguageNumbers() {
+    const records = document.querySelectorAll('.language-record');
+    records.forEach((record, index) => {
+        const header = record.querySelector('h6');
+        if (header) {
+            header.innerHTML = `<i class="fa fa-language me-1"></i>Language ${index + 1}`;
+        }
+    });
+}
+
+// Load existing language records
+function loadLanguageRecords() {
+    const existingLanguages = <?= json_encode($languageRecords, JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    if (existingLanguages && existingLanguages.length > 0) {
+        existingLanguages.forEach(lang => {
+            addLanguageRecord(lang);
+        });
+    } else {
+        // Add one empty record if no existing records
+        addLanguageRecord();
+    }
 }
 
 // Remove handler for all dynamic sections
@@ -502,9 +695,26 @@ function addDynamicRemoveHandler(listId) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    // Load dynamic records
+    loadEducationRecords();
+    loadLanguageRecords();
+    
+    // Add handlers for any remaining dynamic sections
     addDynamicRemoveHandler('educationList');
     addDynamicRemoveHandler('languageList');
-    // Optionally, prefill from PHP if available (not shown here)
+    
+    // Add form validation
+    const form = document.querySelector('form.needs-validation');
+    if (form) {
+        form.addEventListener('submit', function(event) {
+            if (!form.checkValidity()) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            form.classList.add('was-validated');
+        });
+    }
+});
 });
 // Show children details fields if number of children > 0
 document.addEventListener('DOMContentLoaded', function() {

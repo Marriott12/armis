@@ -237,10 +237,6 @@ try {
 }
 
 // Enhanced form configuration arrays
-$combatSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL'];
-$bootSizes = range(4, 15);
-$shoeSizes = range(4, 15);
-$headdressSizes = range(52, 65);
 
 $bloodTypes = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
@@ -249,8 +245,6 @@ $maritalStatusOptions = [
     'married' => 'Married',
     'divorced' => 'Divorced',
     'widowed' => 'Widowed',
-    'separated' => 'Separated',
-    'cohabitating' => 'Cohabitating'
 ];
 
 $genderOptions = [
@@ -367,7 +361,7 @@ $countryOptions = [
 ];
 
 $religionOptions = [
-    'christianity' => 'Christianity',
+    'christian' => 'Christian',
     'islam' => 'Islam',
     'hinduism' => 'Hinduism',
     'buddhism' => 'Buddhism',
