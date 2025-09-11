@@ -199,6 +199,49 @@ include dirname(__DIR__) . '/shared/sidebar.php';
     transition: all 0.2s ease;
     border-left: 4px solid transparent;
 }
+
+/* Enhanced Total Row Visibility */
+.table tfoot th {
+    font-size: 1.1rem !important;
+    font-weight: 700 !important;
+    background: linear-gradient(135deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.9) 100%) !important;
+    color: white !important;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    border-top: 3px solid #fff !important;
+    padding: 15px 8px !important;
+}
+
+.table-primary tfoot th {
+    background: linear-gradient(135deg, #007bff 0%, #0056b3 100%) !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
+}
+
+.table-info tfoot th {
+    background: linear-gradient(135deg, #17a2b8 0%, #138496 100%) !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
+}
+
+/* Make individual total cells more prominent */
+.fw-bold.text-primary, .fw-bold.text-info, .fw-bold.text-success {
+    font-size: 1.1rem !important;
+    font-weight: 700 !important;
+    text-shadow: 0 1px 1px rgba(0,0,0,0.1);
+    padding: 8px !important;
+}
+
+/* Grand total highlighting */
+#military-grand-total, #civilian-grand-total {
+    font-size: 1.3rem !important;
+    background: rgba(255,255,255,0.1) !important;
+    border-radius: 4px;
+    animation: pulse-glow 3s infinite;
+}
+
+@keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 5px rgba(255,255,255,0.5); }
+    50% { box-shadow: 0 0 15px rgba(255,255,255,0.8); }
+}
+}
 .stat-card:hover {
     transform: translateY(-3px);
     box-shadow: 0 0.25rem 0.75rem rgba(0,0,0,0.15) !important;
@@ -692,17 +735,17 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                             <td class="text-center fw-bold text-primary" id="military-ncos-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['ncos']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['ncos']) : '-'; ?></td>
                                                         </tr>
                                                         <tr class="table-secondary">
-                                                            <td class="ps-4 fw-semibold"><em>Cadets/ Recruits</em></td>
-                                                            <td colspan="3" class="text-center fw-semibold"></td>
+                                                            <td class="ps-4 fw-semibold"><em>Recruits</em></td>
+                                                            <td colspan="3" class="text-center fw-semibold">Training Personnel</td>
                                                         </tr>
                                                         <tr>
-                                                            <td class="ps-5">├ Officer Cadets</td>
+                                                            <td class="ps-5">├ Officers</td>
                                                             <td class="text-center" id="recruit-officers-male"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_officers_by_gender']['male']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_officers_by_gender']['male']) : '-'; ?></td>
                                                             <td class="text-center" id="recruit-officers-female"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_officers_by_gender']['female']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_officers_by_gender']['female']) : '-'; ?></td>
                                                             <td class="text-center fw-bold text-success" id="recruit-officers-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_officers']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_officers']) : '-'; ?></td>
                                                         </tr>
                                                         <tr>
-                                                            <td class="ps-5">└ Recruits</td>
+                                                            <td class="ps-5">└ NCOs</td>
                                                             <td class="text-center" id="recruit-ncos-male"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_ncos_by_gender']['male']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_ncos_by_gender']['male']) : '-'; ?></td>
                                                             <td class="text-center" id="recruit-ncos-female"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_ncos_by_gender']['female']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_ncos_by_gender']['female']) : '-'; ?></td>
                                                             <td class="text-center fw-bold text-success" id="recruit-ncos-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_ncos']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_ncos']) : '-'; ?></td>
@@ -748,7 +791,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                             <td class="text-center fw-bold text-info" id="civilian-current-total"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['active']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['active']) : '-'; ?></td>
                                                         </tr>
                                                         <tr class="personnel-row clickable-row" data-category="civilian-new" data-type="New Hires" style="cursor: pointer;">
-                                                            <td class="ps-3 fw-semibold">New Entrants</td>
+                                                            <td class="ps-3 fw-semibold">New Hires</td>
                                                             <td class="text-center" id="civilian-new-male"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['new_by_gender']['male']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['new_by_gender']['male']) : '-'; ?></td>
                                                             <td class="text-center" id="civilian-new-female"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['new_by_gender']['female']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['new_by_gender']['female']) : '-'; ?></td>
                                                             <td class="text-center fw-bold text-success" id="civilian-new-total"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['new_1_year']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['new_1_year']) : '-'; ?></td>
@@ -763,6 +806,84 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                         </tr>
                                                     </tfoot>
                                                 </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Overall Grand Total Card -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card shadow-lg border-0 bg-gradient" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                        <div class="card-body py-4">
+                            <div class="row align-items-center text-white">
+                                <div class="col-md-8">
+                                    <div class="d-flex align-items-center">
+                                        <div class="bg-white bg-opacity-20 rounded-circle p-3 me-4">
+                                            <i class="fas fa-users fa-2x text-white"></i>
+                                        </div>
+                                        <div>
+                                            <h3 class="mb-1 fw-bold">OVERALL PERSONNEL TOTAL</h3>
+                                            <p class="mb-0 opacity-75">Complete organizational strength</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 text-center">
+                                    <div class="row text-center">
+                                        <div class="col-4">
+                                            <div class="border-end border-white border-opacity-25 pe-3">
+                                                <h2 class="mb-0 fw-bold" id="overall-male-total">
+                                                    <?php 
+                                                    $militaryMale = isset($dashboardData['enhanced_personnel']['military']['by_gender']['male']) ? (int)$dashboardData['enhanced_personnel']['military']['by_gender']['male'] : 0;
+                                                    $civilianMale = isset($dashboardData['enhanced_personnel']['civilian']['by_gender']['male']) ? (int)$dashboardData['enhanced_personnel']['civilian']['by_gender']['male'] : 0;
+                                                    echo $militaryMale + $civilianMale;
+                                                    ?>
+                                                </h2>
+                                                <small class="opacity-75">Male</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="border-end border-white border-opacity-25 pe-3">
+                                                <h2 class="mb-0 fw-bold" id="overall-female-total">
+                                                    <?php 
+                                                    $militaryFemale = isset($dashboardData['enhanced_personnel']['military']['by_gender']['female']) ? (int)$dashboardData['enhanced_personnel']['military']['by_gender']['female'] : 0;
+                                                    $civilianFemale = isset($dashboardData['enhanced_personnel']['civilian']['by_gender']['female']) ? (int)$dashboardData['enhanced_personnel']['civilian']['by_gender']['female'] : 0;
+                                                    echo $militaryFemale + $civilianFemale;
+                                                    ?>
+                                                </h2>
+                                                <small class="opacity-75">Female</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <h1 class="mb-0 fw-bold display-4" id="overall-grand-total" style="text-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+                                                <?php 
+                                                $militaryTotal = isset($dashboardData['enhanced_personnel']['military']['total']) ? (int)$dashboardData['enhanced_personnel']['military']['total'] : 0;
+                                                $civilianTotal = isset($dashboardData['enhanced_personnel']['civilian']['total']) ? (int)$dashboardData['enhanced_personnel']['civilian']['total'] : 0;
+                                                $overallTotal = $militaryTotal + $civilianTotal;
+                                                echo $overallTotal;
+                                                ?>
+                                            </h1>
+                                            <small class="opacity-75 fw-bold">TOTAL</small>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3 pt-3 border-top border-white border-opacity-25">
+                                        <div class="row text-center small">
+                                            <div class="col-6">
+                                                <span class="badge bg-primary bg-opacity-75 px-3 py-2">
+                                                    <i class="fas fa-shield-alt me-1"></i>
+                                                    Military: <?php echo $militaryTotal; ?>
+                                                </span>
+                                            </div>
+                                            <div class="col-6">
+                                                <span class="badge bg-info bg-opacity-75 px-3 py-2">
+                                                    <i class="fas fa-briefcase me-1"></i>
+                                                    Civilian: <?php echo $civilianTotal; ?>
+                                                </span>
                                             </div>
                                         </div>
                                     </div>
@@ -1042,6 +1163,29 @@ function initializePersonnelFilters() {
                 updateElementWithAnimation('#civilian-new-1year', ep.civilian.new_1_year);
                 updateElementWithAnimation('#civilian-male', ep.civilian.by_gender.male);
                 updateElementWithAnimation('#civilian-female', ep.civilian.by_gender.female);
+                
+                // Update overall totals in the grand total card
+                const militaryTotal = parseInt(ep.military.total) || 0;
+                const civilianTotal = parseInt(ep.civilian.total) || 0;
+                const overallTotal = militaryTotal + civilianTotal;
+                
+                const militaryMale = parseInt(ep.military.by_gender.male) || 0;
+                const civilianMale = parseInt(ep.civilian.by_gender.male) || 0;
+                const overallMale = militaryMale + civilianMale;
+                
+                const militaryFemale = parseInt(ep.military.by_gender.female) || 0;
+                const civilianFemale = parseInt(ep.civilian.by_gender.female) || 0;
+                const overallFemale = militaryFemale + civilianFemale;
+                
+                updateElementWithAnimation('#overall-male-total', overallMale);
+                updateElementWithAnimation('#overall-female-total', overallFemale);
+                updateElementWithAnimation('#overall-grand-total', overallTotal);
+                
+                // Update the breakdown badges in the overall total card
+                const militaryBadge = document.querySelector('.badge:has(.fa-shield-alt)');
+                const civilianBadge = document.querySelector('.badge:has(.fa-briefcase)');
+                if (militaryBadge) militaryBadge.innerHTML = `<i class="fas fa-shield-alt me-1"></i>Military: ${militaryTotal}`;
+                if (civilianBadge) civilianBadge.innerHTML = `<i class="fas fa-briefcase me-1"></i>Civilian: ${civilianTotal}`;
                 
                 // Highlight filtered metrics based on selection
                 highlightFilteredMetrics(timeFilter);
