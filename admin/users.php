@@ -17,7 +17,9 @@ try {
 } catch (Exception $e) {
     error_log("Database connection failed in admin/users.php: " . $e->getMessage());
     die("Database connection failed. Please check your configuration.");
-} Start session if not already started
+}
+
+// Start session if not already started
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
