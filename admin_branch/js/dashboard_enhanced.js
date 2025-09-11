@@ -796,61 +796,6 @@ class DashboardManager {
         // Notifications completely disabled
         console.log('Notification panel update disabled');
         return;
-            notificationElement.dataset.notificationId = notification.id;
-            
-            // Format time
-            const time = new Date(notification.created_at);
-            const timeStr = time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            const dateStr = time.toLocaleDateString();
-            
-            // Create notification content
-            notificationElement.innerHTML = `
-                <div class="notification-content">
-                    <div class="notification-message">${notification.message}</div>
-                    <div class="notification-time">${dateStr} ${timeStr}</div>
-                </div>
-                <div class="notification-actions">
-                    <button class="btn btn-sm btn-link mark-read" title="Mark as read">
-                        <i class="fas fa-check"></i>
-                    </button>
-                </div>
-            `;
-            
-            // Add click handler to mark as read
-            notificationElement.querySelector('.mark-read').addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.markNotificationRead(notification.id);
-            });
-            
-            // Add click handler for the notification
-            notificationElement.addEventListener('click', () => {
-                // Mark as read when clicked
-                this.markNotificationRead(notification.id);
-                
-                // Follow link if available
-                if (notification.link) {
-                    window.location.href = notification.link;
-                }
-            });
-            
-            // Add to container at the top
-            if (container.firstChild) {
-                container.insertBefore(notificationElement, container.firstChild);
-            } else {
-                container.appendChild(notificationElement);
-            }
-        });
-        
-        // Update empty state message
-        const emptyMessage = panel.querySelector('.empty-notifications');
-        if (emptyMessage) {
-            if (container.children.length > 0) {
-                emptyMessage.classList.add('d-none');
-            } else {
-                emptyMessage.classList.remove('d-none');
-            }
-        }
     }
     
     /**
@@ -869,12 +814,6 @@ class DashboardManager {
         // Notifications completely disabled
         console.log('Mark notification read disabled');
         return;
-                this.updateNotificationBadge(this.notificationCount);
-            }
-        })
-        .catch(error => {
-            console.error('Error marking notification as read:', error);
-        });
     }
     
     /**
