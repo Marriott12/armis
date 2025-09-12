@@ -200,6 +200,9 @@ $sidebarLinks = [
 
 // Ensure shared admin branch CSS is loaded
 echo '<link rel="stylesheet" href="/Armis2/assets/css/admin_branch.css">';
+// Add unified design system CSS
+echo '<link rel="stylesheet" href="css/armis-unified.css">';
+
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';
 ?>
@@ -362,7 +365,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                     <button type="button" class="btn btn-outline-info me-2" id="validateFormBtn" title="Check for errors before submitting">
                                         <i class="fa fa-check-circle"></i> Validate Form
                                     </button>
-                                    <button type="submit" class="btn btn-success px-4 py-2" id="submitBtn" title="Submit the staff registration form">
+                                    <button type="submit" class="btn btn-armis-primary px-4 py-2" id="submitBtn" title="Submit the staff registration form">
                                         <i class="fa fa-user-plus"></i> Register Staff
                                     </button>
                                 </div>

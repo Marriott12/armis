@@ -1,0 +1,506 @@
+/**
+ * ARMIS Admin Branch - Unified Design System
+ * Consistent colors, typography, and components across all admin branch modules
+ * Version: 2.0
+ * Updated: September 11, 2025
+ */
+
+/* ==================================================
+   COLOR PALETTE VARIABLES
+   ================================================== */
+:root {
+  /* Primary Brand Colors */
+  --armis-primary: #0d6efd;
+  --armis-primary-dark: #084298;
+  --armis-primary-light: #6ea8fe;
+  --armis-primary-subtle: rgba(13, 110, 253, 0.1);
+  
+  /* Military Color Scheme */
+  --military-blue: #0d6efd;
+  --military-blue-dark: #084298;
+  --military-blue-gradient: linear-gradient(135deg, #0d6efd 0%, #084298 100%);
+  
+  /* Civilian Color Scheme */
+  --civilian-teal: #17a2b8;
+  --civilian-teal-dark: #138496;
+  --civilian-teal-gradient: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+  
+  /* Status Colors */
+  --success-green: #198754;
+  --success-green-dark: #146c43;
+  --warning-yellow: #ffc107;
+  --warning-yellow-dark: #e0a800;
+  --danger-red: #dc3545;
+  --danger-red-dark: #b02a37;
+  --info-blue: #0dcaf0;
+  --info-blue-dark: #0aa2c0;
+  
+  /* Neutral Colors */
+  --white: #ffffff;
+  --light-gray: #f8f9fa;
+  --medium-gray: #6c757d;
+  --dark-gray: #343a40;
+  --border-color: #dee2e6;
+  --shadow-color: rgba(0, 0, 0, 0.15);
+  
+  /* Special Colors */
+  --gold-accent: #ffd700;
+  --purple-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  
+  /* Text Colors */
+  --text-primary: #212529;
+  --text-secondary: #6c757d;
+  --text-muted: #6c757d;
+  --text-white: #ffffff;
+  
+  /* Background Colors */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8f9fa;
+  --bg-dark: #343a40;
+}
+
+/* ==================================================
+   TYPOGRAPHY SYSTEM
+   ================================================== */
+.armis-heading-1 { font-size: 2.5rem; font-weight: 700; line-height: 1.2; }
+.armis-heading-2 { font-size: 2rem; font-weight: 600; line-height: 1.3; }
+.armis-heading-3 { font-size: 1.75rem; font-weight: 600; line-height: 1.3; }
+.armis-heading-4 { font-size: 1.5rem; font-weight: 600; line-height: 1.4; }
+.armis-heading-5 { font-size: 1.25rem; font-weight: 600; line-height: 1.4; }
+.armis-heading-6 { font-size: 1rem; font-weight: 600; line-height: 1.5; }
+
+.armis-body-large { font-size: 1.125rem; font-weight: 400; line-height: 1.6; }
+.armis-body { font-size: 1rem; font-weight: 400; line-height: 1.5; }
+.armis-body-small { font-size: 0.875rem; font-weight: 400; line-height: 1.5; }
+.armis-caption { font-size: 0.75rem; font-weight: 400; line-height: 1.4; }
+
+/* ==================================================
+   BUTTON SYSTEM
+   ================================================== */
+.btn-armis-primary {
+  background: var(--armis-primary);
+  border-color: var(--armis-primary);
+  color: var(--text-white);
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.btn-armis-primary:hover {
+  background: var(--armis-primary-dark);
+  border-color: var(--armis-primary-dark);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(13, 110, 253, 0.3);
+}
+
+.btn-armis-military {
+  background: var(--military-blue-gradient);
+  border: none;
+  color: var(--text-white);
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.btn-armis-military:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(13, 110, 253, 0.3);
+}
+
+.btn-armis-civilian {
+  background: var(--civilian-teal-gradient);
+  border: none;
+  color: var(--text-white);
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.btn-armis-civilian:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(23, 162, 184, 0.3);
+}
+
+/* ==================================================
+   CARD SYSTEM
+   ================================================== */
+.armis-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.armis-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 15px rgba(0, 0, 0, 0.15);
+}
+
+.armis-card-header {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  padding: 1rem 1.25rem;
+  font-weight: 600;
+}
+
+.armis-card-body {
+  padding: 1.25rem;
+}
+
+.armis-card-footer {
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  padding: 0.75rem 1.25rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+/* Military Theme Card */
+.armis-card-military {
+  border-left: 4px solid var(--military-blue);
+}
+
+.armis-card-military .armis-card-header {
+  background: var(--military-blue-gradient);
+  color: var(--text-white);
+  border-color: transparent;
+}
+
+/* Civilian Theme Card */
+.armis-card-civilian {
+  border-left: 4px solid var(--civilian-teal);
+}
+
+.armis-card-civilian .armis-card-header {
+  background: var(--civilian-teal-gradient);
+  color: var(--text-white);
+  border-color: transparent;
+}
+
+/* ==================================================
+   TABLE SYSTEM
+   ================================================== */
+.armis-table {
+  background: var(--bg-primary);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.armis-table thead th {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-weight: 600;
+  border-bottom: 2px solid var(--border-color);
+  padding: 1rem 0.75rem;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.armis-table tbody tr {
+  transition: background-color 0.2s ease;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.armis-table tbody tr:hover {
+  background-color: rgba(13, 110, 253, 0.05);
+}
+
+.armis-table tbody td {
+  padding: 0.875rem 0.75rem;
+  vertical-align: middle;
+}
+
+/* Military Table Footer */
+.armis-table-military tfoot th {
+  background: var(--military-blue-gradient) !important;
+  color: var(--text-white) !important;
+  font-weight: 700 !important;
+  font-size: 1.25rem !important;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  border: 2px solid var(--military-blue) !important;
+  padding: 1rem 0.75rem !important;
+  animation: pulse-glow 2s ease-in-out infinite alternate;
+}
+
+.armis-table-military tfoot .total-number {
+  font-size: 1.75rem !important;
+  font-weight: 900 !important;
+  color: var(--gold-accent) !important;
+}
+
+/* Civilian Table Footer */
+.armis-table-civilian tfoot th {
+  background: var(--civilian-teal-gradient) !important;
+  color: var(--text-white) !important;
+  font-weight: 700 !important;
+  font-size: 1.25rem !important;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  border: 2px solid var(--civilian-teal) !important;
+  padding: 1rem 0.75rem !important;
+  animation: pulse-glow 2s ease-in-out infinite alternate;
+}
+
+.armis-table-civilian tfoot .total-number {
+  font-size: 1.75rem !important;
+  font-weight: 900 !important;
+  color: var(--gold-accent) !important;
+}
+
+/* ==================================================
+   FORM SYSTEM
+   ================================================== */
+.armis-form-group {
+  margin-bottom: 1.5rem;
+}
+
+.armis-form-label {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.armis-form-control {
+  border: 2px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.75rem;
+  transition: all 0.3s ease;
+  font-size: 1rem;
+}
+
+.armis-form-control:focus {
+  border-color: var(--armis-primary);
+  box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+  outline: none;
+}
+
+.armis-form-control.is-invalid {
+  border-color: var(--danger-red);
+  animation: shake 0.5s ease-in-out;
+}
+
+.armis-form-control.is-valid {
+  border-color: var(--success-green);
+}
+
+/* ==================================================
+   ALERT SYSTEM
+   ================================================== */
+.armis-alert {
+  padding: 1rem 1.25rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-weight: 500;
+  margin-bottom: 1rem;
+}
+
+.armis-alert-success {
+  background-color: rgba(25, 135, 84, 0.1);
+  border-color: var(--success-green);
+  color: var(--success-green-dark);
+}
+
+.armis-alert-warning {
+  background-color: rgba(255, 193, 7, 0.1);
+  border-color: var(--warning-yellow);
+  color: var(--warning-yellow-dark);
+}
+
+.armis-alert-danger {
+  background-color: rgba(220, 53, 69, 0.1);
+  border-color: var(--danger-red);
+  color: var(--danger-red-dark);
+}
+
+.armis-alert-info {
+  background-color: rgba(13, 202, 240, 0.1);
+  border-color: var(--info-blue);
+  color: var(--info-blue-dark);
+}
+
+/* ==================================================
+   BADGE SYSTEM
+   ================================================== */
+.armis-badge {
+  padding: 0.5rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.armis-badge-military {
+  background: var(--military-blue-gradient);
+  color: var(--text-white);
+}
+
+.armis-badge-civilian {
+  background: var(--civilian-teal-gradient);
+  color: var(--text-white);
+}
+
+.armis-badge-success {
+  background-color: var(--success-green);
+  color: var(--text-white);
+}
+
+.armis-badge-warning {
+  background-color: var(--warning-yellow);
+  color: var(--dark-gray);
+}
+
+.armis-badge-danger {
+  background-color: var(--danger-red);
+  color: var(--text-white);
+}
+
+/* ==================================================
+   NAVIGATION SYSTEM
+   ================================================== */
+.armis-nav {
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.armis-nav-brand {
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: var(--armis-primary);
+}
+
+.armis-nav-link {
+  color: var(--text-secondary);
+  font-weight: 500;
+  padding: 0.75rem 1rem;
+  transition: all 0.3s ease;
+  border-radius: 4px;
+}
+
+.armis-nav-link:hover {
+  color: var(--armis-primary);
+  background-color: var(--armis-primary-subtle);
+}
+
+.armis-nav-link.active {
+  color: var(--armis-primary);
+  background-color: var(--armis-primary-subtle);
+  font-weight: 600;
+}
+
+/* ==================================================
+   MODAL SYSTEM
+   ================================================== */
+.armis-modal-header {
+  background: var(--purple-gradient);
+  color: var(--text-white);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+}
+
+.armis-modal-title {
+  font-weight: 600;
+}
+
+.armis-modal-body {
+  padding: 1.5rem;
+}
+
+.armis-modal-footer {
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  border-radius: 0 0 8px 8px;
+}
+
+/* ==================================================
+   LOADING & ANIMATION SYSTEM
+   ================================================== */
+@keyframes pulse-glow {
+  0%, 100% { 
+    box-shadow: 0 0 5px rgba(255,255,255,0.5);
+    transform: scale(1);
+  }
+  50% { 
+    box-shadow: 0 0 15px rgba(255,255,255,0.8);
+    transform: scale(1.02);
+  }
+}
+
+@keyframes shake {
+  0%, 20%, 40%, 60%, 80% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.armis-loading-spinner {
+  border: 3px solid var(--border-color);
+  border-top: 3px solid var(--armis-primary);
+  border-radius: 50%;
+  width: 2rem;
+  height: 2rem;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* ==================================================
+   UTILITY CLASSES
+   ================================================== */
+.armis-shadow-sm { box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
+.armis-shadow { box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+.armis-shadow-lg { box-shadow: 0 8px 15px rgba(0, 0, 0, 0.15); }
+
+.armis-rounded { border-radius: 6px; }
+.armis-rounded-lg { border-radius: 10px; }
+.armis-rounded-xl { border-radius: 15px; }
+
+.armis-transition { transition: all 0.3s ease; }
+.armis-transition-fast { transition: all 0.15s ease; }
+
+.armis-hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 15px rgba(0, 0, 0, 0.15);
+}
+
+/* ==================================================
+   RESPONSIVE UTILITIES
+   ================================================== */
+@media (max-width: 768px) {
+  .armis-heading-1 { font-size: 2rem; }
+  .armis-heading-2 { font-size: 1.75rem; }
+  .armis-heading-3 { font-size: 1.5rem; }
+  
+  .armis-card-body { padding: 1rem; }
+  .armis-table thead th { padding: 0.75rem 0.5rem; }
+  .armis-table tbody td { padding: 0.75rem 0.5rem; }
+}
+
+/* ==================================================
+   PRINT STYLES
+   ================================================== */
+@media print {
+  .armis-card { 
+    box-shadow: none;
+    border: 1px solid var(--border-color);
+  }
+  
+  .btn, .armis-nav, .modal { display: none !important; }
+  
+  .armis-table {
+    box-shadow: none;
+  }
+}

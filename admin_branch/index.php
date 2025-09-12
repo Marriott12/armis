@@ -168,351 +168,66 @@ $sidebarLinks = [
 
 // Ensure shared admin branch CSS is loaded
 echo '<link rel="stylesheet" href="/Armis2/assets/css/admin_branch.css">';
+echo '<link rel="stylesheet" href="css/armis-unified.css">';
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php'; 
 ?>
-<!-- Custom CSS for Dashboard Optimizations -->
+<!-- ARMIS Dashboard - Unified Design System Applied -->
 <style>
-/* Custom Dashboard Optimizations */
+/* Dashboard-specific styles using unified system */
 .content-wrapper {
-    overflow-x: hidden; /* Prevent horizontal scrolling */
+    overflow-x: hidden;
 }
 
-/* Responsive adjustments for small screens */
-@media (max-width: 768px) {
-    .dashboard-title {
-        font-size: 1.35rem;
-    }
-    .card-title {
-        font-size: 0.95rem;
-    }
-    .stat-card .card-title {
-        font-size: 0.8rem;
-    }
-    .stat-value {
-        font-size: 1.1rem;
-    }
+/* Apply unified table styling to existing tables */
+.table {
+    @extend .armis-table;
 }
 
-/* Compact Card Designs */
-.stat-card {
-    transition: all 0.2s ease;
-    border-left: 4px solid transparent;
-}
-
-/* Enhanced Total Row Visibility */
 .table tfoot th {
-    font-size: 1.1rem !important;
+    font-size: 1.25rem !important;
     font-weight: 700 !important;
-    background: linear-gradient(135deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.9) 100%) !important;
-    color: white !important;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-    border-top: 3px solid #fff !important;
-    padding: 15px 8px !important;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    padding: 1rem 0.75rem !important;
+    animation: pulse-glow 2s ease-in-out infinite alternate;
 }
 
-.table-primary tfoot th {
-    background: linear-gradient(135deg, #007bff 0%, #0056b3 100%) !important;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
+.table-dark tfoot th {
+    border: 2px solid transparent !important;
 }
 
-.table-info tfoot th {
-    background: linear-gradient(135deg, #17a2b8 0%, #138496 100%) !important;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
+/* Military table styling */
+.table-dark tfoot tr[style*="linear-gradient(135deg, #0d6efd"] th {
+    background: var(--military-blue-gradient) !important;
+    color: var(--text-white) !important;
+    border-color: var(--military-blue) !important;
 }
 
-/* Make individual total cells more prominent */
-.fw-bold.text-primary, .fw-bold.text-info, .fw-bold.text-success {
-    font-size: 1.1rem !important;
-    font-weight: 700 !important;
-    text-shadow: 0 1px 1px rgba(0,0,0,0.1);
-    padding: 8px !important;
+.table-dark tfoot tr[style*="linear-gradient(135deg, #0d6efd"] th[style*="color: #ffd700"] {
+    color: var(--gold-accent) !important;
+    font-size: 1.75rem !important;
+    font-weight: 900 !important;
 }
 
-/* Grand total highlighting */
-#military-grand-total, #civilian-grand-total {
-    font-size: 1.3rem !important;
-    background: rgba(255,255,255,0.1) !important;
-    border-radius: 4px;
-    animation: pulse-glow 3s infinite;
+/* Civilian table styling */
+.table-dark tfoot tr[style*="linear-gradient(135deg, #17a2b8"] th {
+    background: var(--civilian-teal-gradient) !important;
+    color: var(--text-white) !important;
+    border-color: var(--civilian-teal) !important;
 }
 
-@keyframes pulse-glow {
-    0%, 100% { box-shadow: 0 0 5px rgba(255,255,255,0.5); }
-    50% { box-shadow: 0 0 15px rgba(255,255,255,0.8); }
-}
-}
-.stat-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 0.25rem 0.75rem rgba(0,0,0,0.15) !important;
+.table-dark tfoot tr[style*="linear-gradient(135deg, #17a2b8"] th[style*="color: #ffd700"] {
+    color: var(--gold-accent) !important;
+    font-size: 1.75rem !important;
+    font-weight: 900 !important;
 }
 
-/* Make charts more responsive */
-.chart-container {
-    position: relative;
-    min-height: 180px;
-    max-height: 250px;
-    width: 100%;
-}
-
-/* Quick action cards */
-.icon-circle {
-    transition: all 0.2s ease;
-}
-.card:hover .icon-circle {
-    transform: scale(1.1);
-}
-
-/* Tab optimizations */
-.nav-tabs .nav-link {
-    font-size: 0.85rem;
-    padding: 0.25rem 0.5rem;
-}
-
-/* Activity and event items */
-.list-group-item {
-    transition: background-color 0.2s ease;
-}
-.list-group-item:hover {
-    background-color: rgba(0,0,0,0.02);
-}
-
-/* Collapse transitions */
-.collapse, .collapsing {
-    transition: all 0.2s ease-in-out;
-}
-
-/* Optimized scrollbars for webkit browsers */
-::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-}
-::-webkit-scrollbar-track {
-    background: #f1f1f1;
-}
-::-webkit-scrollbar-thumb {
-    background: #888;
-    border-radius: 3px;
-}
-
-/* Enhanced Personnel Card Styles */
-.dashboard-container {
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 20px;
-}
-
-.stat-card {
-    background: white;
-    border-radius: 10px;
-    margin-bottom: 15px;
-    transition: all 0.3s ease;
-    border: 1px solid #e3e6f0;
-    box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
-}
-
-.stat-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 0.3rem 2rem 0 rgba(58, 59, 69, 0.25);
-}
-
-.stat-value {
-    font-weight: bold;
-    font-family: 'Arial', sans-serif;
-}
-
-.stat-label {
-    color: #858796;
-    font-weight: 500;
-}
-
-.loading-spinner {
-    display: none;
-    border: 3px solid #f3f3f3;
-    border-top: 3px solid #3498db;
-    border-radius: 50%;
-    width: 20px;
-    height: 20px;
-    animation: spin 1s linear infinite;
-    margin: 0 auto;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-.card-header {
-    border-bottom: 1px solid #e3e6f0;
-}
-
-.text-xs {
-    font-size: 0.75rem;
-}
-
-.snapshot-drilldown {
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.snapshot-drilldown:hover {
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-}
-
-/* Personnel Snapshot Section */
-.personnel-snapshot {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border-radius: 15px;
-    padding: 25px;
-    margin-bottom: 30px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-}
-
-.personnel-snapshot h5 {
-    color: white;
-    margin-bottom: 25px;
-    font-weight: 600;
-    font-size: 1.4rem;
-}
-
-.personnel-filter {
-    background: rgba(255,255,255,0.2);
-    border: none;
-    color: white;
-    border-radius: 8px;
-    padding: 10px 15px;
-    margin-bottom: 25px;
-    width: 100%;
-    max-width: 300px;
-}
-
-.personnel-filter::placeholder {
-    color: rgba(255,255,255,0.7);
-}
-
-.personnel-filter:focus {
-    outline: none;
-    background: rgba(255,255,255,0.3);
-    box-shadow: 0 0 0 2px rgba(255,255,255,0.3);
-}
-
-/* Enhanced Personnel Cards */
-.personnel-card {
-    background: rgba(255,255,255,0.98);
-    border-radius: 15px;
-    padding: 20px 15px;
-    margin-bottom: 15px;
-    border: none;
-    box-shadow: 0 5px 20px rgba(0,0,0,0.08);
-    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-    color: #333;
-    text-align: center;
-    cursor: pointer;
-    min-height: 120px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    position: relative;
-    overflow: hidden;
-}
-
-.personnel-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 4px;
-    background: linear-gradient(90deg, #007bff, #0056b3);
-    transform: scaleX(0);
-    transform-origin: left;
-    transition: transform 0.3s ease;
-}
-
-.personnel-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 12px 35px rgba(0,0,0,0.15);
-}
-
-.personnel-card:hover::before {
-    transform: scaleX(1);
-}
-
-        /* Specific card color themes */
-        .personnel-card.military-total::before { background: linear-gradient(90deg, #007bff, #0056b3); }
-        .personnel-card.military-active::before { background: linear-gradient(90deg, #28a745, #1e7e34); }
-        .personnel-card.officers::before { background: linear-gradient(90deg, #ffc107, #e0a800); }
-        .personnel-card.ncos::before { background: linear-gradient(90deg, #fd7e14, #dc6502); }
-        .personnel-card.recruits::before { background: linear-gradient(90deg, #28a745, #1e7e34); }
-        .personnel-card.retired::before { background: linear-gradient(90deg, #6c757d, #545b62); }
-        .personnel-card.civilian-total::before { background: linear-gradient(90deg, #17a2b8, #138496); }
-        .personnel-card.civilian-active::before { background: linear-gradient(90deg, #20c997, #1aa179); }
-        .personnel-card.new-month::before { background: linear-gradient(90deg, #ffc107, #e0a800); }
-        .personnel-card.new-year::before { background: linear-gradient(90deg, #fd7e14, #dc6502); }
-        .personnel-card.gender-male::before { background: linear-gradient(90deg, #007bff, #0056b3); }
-        .personnel-card.gender-female::before { background: linear-gradient(90deg, #e83e8c, #d91a72); }.personnel-card .card-icon {
-    font-size: 2rem;
-    margin-bottom: 12px;
-    opacity: 0.8;
-    transition: all 0.3s ease;
-}
-
-.personnel-card:hover .card-icon {
-    transform: scale(1.1);
-    opacity: 1;
-}
-
-        /* Icon colors */
-        .personnel-card.military-total .card-icon { color: #007bff; }
-        .personnel-card.military-active .card-icon { color: #28a745; }
-        .personnel-card.officers .card-icon { color: #ffc107; }
-        .personnel-card.ncos .card-icon { color: #fd7e14; }
-        .personnel-card.recruits .card-icon { color: #28a745; }
-        .personnel-card.retired .card-icon { color: #6c757d; }
-        .personnel-card.civilian-total .card-icon { color: #17a2b8; }
-        .personnel-card.civilian-active .card-icon { color: #20c997; }
-        .personnel-card.new-month .card-icon { color: #ffc107; }
-        .personnel-card.new-year .card-icon { color: #fd7e14; }
-        .personnel-card.gender-male .card-icon { color: #007bff; }
-        .personnel-card.gender-female .card-icon { color: #e83e8c; }.personnel-card .card-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-}
-
-.personnel-card .card-value {
-    font-size: 2.2rem;
-    font-weight: 700;
-    margin: 0;
-    color: #2c3e50;
-    line-height: 1;
-    font-family: 'Segoe UI', system-ui, sans-serif;
-}
-
-.personnel-card .card-label {
-    font-size: 0.9rem;
-    color: #6c757d;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    margin: 0;
-    line-height: 1.2;
-}
-
-/* Section headers */
-.personnel-snapshot h6 {
-    font-size: 1.1rem;
-    font-weight: 600;
-    margin-bottom: 20px;
-    padding-bottom: 10px;
-    border-bottom: 2px solid rgba(255,255,255,0.2);
-}
-
-/* Responsive adjustments */
+/* Responsive design */
 @media (max-width: 768px) {
+    .dashboard-title { font-size: 1.35rem; }
+    .card-title { font-size: 0.95rem; }
+    .stat-value { font-size: 1.1rem; }
+    
     .personnel-card {
         min-height: 100px;
         padding: 15px 10px;
@@ -522,68 +237,6 @@ include dirname(__DIR__) . '/shared/sidebar.php';
         font-size: 1.8rem;
     }
     
-    .personnel-card .card-icon {
-        font-size: 1.5rem;
-    }
-    
-    .personnel-card .card-label {
-        font-size: 0.8rem;
-    }
-}
-
-/* Loading state */
-.personnel-card.loading {
-    opacity: 0.6;
-    pointer-events: none;
-}
-
-.personnel-card.loading .card-value {
-    opacity: 0.3;
-}
-
-/* Clickable personnel rows */
-.clickable-row {
-    transition: all 0.2s ease;
-}
-
-.clickable-row:hover {
-    background-color: rgba(0, 123, 255, 0.05);
-    transform: translateX(2px);
-}
-
-.clickable-row:active {
-    background-color: rgba(0, 123, 255, 0.1);
-}
-
-/* Enhanced Mobile Responsiveness */
-@media (max-width: 576px) {
-    .card-header h5 {
-        font-size: 1rem;
-    }
-    
-    .btn-group-sm .btn {
-        font-size: 0.75rem;
-        padding: 0.25rem 0.5rem;
-    }
-    
-    .table-responsive table {
-        font-size: 0.85rem;
-    }
-    
-    .modal-dialog {
-        margin: 0.5rem;
-    }
-    
-    .personnel-snapshot {
-        margin-bottom: 1rem;
-    }
-    
-    .card-body {
-        padding: 0.75rem;
-    }
-}
-
-@media (max-width: 768px) {
     .col-md-6 {
         margin-bottom: 1rem;
     }
@@ -602,8 +255,43 @@ include dirname(__DIR__) . '/shared/sidebar.php';
         flex: 1;
     }
 }
-::-webkit-scrollbar-thumb:hover {
-    background: #555;
+
+/* Responsive for smaller screens */
+@media (max-width: 576px) {
+    .card-header h5 {
+        font-size: 1rem;
+    }
+    
+    .btn-group-sm .btn {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+    }
+    
+    .table-responsive table {
+        font-size: 0.85rem;
+    }
+    
+    .modal-dialog {
+        margin: 0.5rem;
+    }
+    
+    .card-body {
+        padding: 0.75rem;
+    }
+}
+
+/* Clickable personnel rows */
+.clickable-row {
+    transition: all 0.2s ease;
+}
+
+.clickable-row:hover {
+    background-color: rgba(0, 123, 255, 0.05);
+    transform: translateX(2px);
+}
+
+.clickable-row:active {
+    background-color: rgba(0, 123, 255, 0.1);
 }
 </style>
 
@@ -751,12 +439,14 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                             <td class="text-center fw-bold text-success" id="recruit-ncos-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_ncos']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_ncos']) : '-'; ?></td>
                                                         </tr>
                                                     </tbody>
-                                                    <tfoot class="table-primary">
-                                                        <tr>
-                                                            <th class="ps-3">TOTAL MILITARY</th>
-                                                            <th class="text-center" id="military-total-male"><?php echo isset($dashboardData['enhanced_personnel']['military']['by_gender']['male']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['by_gender']['male']) : '-'; ?></th>
-                                                            <th class="text-center" id="military-total-female"><?php echo isset($dashboardData['enhanced_personnel']['military']['by_gender']['female']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['by_gender']['female']) : '-'; ?></th>
-                                                            <th class="text-center fs-5 fw-bold text-white" id="military-grand-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['total']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['total']) : '-'; ?></th>
+                                                    <tfoot class="table-dark">
+                                                        <tr class="fw-bold shadow-lg" style="background: linear-gradient(135deg, #0d6efd 0%, #084298 100%); color: white; animation: pulse-glow 2s ease-in-out infinite alternate; border: 2px solid #0d6efd;">
+                                                            <th class="ps-3 py-3" style="font-size: 1.25rem; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+                                                                <i class="fas fa-shield-alt me-2"></i>TOTAL MILITARY
+                                                            </th>
+                                                            <th class="text-center py-3" style="font-size: 1.15rem;" id="military-total-male"><?php echo isset($dashboardData['enhanced_personnel']['military']['by_gender']['male']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['by_gender']['male']) : '-'; ?></th>
+                                                            <th class="text-center py-3" style="font-size: 1.15rem;" id="military-total-female"><?php echo isset($dashboardData['enhanced_personnel']['military']['by_gender']['female']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['by_gender']['female']) : '-'; ?></th>
+                                                            <th class="text-center py-3" style="font-size: 1.75rem; font-weight: 900; text-shadow: 0 2px 4px rgba(0,0,0,0.3); color: #ffd700;" id="military-grand-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['total']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['total']) : '-'; ?></th>
                                                         </tr>
                                                     </tfoot>
                                                 </table>
@@ -797,93 +487,17 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                             <td class="text-center fw-bold text-success" id="civilian-new-total"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['new_1_year']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['new_1_year']) : '-'; ?></td>
                                                         </tr>
                                                     </tbody>
-                                                    <tfoot class="table-info">
-                                                        <tr>
-                                                            <th class="ps-3">TOTAL CIVILIAN</th>
-                                                            <th class="text-center" id="civilian-total-male"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['by_gender']['male']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['by_gender']['male']) : '-'; ?></th>
-                                                            <th class="text-center" id="civilian-total-female"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['by_gender']['female']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['by_gender']['female']) : '-'; ?></th>
-                                                            <th class="text-center fs-5 fw-bold text-white" id="civilian-grand-total"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['total']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['total']) : '-'; ?></th>
+                                                    <tfoot class="table-dark">
+                                                        <tr class="fw-bold shadow-lg" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%); color: white; animation: pulse-glow 2s ease-in-out infinite alternate; border: 2px solid #17a2b8;">
+                                                            <th class="ps-3 py-3" style="font-size: 1.25rem; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+                                                                <i class="fas fa-briefcase me-2"></i>TOTAL CIVILIAN
+                                                            </th>
+                                                            <th class="text-center py-3" style="font-size: 1.15rem;" id="civilian-total-male"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['by_gender']['male']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['by_gender']['male']) : '-'; ?></th>
+                                                            <th class="text-center py-3" style="font-size: 1.15rem;" id="civilian-total-female"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['by_gender']['female']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['by_gender']['female']) : '-'; ?></th>
+                                                            <th class="text-center py-3" style="font-size: 1.75rem; font-weight: 900; text-shadow: 0 2px 4px rgba(0,0,0,0.3); color: #ffd700;" id="civilian-grand-total"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['total']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['total']) : '-'; ?></th>
                                                         </tr>
                                                     </tfoot>
                                                 </table>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Overall Grand Total Card -->
-            <div class="row mb-4">
-                <div class="col-12">
-                    <div class="card shadow-lg border-0 bg-gradient" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-                        <div class="card-body py-4">
-                            <div class="row align-items-center text-white">
-                                <div class="col-md-8">
-                                    <div class="d-flex align-items-center">
-                                        <div class="bg-white bg-opacity-20 rounded-circle p-3 me-4">
-                                            <i class="fas fa-users fa-2x text-white"></i>
-                                        </div>
-                                        <div>
-                                            <h3 class="mb-1 fw-bold">OVERALL PERSONNEL TOTAL</h3>
-                                            <p class="mb-0 opacity-75">Complete organizational strength</p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-md-4 text-center">
-                                    <div class="row text-center">
-                                        <div class="col-4">
-                                            <div class="border-end border-white border-opacity-25 pe-3">
-                                                <h2 class="mb-0 fw-bold" id="overall-male-total">
-                                                    <?php 
-                                                    $militaryMale = isset($dashboardData['enhanced_personnel']['military']['by_gender']['male']) ? (int)$dashboardData['enhanced_personnel']['military']['by_gender']['male'] : 0;
-                                                    $civilianMale = isset($dashboardData['enhanced_personnel']['civilian']['by_gender']['male']) ? (int)$dashboardData['enhanced_personnel']['civilian']['by_gender']['male'] : 0;
-                                                    echo $militaryMale + $civilianMale;
-                                                    ?>
-                                                </h2>
-                                                <small class="opacity-75">Male</small>
-                                            </div>
-                                        </div>
-                                        <div class="col-4">
-                                            <div class="border-end border-white border-opacity-25 pe-3">
-                                                <h2 class="mb-0 fw-bold" id="overall-female-total">
-                                                    <?php 
-                                                    $militaryFemale = isset($dashboardData['enhanced_personnel']['military']['by_gender']['female']) ? (int)$dashboardData['enhanced_personnel']['military']['by_gender']['female'] : 0;
-                                                    $civilianFemale = isset($dashboardData['enhanced_personnel']['civilian']['by_gender']['female']) ? (int)$dashboardData['enhanced_personnel']['civilian']['by_gender']['female'] : 0;
-                                                    echo $militaryFemale + $civilianFemale;
-                                                    ?>
-                                                </h2>
-                                                <small class="opacity-75">Female</small>
-                                            </div>
-                                        </div>
-                                        <div class="col-4">
-                                            <h1 class="mb-0 fw-bold display-4" id="overall-grand-total" style="text-shadow: 0 2px 4px rgba(0,0,0,0.3);">
-                                                <?php 
-                                                $militaryTotal = isset($dashboardData['enhanced_personnel']['military']['total']) ? (int)$dashboardData['enhanced_personnel']['military']['total'] : 0;
-                                                $civilianTotal = isset($dashboardData['enhanced_personnel']['civilian']['total']) ? (int)$dashboardData['enhanced_personnel']['civilian']['total'] : 0;
-                                                $overallTotal = $militaryTotal + $civilianTotal;
-                                                echo $overallTotal;
-                                                ?>
-                                            </h1>
-                                            <small class="opacity-75 fw-bold">TOTAL</small>
-                                        </div>
-                                    </div>
-                                    <div class="mt-3 pt-3 border-top border-white border-opacity-25">
-                                        <div class="row text-center small">
-                                            <div class="col-6">
-                                                <span class="badge bg-primary bg-opacity-75 px-3 py-2">
-                                                    <i class="fas fa-shield-alt me-1"></i>
-                                                    Military: <?php echo $militaryTotal; ?>
-                                                </span>
-                                            </div>
-                                            <div class="col-6">
-                                                <span class="badge bg-info bg-opacity-75 px-3 py-2">
-                                                    <i class="fas fa-briefcase me-1"></i>
-                                                    Civilian: <?php echo $civilianTotal; ?>
-                                                </span>
                                             </div>
                                         </div>
                                     </div>
@@ -1163,29 +777,6 @@ function initializePersonnelFilters() {
                 updateElementWithAnimation('#civilian-new-1year', ep.civilian.new_1_year);
                 updateElementWithAnimation('#civilian-male', ep.civilian.by_gender.male);
                 updateElementWithAnimation('#civilian-female', ep.civilian.by_gender.female);
-                
-                // Update overall totals in the grand total card
-                const militaryTotal = parseInt(ep.military.total) || 0;
-                const civilianTotal = parseInt(ep.civilian.total) || 0;
-                const overallTotal = militaryTotal + civilianTotal;
-                
-                const militaryMale = parseInt(ep.military.by_gender.male) || 0;
-                const civilianMale = parseInt(ep.civilian.by_gender.male) || 0;
-                const overallMale = militaryMale + civilianMale;
-                
-                const militaryFemale = parseInt(ep.military.by_gender.female) || 0;
-                const civilianFemale = parseInt(ep.civilian.by_gender.female) || 0;
-                const overallFemale = militaryFemale + civilianFemale;
-                
-                updateElementWithAnimation('#overall-male-total', overallMale);
-                updateElementWithAnimation('#overall-female-total', overallFemale);
-                updateElementWithAnimation('#overall-grand-total', overallTotal);
-                
-                // Update the breakdown badges in the overall total card
-                const militaryBadge = document.querySelector('.badge:has(.fa-shield-alt)');
-                const civilianBadge = document.querySelector('.badge:has(.fa-briefcase)');
-                if (militaryBadge) militaryBadge.innerHTML = `<i class="fas fa-shield-alt me-1"></i>Military: ${militaryTotal}`;
-                if (civilianBadge) civilianBadge.innerHTML = `<i class="fas fa-briefcase me-1"></i>Civilian: ${civilianTotal}`;
                 
                 // Highlight filtered metrics based on selection
                 highlightFilteredMetrics(timeFilter);

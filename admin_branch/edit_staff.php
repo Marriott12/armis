@@ -1058,6 +1058,10 @@ logActivity('edit_staff_access', 'Accessed Edit Staff page');
 
 // Ensure shared admin branch CSS is loaded
 echo '<link rel="stylesheet" href="/Armis2/assets/css/admin_branch.css">';
+// Add unified design system CSS
+echo '<link rel="stylesheet" href="css/armis-unified.css">';
+echo '<link rel="stylesheet" href="css/form-step-styles.css">';
+
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';
 
@@ -1221,7 +1225,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="alert alert-warning alert-dismissible fade show" role="alert">
                     <i class="fa fa-exclamation-triangle"></i> 
                     <strong>Staff member not found.</strong> The requested staff member could not be found.
-                    <a href="edit_staff.php" class="btn btn-sm btn-outline-primary ms-2">
+                    <a href="edit_staff.php" class="btn btn-sm btn-armis-primary ms-2">
                         <i class="fa fa-search"></i> Search Again
                     </a>
                     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
