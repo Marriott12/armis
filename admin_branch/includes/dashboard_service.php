@@ -1705,6 +1705,168 @@ class DashboardService {
     }
     
     /**
+     * Get predictive attrition analytics
+     * Analyzes patterns to predict potential staff attrition
+     */
+    public function getPredictiveAttrition() {
+        return $this->getCachedData('predictive_attrition', function() {
+            try {
+                // Calculate attrition rate trends
+                $stmt = $this->db->prepare("
+                    SELECT 
+                        YEAR(dischargeDate) as year,
+                        MONTH(dischargeDate) as month,
+                        COUNT(*) as count
+                    FROM staff
+                    WHERE dischargeDate IS NOT NULL 
+                    AND dischargeDate >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
+                    GROUP BY YEAR(dischargeDate), MONTH(dischargeDate)
+                    ORDER BY year DESC, month DESC
+                ");
+                $stmt->execute();
+                $attritionData = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                // Calculate average monthly attrition
+                $totalAttrition = array_sum(array_column($attritionData, 'count'));
+                $avgMonthlyAttrition = $totalAttrition / 12;
+                
+                // Get total active personnel
+                $stmtTotal = $this->db->prepare("
+                    SELECT COUNT(*) as total
+                    FROM staff
+                    WHERE LOWER(TRIM(svcStatus)) = 'active'
+                ");
+                $stmtTotal->execute();
+                $totalActive = $stmtTotal->fetch(PDO::FETCH_ASSOC)['total'];
+                
+                // Calculate attrition rate
+                $attritionRate = $totalActive > 0 ? ($avgMonthlyAttrition / $totalActive) * 100 : 0;
+                
+                // Identify high-risk factors (example: units with high attrition)
+                $stmtRisk = $this->db->prepare("
+                    SELECT 
+                        u.name as unit_name,
+                        COUNT(*) as attrition_count
+                    FROM staff s
+                    LEFT JOIN units u ON s.unit = u.id
+                    WHERE s.dischargeDate >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+                    GROUP BY u.id, u.name
+                    HAVING attrition_count > 3
+                    ORDER BY attrition_count DESC
+                    LIMIT 5
+                ");
+                $stmtRisk->execute();
+                $highRiskUnits = $stmtRisk->fetchAll(PDO::FETCH_ASSOC);
+                
+                return [
+                    'attrition_rate' => round($attritionRate, 2),
+                    'avg_monthly_attrition' => round($avgMonthlyAttrition, 1),
+                    'total_last_12_months' => $totalAttrition,
+                    'high_risk_units' => $highRiskUnits,
+                    'trend' => $attritionData,
+                    'prediction' => [
+                        'next_month' => round($avgMonthlyAttrition),
+                        'next_quarter' => round($avgMonthlyAttrition * 3),
+                        'confidence' => 'medium'
+                    ]
+                ];
+            } catch (PDOException $e) {
+                error_log("Predictive Attrition Error: " . $e->getMessage());
+                return [
+                    'attrition_rate' => 0,
+                    'avg_monthly_attrition' => 0,
+                    'total_last_12_months' => 0,
+                    'high_risk_units' => [],
+                    'trend' => [],
+                    'prediction' => ['next_month' => 0, 'next_quarter' => 0, 'confidence' => 'low']
+                ];
+            }
+        }, 1800); // Cache for 30 minutes
+    }
+    
+    /**
+     * Get training completion rates and statistics
+     */
+    public function getTrainingCompletionRates() {
+        return $this->getCachedData('training_completion', function() {
+            try {
+                // Get completed vs ongoing courses
+                $stmt = $this->db->prepare("
+                    SELECT 
+                        CASE 
+                            WHEN completion_date IS NOT NULL THEN 'Completed'
+                            WHEN end_date < CURDATE() THEN 'Overdue'
+                            ELSE 'In Progress'
+                        END as status,
+                        COUNT(*) as count
+                    FROM staff_courses
+                    WHERE staff_id IN (
+                        SELECT id FROM staff WHERE LOWER(TRIM(svcStatus)) = 'active'
+                    )
+                    GROUP BY status
+                ");
+                $stmt->execute();
+                $statusData = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                // Calculate completion rate
+                $total = array_sum(array_column($statusData, 'count'));
+                $completed = 0;
+                $inProgress = 0;
+                $overdue = 0;
+                
+                foreach ($statusData as $row) {
+                    if ($row['status'] === 'Completed') $completed = $row['count'];
+                    if ($row['status'] === 'In Progress') $inProgress = $row['count'];
+                    if ($row['status'] === 'Overdue') $overdue = $row['count'];
+                }
+                
+                $completionRate = $total > 0 ? ($completed / $total) * 100 : 0;
+                
+                // Get most popular courses
+                $stmtPopular = $this->db->prepare("
+                    SELECT 
+                        course_name,
+                        COUNT(*) as enrollment_count
+                    FROM staff_courses
+                    WHERE staff_id IN (
+                        SELECT id FROM staff WHERE LOWER(TRIM(svcStatus)) = 'active'
+                    )
+                    GROUP BY course_name
+                    ORDER BY enrollment_count DESC
+                    LIMIT 5
+                ");
+                $stmtPopular->execute();
+                $popularCourses = $stmtPopular->fetchAll(PDO::FETCH_ASSOC);
+                
+                return [
+                    'completion_rate' => round($completionRate, 1),
+                    'total_courses' => $total,
+                    'completed' => $completed,
+                    'in_progress' => $inProgress,
+                    'overdue' => $overdue,
+                    'popular_courses' => $popularCourses,
+                    'labels' => ['Completed', 'In Progress', 'Overdue'],
+                    'data' => [$completed, $inProgress, $overdue],
+                    'colors' => ['#28a745', '#ffc107', '#dc3545']
+                ];
+            } catch (PDOException $e) {
+                error_log("Training Completion Error: " . $e->getMessage());
+                return [
+                    'completion_rate' => 0,
+                    'total_courses' => 0,
+                    'completed' => 0,
+                    'in_progress' => 0,
+                    'overdue' => 0,
+                    'popular_courses' => [],
+                    'labels' => [],
+                    'data' => [],
+                    'colors' => []
+                ];
+            }
+        }, 1800); // Cache for 30 minutes
+    }
+    
+    /**
      * Get cohort analysis of personnel retention by enlistment year
      */
     public function getCohortAnalysis() {
