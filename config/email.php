@@ -1,9 +1,9 @@
 <?php
 return [
-    'smtp_host' => 'smtp.gmail.com',
+    'smtp_host' => 'smtp.envisagezm.com',
     'smtp_port' => 587,
-    'smtp_username' => 'your-email@gmail.com',
-    'smtp_password' => 'your-app-password',
-    'from_email' => 'noreply@armis.mil.zm',
+    'smtp_username' => 'support@envisagezm.com',
+    'smtp_password' => 'Envisage@2025',
+    'from_email' => 'support@envisagezm.com',
     'from_name' => 'ARMIS System'
 ];

@@ -1,28 +1,37 @@
 <?php
+// Define module constants
 define('ARMIS_ADMIN_BRANCH', true);
+
+// Include admin branch authentication and database
 require_once __DIR__ . '/includes/auth.php';
 require_once dirname(__DIR__) . '/shared/database_connection.php';
+
+// Require authentication
 requireAuth();
 
-$pageTitle = "Personnel Report by Unit as at " . date('d-M-Y');
-$currentPage = "reports";
+$pageTitle = "Appointment Report as at " . date('d-M-Y');
 $moduleName = "Admin Branch";
 $moduleIcon = "users-cog";
+$currentPage = "reports";
 
 $sidebarLinks = [
     ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'],
-    ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create'],
-    ['title' => 'Promotions', 'url' => '/Armis2/admin_branch/promote_staff.php', 'icon' => 'arrow-up', 'page' => 'promotions'],
-    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medal.php', 'icon' => 'medal', 'page' => 'medals'],
+    ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create_staff'],
+    ['title' => 'Edit Staff', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'user-edit', 'page' => 'edit_staff'],
+    ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/appointments.php', 'icon' => 'briefcase', 'page' => 'appointments'],
+    ['title' => 'Batch Appointments', 'url' => '/Armis2/admin_branch/batch_appointments.php', 'icon' => 'tasks', 'page' => 'batch_appointments'],
+    ['title' => 'Pending Approvals', 'url' => '/Armis2/admin_branch/pending_appointments.php', 'icon' => 'clock', 'page' => 'pending_appointments'],
+    ['title' => 'Appointment History', 'url' => '/Armis2/admin_branch/appointment_history.php', 'icon' => 'history', 'page' => 'appointment_history'],
+    ['title' => 'Appointment Types', 'url' => '/Armis2/admin_branch/appointment_types.php', 'icon' => 'clipboard-list', 'page' => 'appointment_types'],
+    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/medals.php', 'icon' => 'medal', 'page' => 'medals'],
     [
         'title' => 'Reports',
         'icon' => 'chart-bar',
         'page' => 'reports',
         'children' => [
+            ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
             ['title' => 'Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php'],
             ['title' => 'Unit List', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
             ['title' => 'Contracts', 'url' => '/Armis2/admin_branch/reports_contract.php'],
             ['title' => 'Courses', 'url' => '/Armis2/admin_branch/reports_courses.php'],
             ['title' => 'Deceased', 'url' => '/Armis2/admin_branch/reports_deceased.php'],
@@ -31,8 +40,7 @@ $sidebarLinks = [
             ['title' => 'Rank', 'url' => '/Armis2/admin_branch/reports_rank.php'],
             ['title' => 'Retired', 'url' => '/Armis2/admin_branch/reports_retired.php'],
             ['title' => 'Trade', 'url' => '/Armis2/admin_branch/reports_trade.php'],
-            ['title' => 'Corps', 'url' => '/Armis2/admin_branch/reports_corps.php'],
-            ['title' => 'Units', 'url' => '/Armis2/admin_branch/reports_units.php'],
+            ['title' => 'Corps', 'url' => '/Armis2/admin_branch/reports_corps.php']
         ]
     ],
 ];
@@ -45,30 +53,94 @@ function formatSentenceCase($name) {
     return ucwords(strtolower(trim($name)));
 }
 
-function getUnitOptions($pdo) {
-    $unitSql = "SELECT id, name FROM units ORDER BY name ASC";
-    $catSql  = "SELECT DISTINCT s.category FROM staff s WHERE s.category IS NOT NULL AND s.category <> ''";
-    $rankSql = "SELECT DISTINCT r.id, r.name FROM ranks r JOIN staff s ON s.rank_id = r.id";
-    return [
-        fetchAll($unitSql),
-        fetchAll($catSql . " ORDER BY s.category ASC"),
-        fetchAll($rankSql . " ORDER BY r.name ASC")
-    ];
+function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory, $selectedAppt) {
+    $rankSql = "SELECT DISTINCT r.id, r.name FROM ranks r JOIN staff s ON s.rank_id = r.id WHERE s.svcStatus = 'Active'";
+    $unitSql = "SELECT DISTINCT u.id, u.name FROM units u JOIN staff s ON s.unit_id = u.id WHERE s.svcStatus = 'Active'";
+    $catSql = "SELECT DISTINCT s.category FROM staff s WHERE s.category IS NOT NULL AND s.category <> '' AND s.svcStatus = 'Active'";
+    $apptSql = "SELECT DISTINCT s.appt FROM staff s WHERE s.appt IS NOT NULL AND s.appt <> '' AND s.svcStatus = 'Active'";
+    
+    $rankParams = [];
+    $unitParams = [];
+    $catParams = [];
+    $apptParams = [];
+
+    if ($selectedUnit) {
+        $rankSql .= " AND s.unit_id = ?";
+        $rankParams[] = $selectedUnit;
+    }
+    if ($selectedCategory) {
+        $rankSql .= " AND s.category = ?";
+        $rankParams[] = $selectedCategory;
+    }
+    if ($selectedAppt) {
+        $rankSql .= " AND s.appt = ?";
+        $rankParams[] = $selectedAppt;
+    }
+    if ($selectedRank) {
+        $unitSql .= " AND s.rank_id = ?";
+        $unitParams[] = $selectedRank;
+    }
+    if ($selectedCategory) {
+        $unitSql .= " AND s.category = ?";
+        $unitParams[] = $selectedCategory;
+    }
+    if ($selectedAppt) {
+        $unitSql .= " AND s.appt = ?";
+        $unitParams[] = $selectedAppt;
+    }
+    if ($selectedUnit) {
+        $catSql .= " AND s.unit_id = ?";
+        $catParams[] = $selectedUnit;
+    }
+    if ($selectedRank) {
+        $catSql .= " AND s.rank_id = ?";
+        $catParams[] = $selectedRank;
+    }
+    if ($selectedAppt) {
+        $catSql .= " AND s.appt = ?";
+        $catParams[] = $selectedAppt;
+    }
+    if ($selectedUnit) {
+        $apptSql .= " AND s.unit_id = ?";
+        $apptParams[] = $selectedUnit;
+    }
+    if ($selectedRank) {
+        $apptSql .= " AND s.rank_id = ?";
+        $apptParams[] = $selectedRank;
+    }
+    if ($selectedCategory) {
+        $apptSql .= " AND s.category = ?";
+        $apptParams[] = $selectedCategory;
+    }
+
+    $ranks = fetchAll($rankSql . " ORDER BY r.name ASC", $rankParams);
+    $units = fetchAll($unitSql . " ORDER BY u.name ASC", $unitParams);
+    $categories = fetchAll($catSql . " ORDER BY s.category ASC", $catParams);
+    $appointments = fetchAll($apptSql . " ORDER BY s.appt ASC", $apptParams);
+
+    return [$ranks, $units, $categories, $appointments];
 }
+
+$filter_rank = $_GET['rankID'] ?? '';
 $filter_unit = $_GET['unitID'] ?? '';
 $filter_category = $_GET['category'] ?? '';
-$filter_rank = $_GET['rankID'] ?? '';
+$filter_appt = $_GET['appointment'] ?? '';
 $search = trim($_GET['search'] ?? '');
+$params = [];
 
-list($units, $categories, $ranks) = getUnitOptions($pdo);
+list($ranks, $units, $categories, $appointments) = getDynamicOptions($pdo, $filter_rank, $filter_unit, $filter_category, $filter_appt);
 
-// Sorting functionality
+$per_page = intval($_GET['per_page'] ?? 25);
+$page = max(1, intval($_GET['page'] ?? 1));
+$offset = ($page - 1) * $per_page;
+
 $sortable_columns = [
-    'unit' => 'u.name',
+    'appt' => 's.appt',
     'rank' => 'r.level',
     'service_number' => 's.service_number',
     'surname' => 's.last_name',
     'first_name' => 's.first_name',
+    'unit' => 'u.name',
     'category' => 's.category',
     'DOB' => 's.DOB',
     'attestDate' => 's.attestDate'
@@ -76,17 +148,49 @@ $sortable_columns = [
 $sort_col = $_GET['sort_col'] ?? '';
 $sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
 
-$params = [];
-$sql = "SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, r.level as rankLevel, u.name as unitName, u.code as unitCode FROM staff s
+$sql = "SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, r.level as rankIndex, u.name as unitName, u.code as unitCode
+        FROM staff s
         LEFT JOIN ranks r ON s.rank_id = r.id
         LEFT JOIN units u ON s.unit_id = u.id
-        WHERE 1=1";
-if ($filter_unit !== '')      { $sql .= " AND s.unit_id = ?"; $params[] = $filter_unit; }
-if ($filter_category !== '')  { $sql .= " AND s.category = ?"; $params[] = $filter_category; }
-if ($filter_rank !== '')      { $sql .= " AND s.rank_id = ?"; $params[] = $filter_rank; }
+        WHERE s.svcStatus = 'Active'";
+
+$count_sql = "SELECT COUNT(*) FROM staff s
+        LEFT JOIN ranks r ON s.rank_id = r.id
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE s.svcStatus = 'Active'";
+$count_params = [];
+
+if ($filter_rank !== '') {
+    $sql .= " AND s.rank_id = ?";
+    $count_sql .= " AND s.rank_id = ?";
+    $params[] = $filter_rank;
+    $count_params[] = $filter_rank;
+}
+if ($filter_unit !== '') {
+    $sql .= " AND s.unit_id = ?";
+    $count_sql .= " AND s.unit_id = ?";
+    $params[] = $filter_unit;
+    $count_params[] = $filter_unit;
+}
+if ($filter_category !== '') {
+    $sql .= " AND s.category = ?";
+    $count_sql .= " AND s.category = ?";
+    $params[] = $filter_category;
+    $count_params[] = $filter_category;
+}
+if ($filter_appt !== '') {
+    $sql .= " AND s.appt = ?";
+    $count_sql .= " AND s.appt = ?";
+    $params[] = $filter_appt;
+    $count_params[] = $filter_appt;
+}
 if ($search !== '') {
-    $sql .= " AND (u.name LIKE ? OR s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR s.category LIKE ?)";
-    for ($i = 0; $i < 6; $i++) $params[] = "%$search%";
+    $sql .= " AND (s.appt LIKE ? OR s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR u.name LIKE ? OR s.category LIKE ?)";
+    $count_sql .= " AND (s.appt LIKE ? OR s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR u.name LIKE ? OR s.category LIKE ?)";
+    for ($i = 0; $i < 7; $i++) {
+        $params[] = "%$search%";
+        $count_params[] = "%$search%";
+    }
 }
 
 // Handle sorting
@@ -94,13 +198,14 @@ $order_clause = '';
 if ($sort_col && isset($sortable_columns[$sort_col])) {
     $order_clause = " ORDER BY " . $sortable_columns[$sort_col] . " $sort_dir";
 } else {
-    $order_clause = " ORDER BY r.level ASC, u.name ASC, s.last_name ASC, s.first_name ASC";
+    $order_clause = " ORDER BY r.level ASC, s.last_name ASC, s.first_name ASC";
 }
 $sql .= $order_clause;
-$per_page = intval($_GET['per_page'] ?? 25);
-$page = max(1, intval($_GET['page'] ?? 1)); $offset = ($page - 1) * $per_page;
 $sql .= " LIMIT $per_page OFFSET $offset";
+
 $staff = fetchAll($sql, $params);
+$total_records = fetchAll($count_sql, $count_params)[0]->{'COUNT(*)'};
+$total_pages = ceil($total_records / $per_page);
 
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';
@@ -108,11 +213,13 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 <div class="content-wrapper with-sidebar">
     <div class="container-fluid">
         <div class="main-content">
-            <h1 class="section-title mb-4"><i class="fas fa-building"></i> <?= htmlspecialchars($pageTitle) ?></h1>
+            <h1 class="section-title mb-4">
+                <i class="fas fa-briefcase"></i> <?= htmlspecialchars($pageTitle) ?>
+            </h1>
             <div class="alert alert-info d-flex align-items-center mb-3" role="alert">
                 <i class="fas fa-question-circle me-2"></i>
                 <span>
-                    Filter by unit, rank, category. Use the search box for instant filtering. Export, print, show/hide columns. Double-click row for details.
+                    Filter by appointment, rank, unit, category. Use the search box for instant filtering. Export, print, show/hide columns. Double-click row for details.
                 </span>
                 <button type="button" class="btn btn-sm btn-outline-info ms-auto" data-bs-toggle="modal" data-bs-target="#helpModal" title="Show Help"><i class="fa fa-info-circle"></i> Help</button>
             </div>
@@ -136,31 +243,39 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             </div>
             <form class="row g-3 mb-4" method="get" action="">
                 <div class="col-md-2">
-                    <select name="unitID" id="unitFilter" class="form-select">
-                        <option value="">Unit</option>
-                        <?php foreach ($units as $u): ?>
-                            <option value="<?= $u->id ?>" <?= ($filter_unit == $u->id) ? 'selected':''?>><?= htmlspecialchars($u->name) ?></option>
+                    <select name="appointment" id="apptFilter" class="form-select">
+                        <option value="">All Appointments</option>
+                        <?php foreach ($appointments as $a): ?>
+                            <option value="<?= htmlspecialchars($a->appt) ?>" <?= ($filter_appt == $a->appt) ? 'selected' : '' ?>><?= htmlspecialchars($a->appt) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-md-2">
                     <select name="rankID" id="rankFilter" class="form-select">
-                        <option value="">Rank</option>
+                        <option value="">All Ranks</option>
                         <?php foreach ($ranks as $r): ?>
-                            <option value="<?= $r->id ?>" <?= ($filter_rank == $r->id) ? 'selected':''?>><?= htmlspecialchars($r->name) ?></option>
+                            <option value="<?= $r->id ?>" <?= ($filter_rank == $r->id) ? 'selected' : '' ?>><?= htmlspecialchars($r->name) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select name="unitID" id="unitFilter" class="form-select">
+                        <option value="">All Units</option>
+                        <?php foreach ($units as $u): ?>
+                            <option value="<?= $u->id ?>" <?= ($filter_unit == $u->id) ? 'selected' : '' ?>><?= htmlspecialchars($u->name) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-md-2">
                     <select name="category" id="categoryFilter" class="form-select">
-                        <option value="">Category</option>
+                        <option value="">All Categories</option>
                         <?php foreach ($categories as $cat): ?>
                             <option value="<?= htmlspecialchars($cat->category) ?>" <?= ($filter_category == $cat->category) ? 'selected' : '' ?>><?= htmlspecialchars($cat->category) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-md-3">
-                    <input type="text" id="unitsSearch" name="search" class="form-control" placeholder="Quick Search..." value="<?=htmlspecialchars($search)?>">
+                    <input type="text" id="appointmentSearch" name="search" class="form-control" placeholder="Quick Search..." value="<?= htmlspecialchars($search) ?>">
                 </div>
                 <div class="col-md-1">
                     <select name="per_page" class="form-select">
@@ -173,15 +288,15 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             <div class="mb-2">
                 <strong>Show/Hide Columns:</strong>
                 <?php $columns = [
-                    'unit'=>'Unit','rank'=>'Rank','service_number'=>'Service No','surname'=>'Surname','first_name'=>'First Name(s)',
-                    'category'=>'Category','DOB'=>'Date of Birth','attestDate'=>'Date of Enlistment'
-                ];
-                foreach ($columns as $key=>$label): ?>
-                <label class="me-3"><input type="checkbox" class="toggle-col" data-col="<?= $key ?>" checked> <?= $label ?></label>
+                    'appt'=>'Appointment','rank'=>'Rank','service_number'=>'Service No','surname'=>'Surname','first_name'=>'First Name(s)',
+                    'unit'=>'Unit','category'=>'Category','DOB'=>'Date of Birth','attestDate'=>'Date of Enlistment'
+                ]; foreach ($columns as $key => $label): ?>
+                <input type="checkbox" checked data-col="<?= $key ?>" class="toggle-col" id="col_<?= $key ?>">
+                <label for="col_<?= $key ?>" class="me-2"><?= $label ?></label>
                 <?php endforeach; ?>
             </div>
             <div class="table-responsive print-friendly">
-                <table class="table table-bordered table-hover align-middle" id="unitsTable">
+                <table class="table table-bordered table-hover align-middle" id="appointmentTable">
                     <thead class="table-light">
                         <tr>
                             <th>#</th>
@@ -204,11 +319,12 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <?php else: $i=1; foreach($staff as $s): ?>
                             <tr ondblclick="alert('Audit/History details coming soon.')">
                                 <td><?= $i++ ?></td>
-                                <td class="col-unit"><?= htmlspecialchars($s->unitCode ?? $s->unitName ?? '') ?></td>
-                                <td class="col-rank"><?= htmlspecialchars($s->rankAbbr ?? $s->rankName ?? '') ?></td>
+                                <td class="col-appt"><?= htmlspecialchars($s->appt ?? '') ?></td>
+                                <td class="col-rank"><?= htmlspecialchars($s->rankAbbr ?? '') ?></td>
                                 <td class="col-service_number"><?= htmlspecialchars($s->service_number ?? '') ?></td>
                                 <td class="col-surname"><?= htmlspecialchars(formatSentenceCase($s->last_name ?? '')) ?></td>
                                 <td class="col-first_name"><?= htmlspecialchars(formatSentenceCase($s->first_name ?? '')) ?></td>
+                                <td class="col-unit"><?= htmlspecialchars($s->unitCode ?? '') ?></td>
                                 <td class="col-category"><?= htmlspecialchars($s->category ?? '') ?></td>
                                 <td class="col-DOB"><?= htmlspecialchars($s->DOB ?? '') ?></td>
                                 <td class="col-attestDate"><?= htmlspecialchars($s->attestDate ?? '') ?></td>
@@ -224,20 +340,40 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                 </div>
             </div>
             <div class="d-flex justify-content-center my-3">
-                <nav aria-label="Units pagination">
+                <nav aria-label="Appointments pagination">
                     <ul class="pagination pagination-sm">
                         <?php
-                        $max_links=7;
-                        $start=max(1,$page-intval($max_links/2));
-                        $end=$start+$max_links-1;
-                        for ($p=$start;$p<=$end;$p++): ?>
-                        <li class="page-item<?= ($p==$page)?' active':''?>">
-                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET,['page'=>$p])) ?>"><?= $p ?></a>
+                        $max_links = 7;
+                        $start = max(1, $page - intval($max_links / 2));
+                        $end = min($total_pages, $start + $max_links - 1);
+                        
+                        if ($page > 1): ?>
+                        <li class="page-item">
+                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => 1])) ?>">&laquo; First</a>
                         </li>
-                        <?php endfor; ?>
+                        <li class="page-item">
+                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page - 1])) ?>">&lsaquo; Prev</a>
+                        </li>
+                        <?php endif;
+                        
+                        for ($p = $start; $p <= $end; $p++): ?>
+                        <li class="page-item<?= ($p == $page) ? ' active' : '' ?>">
+                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $p])) ?>"><?= $p ?></a>
+                        </li>
+                        <?php endfor;
+                        
+                        if ($page < $total_pages): ?>
+                        <li class="page-item">
+                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page + 1])) ?>">Next &rsaquo;</a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $total_pages])) ?>">Last &raquo;</a>
+                        </li>
+                        <?php endif; ?>
                     </ul>
                 </nav>
             </div>
+            <p class="text-muted small">Showing <?= count($staff) ?> of <?= $total_records ?> records (Page <?= $page ?> of <?= $total_pages ?>)</p>
         </div>
     </div>
 </div>
@@ -281,8 +417,9 @@ document.querySelectorAll('.toggle-col').forEach(function(box) {
         cell.style.display = box.checked ? '' : 'none';
     });
 });
+
 document.getElementById('exportCSVBtn').addEventListener('click', function() {
-    let table = document.getElementById('unitsTable');
+    let table = document.getElementById('appointmentTable');
     let rows = Array.from(table.rows);
     let visibleCols = [];
     rows[0].querySelectorAll('th').forEach(function(th, idx) {
@@ -298,42 +435,48 @@ document.getElementById('exportCSVBtn').addEventListener('click', function() {
     let blob = new Blob([csv], {type:'text/csv'});
     let link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = 'units_report.csv';
+    link.download = 'appointment_report.csv';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 });
+
 document.getElementById('exportExcelBtn').addEventListener('click', function() {
-    let table = document.getElementById('unitsTable');
-    let wb = XLSX.utils.table_to_book(table, {sheet:"Units"});
-    XLSX.writeFile(wb, 'units_report.xlsx');
+    let table = document.getElementById('appointmentTable');
+    let wb = XLSX.utils.table_to_book(table, {sheet:"Appointments"});
+    XLSX.writeFile(wb, 'appointment_report.xlsx');
 });
+
 document.getElementById('exportPDFBtn').addEventListener('click', function(){
-    let table = document.getElementById('unitsTable');
+    let table = document.getElementById('appointmentTable');
     let rows = Array.from(table.rows).map(row => Array.from(row.cells).map(cell => cell.innerText));
     const { jsPDF } = window.jspdf;
     let doc = new jsPDF();
     let startY = 20;
-    doc.text("Units Report", 14, startY);
+    doc.text("Appointment Report", 14, startY);
     rows.forEach(function(row, idx){
         doc.text(row.join(" | "), 14, startY + 8 + idx*8);
     });
-    doc.save("units_report.pdf");
+    doc.save("appointment_report.pdf");
 });
+
 document.querySelector('.print-btn').addEventListener('click', function(){
     window.print();
 });
-['unitFilter','rankFilter','categoryFilter'].forEach(function(id){
+
+['apptFilter','rankFilter','unitFilter','categoryFilter'].forEach(function(id){
     document.getElementById(id).addEventListener('change', function(){
         document.forms[0].submit();
     });
 });
-document.getElementById('unitsSearch').addEventListener('input', function() {
+
+document.getElementById('appointmentSearch').addEventListener('input', function() {
     const query = this.value.toLowerCase();
-    document.querySelectorAll('#unitsTable tbody tr').forEach(function(row) {
+    document.querySelectorAll('#appointmentTable tbody tr').forEach(function(row) {
         const text = row.textContent.toLowerCase();
         row.style.display = text.includes(query) ? '' : 'none';
     });
 });
 </script>
+
 <?php include dirname(__DIR__) . '/shared/footer.php'; ?>

@@ -42,7 +42,7 @@ log_audit($user_id, $_GET);
 
 // --- Server-side Caching: 2 min (APCu or file) ---
 function cache_get($key) {
-    if (function_exists('apcu_fetch')) {
+    if (extension_loaded('apcu') && function_exists('apcu_fetch')) {
         return apcu_fetch($key);
     } else {
         $file = sys_get_temp_dir() . '/filtercache_' . md5($key);

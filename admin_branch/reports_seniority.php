@@ -15,7 +15,11 @@ $moduleName = "Admin Branch";
 $moduleIcon = "users-cog";
 $currentPage = "seniority";
 
+// Determine report type (officer, nco, ce)
+$reportType = $_GET['report_type'] ?? 'officer';
+
 // Sidebar navigation
+
 $sidebarLinks = [
     ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
     ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'],
@@ -24,11 +28,28 @@ $sidebarLinks = [
     ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/appointments.php', 'icon' => 'user-tie', 'page' => 'appointments'],
     ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medal.php', 'icon' => 'medal', 'page' => 'medals'],
     [
+        'title' => 'Seniority Rolls',
+        'icon' => 'users',
+        'children' => [
+            ['title' => 'Officer Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php?report_type=officer', 'page' => 'seniority'],
+            ['title' => 'NCO Seniority', 'url' => '/Armis2/admin_branch/reports_nco_seniority.php?report_type=nco', 'page' => 'seniority'],
+            ['title' => 'CE Seniority', 'url' => '/Armis2/admin_branch/reports_ce_seniority.php?report_type=ce', 'page' => 'seniority'],
+        ]
+    ],
+    [
+        'title' => 'Norminal Rolls',
+        'icon' => 'bars',
+        'children' => [
+            ['title' => 'Officer Norminal Roll', 'url' => '/Armis2/admin_branch/reports_officer_norminal.php?report_type=officer'],
+            ['title' => 'NCO Norminal Roll', 'url' => '/Armis2/admin_branch/reports_nco_norminal.php?report_type=nco'],
+            ['title' => 'CE Norminal Roll', 'url' => '/Armis2/admin_branch/reports_ce_norminal.php?report_type=ce'],
+        ]
+    ],
+    [
         'title' => 'Reports',
         'icon' => 'chart-bar',
         'page' => 'reports',
         'children' => [
-            ['title' => 'Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php'],
             ['title' => 'Unit List', 'url' => '/Armis2/admin_branch/reports_units.php'],
             ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
             ['title' => 'Contracts', 'url' => '/Armis2/admin_branch/reports_contract.php'],
@@ -47,6 +68,12 @@ $sidebarLinks = [
 
 // Get database connection
 $pdo = getDbConnection();
+
+// Helper function to format names in title case (capitalize each word)
+function formatSentenceCase($name) {
+    if (empty($name)) return '';
+    return ucwords(strtolower(trim($name)));
+}
 
 // Dynamic filter options (only for active staff)
 function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory) {
@@ -103,8 +130,8 @@ $page = max(1, intval($_GET['page'] ?? 1));
 $offset = ($page - 1) * $per_page;
 
 $sortable_columns = [
-    'rank' => 'r.level',
     'service_number' => 's.service_number',
+    'rank' => 'r.level',
     'surname' => 's.last_name',
     'first_name' => 's.first_name',
     'unit' => 'u.name',
@@ -118,16 +145,28 @@ $sortable_columns = [
 $sort_col = $_GET['sort_col'] ?? '';
 $sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
 
-$sql = "SELECT s.*, r.name as rankName, r.level as rankIndex, u.name as unitName
+
+$sql = "SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, r.level as rankIndex, u.name as unitName, u.code as unitCode
         FROM staff s
         LEFT JOIN ranks r ON s.rank_id = r.id
         LEFT JOIN units u ON s.unit_id = u.id
         WHERE s.svcStatus = 'Active'";
-
 $count_sql = "SELECT COUNT(*) FROM staff s
         LEFT JOIN ranks r ON s.rank_id = r.id
         LEFT JOIN units u ON s.unit_id = u.id
         WHERE s.svcStatus = 'Active'";
+
+// Filter by report type
+if ($reportType === 'officer') {
+    $sql .= " AND s.category = 'Officer'";
+    $count_sql .= " AND s.category = 'Officer'";
+} elseif ($reportType === 'nco') {
+    $sql .= " AND s.category = 'NCO'";
+    $count_sql .= " AND s.category = 'NCO'";
+} elseif ($reportType === 'ce') {
+    $sql .= " AND s.category = 'CE'";
+    $count_sql .= " AND s.category = 'CE'";
+}
 $count_params = [];
 
 if ($filter_rank !== '') {
@@ -162,7 +201,9 @@ if ($sort_col && array_key_exists($sort_col, $sortable_columns)) {
 } else {
     $sql .= " ORDER BY 
         r.level ASC,
-        COALESCE(s.subWef, s.tempWef, s.attestDate) ASC,
+        s.subWef ASC,
+        s.tempWef ASC,
+        s.attestDate ASC,
         s.service_number ASC";
 }
 
@@ -183,6 +224,13 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             <h1 class="section-title mb-4">
                 <i class="fas fa-list"></i> <?= htmlspecialchars($pageTitle) ?>
             </h1>
+            <div class="alert alert-info d-flex align-items-center mb-3" role="alert">
+                <i class="fas fa-question-circle me-2"></i>
+                <span>
+                    Filter by appointment, rank, unit, category. Use the search box for instant filtering. Export, print, show/hide columns. Double-click row for details.
+                </span>
+                <button type="button" class="btn btn-sm btn-outline-info ms-auto" data-bs-toggle="modal" data-bs-target="#helpModal" title="Show Help"><i class="fa fa-info-circle"></i> Help</button>
+            </div>
             <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
                 <div class="modal-dialog">
                     <div class="modal-content">
@@ -190,6 +238,19 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             <h5 class="modal-title" id="helpModalLabel">Report Help</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
+                            <ul class="nav nav-tabs mb-3" id="seniorityTabs" role="tablist">
+                                <?php foreach ([
+                                    'officer' => 'Officers',
+                                    'nco' => 'NCOs',
+                                    'ce' => 'CEs'
+                                ] as $key => $label): ?>
+                                    <li class="nav-item" role="presentation">
+                                        <a class="nav-link<?= (($reportType ?? ($_GET['report_type'] ?? 'officer'))==$key)?' active':'' ?>" href="?<?= http_build_query(array_merge($_GET, ['report_type'=>$key,'page'=>1])) ?>" role="tab">
+                                            <?= $label ?> Report
+                                        </a>
+                                    </li>
+                                <?php endforeach; ?>
+                            </ul>
                         <div class="modal-body">
                             <ul>
                                 <li><b>Filtering:</b> Use dropdowns to filter, and type in the search box for instant filtering.</li>
@@ -219,14 +280,6 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-md-2">
-                    <select name="category" id="categoryFilter" class="form-select" aria-label="Filter by category">
-                        <option value="">All Categories</option>
-                        <?php foreach ($categories as $cat): ?>
-                            <option value="<?= htmlspecialchars($cat->category) ?>" <?= ($filter_category == $cat->category) ? 'selected' : '' ?>><?= htmlspecialchars($cat->category) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
                 <div class="col-md-3">
                     <input type="text" id="senioritySearch" name="search" class="form-control" placeholder="Quick Search..." aria-label="Quick search" value="<?=htmlspecialchars($search)?>">
                 </div>
@@ -245,12 +298,11 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                 <strong>Show/Hide Columns:</strong>
                 <?php
                 $columns = [
-                    'rank' => 'Rank',
                     'service_number' => 'Service No',
+                    'rank' => 'Rank',
                     'surname' => 'Surname',
                     'first_name' => 'First Name(s)',
                     'unit' => 'Unit',
-                    'category' => 'Category',
                     'DOB' => 'Date of Birth',
                     'attestDate' => 'Date of Enlistment',
                     'svcStatus' => 'Status'
@@ -293,12 +345,11 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <td>
                                     <input type="checkbox" name="selected_ids[]" value="<?= htmlspecialchars($s->id) ?>" class="rowCheckbox">
                                 </td>
-                                <td class="col-rank"><?= htmlspecialchars($s->rankName ?? '') ?></td>
                                 <td class="col-service_number"><?= htmlspecialchars($s->service_number ?? '') ?></td>
-                                <td class="col-surname"><?= htmlspecialchars($s->last_name ?? '') ?></td>
-                                <td class="col-first_name"><?= htmlspecialchars($s->first_name ?? '') ?></td>
-                                <td class="col-unit"><?= htmlspecialchars($s->unitName ?? '') ?></td>
-                                <td class="col-category"><?= htmlspecialchars($s->category ?? '') ?></td>
+                                <td class="col-service_number"><?= htmlspecialchars($s->rankAbbr ?? $s->rankName ?? '') ?></td>
+                                <td class="col-surname"><?= htmlspecialchars(formatSentenceCase($s->last_name ?? '')) ?></td>
+                                <td class="col-first_name"><?= htmlspecialchars(formatSentenceCase($s->first_name ?? '')) ?></td>
+                                <td class="col-unit"><?= htmlspecialchars($s->unitCode ?? $s->unitName ?? '') ?></td>
                                 <td class="col-DOB"><?= htmlspecialchars($s->DOB ?? '') ?></td>
                                 <td class="col-attestDate"><?= htmlspecialchars($s->attestDate ?? '') ?></td>
                                 <td class="col-svcStatus"><?= htmlspecialchars($s->svcStatus ?? '') ?></td>
@@ -309,6 +360,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         <span class="text-muted">N/A</span>
                                     <?php endif; ?>
                                     <a href="/Armis2/admin_branch/edit_staff.php?svcNo=<?= urlencode($s->service_number) ?>" class="btn btn-outline-secondary btn-sm ms-1" aria-label="Edit staff">Edit</a>
+                                    <!--<a href="/Armis2/reset_password.php?svcNo=<?= urlencode($s->service_number) ?>" class="btn btn-outline-warning btn-sm ms-1" aria-label="Reset password">Reset Password</a>-->
                                 </td>
                             </tr>
                         <?php endforeach; endif; ?>
@@ -344,10 +396,6 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         </li>
                     </ul>
                 </nav>
-            </div>
-            <div class="text-end mt-2">
-                <button onclick="window.print()" class="btn btn-outline-secondary btn-sm print-btn"><i class="fa fa-print"></i> Print Report</button>
-                <button id="exportCSVBtn" class="btn btn-outline-success btn-sm ms-2"><i class="fa fa-file-csv"></i> Export CSV</button>
             </div>
         </div>
     </div>
@@ -440,7 +488,7 @@ document.querySelector('.print-btn').addEventListener('click', function(){
 });
 
 // Dynamic dropdown filtering via AJAX (simulate for demo, ideally do via endpoint)
-['rankFilter','unitFilter','categoryFilter'].forEach(function(id){
+['rankFilter','unitFilter'].forEach(function(id){
     document.getElementById(id).addEventListener('change', function(){
         document.forms[0].submit();
     });

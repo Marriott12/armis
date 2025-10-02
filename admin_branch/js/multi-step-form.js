@@ -11,24 +11,22 @@ const totalSteps = 5; // Update this if you add more steps
 function goToStep(stepNumber) {
     // Hide all steps
     document.querySelectorAll('.form-step').forEach(step => {
-        step.style.display = 'none';
-        step.classList.remove('active');
+        if (step) {
+            step.style.display = 'none';
+            step.classList.remove('active');
+        }
     });
-    
     // Show the target step
     const targetStep = document.getElementById(`step${stepNumber}`);
     if (targetStep) {
         targetStep.style.display = 'block';
         targetStep.classList.add('active');
         currentStep = stepNumber;
-        
         // Update stepper UI
         updateStepperUI(stepNumber);
-        
         // Scroll to top of form
         targetStep.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-    
     // Update buttons visibility
     updateNavigationButtons();
 }

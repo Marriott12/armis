@@ -1,3 +1,5 @@
+// Removed duplicate EditStaffForm declaration to fix SyntaxError
+if (typeof EditStaffForm === 'undefined') {
 const EditStaffForm = (() => {
     const steps = document.querySelectorAll('.form-step');
     const stepIndicators = document.querySelectorAll('.step');
@@ -14,15 +16,6 @@ const EditStaffForm = (() => {
         return text ? text.toString().replace(/[&<>"']/g, m => map[m]) : '';
     }
 
-    function goToStep(stepIndex) {
-        steps.forEach((step, i) => step.classList.toggle('active', i === stepIndex));
-        stepIndicators.forEach((indicator, i) => indicator.classList.toggle('active', i === stepIndex));
-        currentStep = stepIndex;
-
-        document.getElementById('prevStepBtn').style.display = stepIndex === 0 ? 'none' : 'inline-block';
-        document.getElementById('nextStepBtn').style.display = stepIndex === steps.length - 1 ? 'none' : 'inline-block';
-        document.getElementById('submitFormBtn').style.display = stepIndex === steps.length - 1 ? 'inline-block' : 'none';
-    }
 
     function validateForm(showResults = false) {
         let isValid = true;
@@ -161,8 +154,7 @@ const EditStaffForm = (() => {
         goToStep(0);
         DynamicFields.init();
 
-        document.getElementById('nextStepBtn')?.addEventListener('click', () => goToStep(currentStep + 1));
-        document.getElementById('prevStepBtn')?.addEventListener('click', () => goToStep(currentStep - 1));
+    // Step navigation is now handled by multi-step-form.js
         document.getElementById('validateFormBtn')?.addEventListener('click', () => validateForm(true));
 
         document.getElementById('editStaffForm')?.addEventListener('submit', function (e) {
@@ -177,4 +169,5 @@ const EditStaffForm = (() => {
 })();
 
 document.addEventListener('DOMContentLoaded', EditStaffForm.init);
+}
     

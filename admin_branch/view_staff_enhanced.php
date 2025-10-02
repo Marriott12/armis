@@ -62,7 +62,7 @@ $stmt = $pdo->prepare("
     SELECT 
         s.*, 
         r.name AS rankName,
-        r.abbreviation AS rankAbbr,
+        r.abbr AS rankAbbr,
         u.name AS unitName,
         c.name AS corpsName,
         TIMESTAMPDIFF(YEAR, s.attestDate, CURDATE()) as years_of_service,
@@ -129,13 +129,12 @@ try {
     $deploymentStmt = $pdo->prepare("
         SELECT 
             d.*,
-            d.start_date AS date_from,
-            d.end_date AS date_to,
-            d.deployment_status AS status,
-            d.role_during_deployment AS role
+            o.name AS operationName,
+            o.location AS operationLocation
         FROM staff_deployments d
+        LEFT JOIN operations o ON d.operation_id = o.id
         WHERE d.staff_id = ?
-        ORDER BY d.start_date DESC
+        ORDER BY d.date_from DESC
     ");
     $deploymentStmt->execute([$id]);
     $deployments = $deploymentStmt->fetchAll(PDO::FETCH_OBJ);
@@ -149,9 +148,9 @@ $promStmt = $pdo->prepare("
     SELECT 
         p.*, 
         r.name AS newRankName,
-        r.abbreviation AS newRankAbbr,
+        r.abbr AS newRankAbbr,
         IFNULL(pr.name, 'N/A') AS previousRankName,
-        IFNULL(pr.abbreviation, 'N/A') AS previousRankAbbr,
+        IFNULL(pr.abbr, 'N/A') AS previousRankAbbr,
         DATEDIFF(IFNULL(p.date_to, CURDATE()), p.date_from) as days_in_rank
     FROM staff_promotions p 
     LEFT JOIN ranks r ON p.new_rank = r.id
@@ -182,7 +181,8 @@ $courses = [];
 $courseStmt = $pdo->prepare("
     SELECT 
         c.*, 
-        cc.name AS courseName
+        cc.name AS courseName,
+        cc.duration AS courseDuration
     FROM staff_courses c 
     LEFT JOIN courses cc ON c.course_id = cc.id 
     WHERE c.staff_id = ? 
@@ -190,56 +190,6 @@ $courseStmt = $pdo->prepare("
 ");
 $courseStmt->execute([$id]);
 $courses = $courseStmt->fetchAll(PDO::FETCH_OBJ);
-
-// ==================== FETCH POSTING HISTORY (from staff_appointment) ====================
-$postings = [];
-try {
-    $postingStmt = $pdo->prepare("
-        SELECT 
-            sa.*,
-            u.name AS unit_name,
-            u.location AS unit_location,
-            r.name AS rank_name,
-            r.abbreviation AS rank_abbr
-        FROM staff_appointment sa
-        LEFT JOIN units u ON sa.unit_id = u.id
-        LEFT JOIN ranks r ON sa.rank_id = r.id
-        WHERE sa.staff_id = ?
-        ORDER BY sa.start_date DESC
-    ");
-    $postingStmt->execute([$id]);
-    $postings = $postingStmt->fetchAll(PDO::FETCH_OBJ);
-} catch (Exception $e) {
-    error_log("Error fetching postings from staff_appointment: " . $e->getMessage());
-}
-
-// ==================== FETCH AWARDS & COMMENDATIONS ====================
-$awards = [];
-try {
-    $awardStmt = $pdo->prepare("
-        SELECT * FROM staff_awards 
-        WHERE staff_id = ? 
-        ORDER BY created_at DESC
-    ");
-    $awardStmt->execute([$id]);
-    $awards = $awardStmt->fetchAll(PDO::FETCH_OBJ);
-} catch (Exception $e) {
-    error_log("Error fetching awards: " . $e->getMessage());
-}
-
-// ==================== FETCH DISCIPLINARY RECORDS ====================
-$disciplinary = [];
-try {
-    $disciplinaryStmt = $pdo->prepare("
-        SELECT * FROM staff_disciplinary 
-        WHERE staff_id = ? 
-        ORDER BY incident_date DESC
-    ");
-    $disciplinaryStmt->execute([$id]);
-    $disciplinary = $disciplinaryStmt->fetchAll(PDO::FETCH_OBJ);
-} catch (Exception $e) {
-    error_log("Error fetching disciplinary records: " . $e->getMessage());
-}
 
 // ==================== CALCULATE STATISTICS ====================
 $yearsOfService = !empty($staff->attestDate) ? floor((time() - strtotime($staff->attestDate)) / (365.25 * 24 * 60 * 60)) : 0;
@@ -250,9 +200,6 @@ $deploymentCount = count($deployments);
 $operationCount = count($operations);
 $educationCount = count($education);
 $skillCount = count($skills);
-$postingCount = count($postings);
-$awardCount = count($awards);
-$disciplinaryCount = count($disciplinary);
 
 // Add body class for admin access
 $bodyClass = '';
@@ -305,23 +252,10 @@ include dirname(__DIR__) . '/shared/sidebar.php';
         font-size: 0.75rem;
         padding: 0.25rem 0.5rem;
     }
-    .nav-tabs {
-        display: flex;
-        flex-direction: row;
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        overflow-y: hidden;
-        white-space: nowrap;
-        -webkit-overflow-scrolling: touch;
-    }
-    .nav-tabs .nav-item {
-        flex: 0 0 auto;
-    }
     .nav-tabs .nav-link {
         color: #495057;
         border: none;
         border-bottom: 3px solid transparent;
-        white-space: nowrap;
     }
     .nav-tabs .nav-link.active {
         color: #007bff;
@@ -376,7 +310,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                 <h3 class="mb-0">
                     <i class="fa fa-user"></i> 
                     <?=htmlspecialchars(($staff->rankAbbr ?? '') . ' ' . $staff->first_name . ' ' . $staff->last_name)?>
-                    <span class="badge bg-light text-dark ms-2"><?=htmlspecialchars($staff->titles ?? 'N/A')?></span>
+                    <span class="badge bg-light text-dark ms-2"><?=htmlspecialchars($staff->service_number ?? 'N/A')?></span>
                 </h3>
             </div>
             <div class="card-body row">
@@ -627,73 +561,39 @@ include dirname(__DIR__) . '/shared/sidebar.php';
         <div class="card shadow-sm">
             <div class="card-header bg-white">
                 <ul class="nav nav-tabs card-header-tabs" id="profileTabs" role="tablist">
-                    <!-- Career Progress Group -->
                     <li class="nav-item" role="presentation">
                         <button class="nav-link active" id="promotions-tab" data-bs-toggle="tab" data-bs-target="#promotions" type="button">
-                            <i class="fa fa-arrow-up me-1"></i> Promotions 
-                            <span class="badge <?=$promotionCount > 0 ? 'bg-primary' : 'bg-secondary'?> ms-1"><?=$promotionCount?></span>
+                            <i class="fa fa-arrow-up"></i> Promotions (<?=$promotionCount?>)
                         </button>
                     </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="postings-tab" data-bs-toggle="tab" data-bs-target="#postings" type="button">
-                            <i class="fa fa-map-marker-alt me-1"></i> Postings 
-                            <span class="badge <?=$postingCount > 0 ? 'bg-primary' : 'bg-secondary'?> ms-1"><?=$postingCount?></span>
-                        </button>
-                    </li>
-                    
-                    <!-- Recognition Group -->
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="medals-tab" data-bs-toggle="tab" data-bs-target="#medals" type="button">
-                            <i class="fa fa-medal me-1"></i> Medals 
-                            <span class="badge <?=$medalCount > 0 ? 'bg-primary' : 'bg-secondary'?> ms-1"><?=$medalCount?></span>
+                            <i class="fa fa-medal"></i> Medals (<?=$medalCount?>)
                         </button>
                     </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="awards-tab" data-bs-toggle="tab" data-bs-target="#awards" type="button">
-                            <i class="fa fa-trophy me-1"></i> Awards 
-                            <span class="badge <?=$awardCount > 0 ? 'bg-primary' : 'bg-secondary'?> ms-1"><?=$awardCount?></span>
-                        </button>
-                    </li>
-                    
-                    <!-- Development Group -->
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="courses-tab" data-bs-toggle="tab" data-bs-target="#courses" type="button">
-                            <i class="fa fa-graduation-cap me-1"></i> Courses 
-                            <span class="badge <?=$courseCount > 0 ? 'bg-primary' : 'bg-secondary'?> ms-1"><?=$courseCount?></span>
+                            <i class="fa fa-graduation-cap"></i> Courses (<?=$courseCount?>)
                         </button>
                     </li>
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="education-tab" data-bs-toggle="tab" data-bs-target="#education" type="button">
-                            <i class="fa fa-book me-1"></i> Education 
-                            <span class="badge <?=$educationCount > 0 ? 'bg-primary' : 'bg-secondary'?> ms-1"><?=$educationCount?></span>
+                            <i class="fa fa-book"></i> Education (<?=$educationCount?>)
                         </button>
                     </li>
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="skills-tab" data-bs-toggle="tab" data-bs-target="#skills" type="button">
-                            <i class="fa fa-cogs me-1"></i> Skills 
-                            <span class="badge <?=$skillCount > 0 ? 'bg-primary' : 'bg-secondary'?> ms-1"><?=$skillCount?></span>
+                            <i class="fa fa-cogs"></i> Skills (<?=$skillCount?>)
                         </button>
                     </li>
-                    
-                    <!-- Service Group -->
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="operations-tab" data-bs-toggle="tab" data-bs-target="#operations" type="button">
-                            <i class="fa fa-crosshairs me-1"></i> Operations 
-                            <span class="badge <?=$operationCount > 0 ? 'bg-primary' : 'bg-secondary'?> ms-1"><?=$operationCount?></span>
+                            <i class="fa fa-crosshairs"></i> Operations (<?=$operationCount?>)
                         </button>
                     </li>
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="deployments-tab" data-bs-toggle="tab" data-bs-target="#deployments" type="button">
-                            <i class="fa fa-globe me-1"></i> Deployments 
-                            <span class="badge <?=$deploymentCount > 0 ? 'bg-primary' : 'bg-secondary'?> ms-1"><?=$deploymentCount?></span>
-                        </button>
-                    </li>
-                    
-                    <!-- Records Group -->
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="disciplinary-tab" data-bs-toggle="tab" data-bs-target="#disciplinary" type="button">
-                            <i class="fa fa-exclamation-triangle me-1"></i> Disciplinary 
-                            <span class="badge <?=$disciplinaryCount > 0 ? 'bg-warning text-dark' : 'bg-secondary'?> ms-1"><?=$disciplinaryCount?></span>
+                            <i class="fa fa-globe"></i> Deployments (<?=$deploymentCount?>)
                         </button>
                     </li>
                 </ul>
@@ -1038,213 +938,6 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <?php else: ?>
                             <div class="alert alert-info">
                                 <i class="fa fa-info-circle"></i> No deployment records found.
-                            </div>
-                        <?php endif; ?>
-                    </div>
-
-                    <!-- ==================== POSTINGS TAB (from staff_appointment) ==================== -->
-                    <div class="tab-pane fade" id="postings" role="tabpanel">
-                        <?php if (!empty($postings)): ?>
-                            <div class="table-responsive">
-                                <table class="table table-hover table-bordered">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th>#</th>
-                                            <th>Unit</th>
-                                            <th>Location</th>
-                                            <th>Rank</th>
-                                            <th>Appointment/Role</th>
-                                            <th>Start Date</th>
-                                            <th>End Date</th>
-                                            <th>Duration</th>
-                                            <th>Order Ref</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php foreach ($postings as $idx => $post): ?>
-                                            <?php
-                                            // Calculate duration
-                                            $duration = '';
-                                            if (!empty($post->start_date)) {
-                                                $start = strtotime($post->start_date);
-                                                $end = !empty($post->end_date) ? strtotime($post->end_date) : time();
-                                                $months = $post->duration_months ?? floor(($end - $start) / (60 * 60 * 24 * 30.44));
-                                                $duration = $months . ' months';
-                                            }
-                                            ?>
-                                            <tr>
-                                                <td><?=$idx + 1?></td>
-                                                <td>
-                                                    <strong><?=htmlspecialchars($post->unit_name ?? 'N/A')?></strong>
-                                                </td>
-                                                <td><?=htmlspecialchars($post->location ?? $post->unit_location ?? 'N/A')?></td>
-                                                <td>
-                                                    <?php if (!empty($post->rank_abbr)): ?>
-                                                        <span class="badge bg-info">
-                                                            <?=htmlspecialchars($post->rank_abbr)?>
-                                                        </span>
-                                                    <?php else: ?>
-                                                        N/A
-                                                    <?php endif; ?>
-                                                </td>
-                                                <td><?=htmlspecialchars($post->appointment_id ?? 'N/A')?></td>
-                                                <td><?=!empty($post->start_date) ? date('d M Y', strtotime($post->start_date)) : 'N/A'?></td>
-                                                <td>
-                                                    <?php if (!empty($post->end_date)): ?>
-                                                        <?=date('d M Y', strtotime($post->end_date))?>
-                                                    <?php else: ?>
-                                                        <span class="badge bg-success">Current</span>
-                                                    <?php endif; ?>
-                                                </td>
-                                                <td><?=$duration ?: 'N/A'?></td>
-                                                <td><?=htmlspecialchars($post->posting_order_reference ?? '-')?></td>
-                                            </tr>
-                                            <?php if (!empty($post->remarks)): ?>
-                                                <tr class="table-light">
-                                                    <td colspan="9">
-                                                        <small><strong>Remarks:</strong> <?=htmlspecialchars($post->remarks)?></small>
-                                                    </td>
-                                                </tr>
-                                            <?php endif; ?>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                        <?php else: ?>
-                            <div class="alert alert-info">
-                                <i class="fa fa-info-circle"></i> No posting history found.
-                            </div>
-                        <?php endif; ?>
-                    </div>
-
-                    <!-- ==================== AWARDS TAB ==================== -->
-                    <div class="tab-pane fade" id="awards" role="tabpanel">
-                        <?php if (!empty($awards)): ?>
-                            <div class="table-responsive">
-                                <table class="table table-hover table-bordered">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th>#</th>
-                                            <th>Award Type</th>
-                                            <th>Award Name</th>
-                                            <th>Awarded By</th>
-                                            <th>Date</th>
-                                            <th>Citation</th>
-                                            <th>Certificate #</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php foreach ($awards as $idx => $award): ?>
-                                            <tr>
-                                                <td><?=$idx + 1?></td>
-                                                <td>
-                                                    <?php
-                                                    $typeClass = match(strtolower($award->award_type ?? '')) {
-                                                        'commendation' => 'bg-success',
-                                                        'letter of appreciation' => 'bg-info',
-                                                        'certificate' => 'bg-primary',
-                                                        'plaque' => 'bg-warning text-dark',
-                                                        default => 'bg-secondary'
-                                                    };
-                                                    ?>
-                                                    <span class="badge <?=$typeClass?>">
-                                                        <?=htmlspecialchars($award->award_type ?? 'N/A')?>
-                                                    </span>
-                                                </td>
-                                                <td><strong><?=htmlspecialchars($award->award_name ?? 'N/A')?></strong></td>
-                                                <td><?=htmlspecialchars($award->awarded_by ?? 'N/A')?></td>
-                                                <td><?=!empty($award->created_at) ? date('d M Y', strtotime($award->created_at)) : 'N/A'?></td>
-                                                <td>
-                                                    <?php if (!empty($award->citation)): ?>
-                                                        <small><?=htmlspecialchars(substr($award->citation, 0, 100))?><?=strlen($award->citation) > 100 ? '...' : ''?></small>
-                                                    <?php else: ?>
-                                                        -
-                                                    <?php endif; ?>
-                                                </td>
-                                                <td><?=htmlspecialchars($award->certificate_number ?? '-')?></td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                        <?php else: ?>
-                            <div class="alert alert-info">
-                                <i class="fa fa-info-circle"></i> No awards or commendations found.
-                            </div>
-                        <?php endif; ?>
-                    </div>
-
-                    <!-- ==================== DISCIPLINARY TAB ==================== -->
-                    <div class="tab-pane fade" id="disciplinary" role="tabpanel">
-                        <?php if (defined('ARMIS_ADMIN_BRANCH') && ARMIS_ADMIN_BRANCH): ?>
-                            <?php if (!empty($disciplinary)): ?>
-                                <div class="alert alert-warning">
-                                    <i class="fa fa-lock"></i> <strong>Confidential Information:</strong> This section contains sensitive disciplinary records. Handle with appropriate discretion.
-                                </div>
-                                <div class="table-responsive">
-                                    <table class="table table-hover table-bordered">
-                                        <thead class="table-light">
-                                            <tr>
-                                                <th>#</th>
-                                                <th>Incident Date</th>
-                                                <th>Incident Type</th>
-                                                <th>Severity</th>
-                                                <th>Description</th>
-                                                <th>Action Taken</th>
-                                                <th>Status</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <?php foreach ($disciplinary as $idx => $disc): ?>
-                                                <tr>
-                                                    <td><?=$idx + 1?></td>
-                                                    <td><?=!empty($disc->incident_date) ? date('d M Y', strtotime($disc->incident_date)) : 'N/A'?></td>
-                                                    <td><?=htmlspecialchars($disc->incident_type ?? 'N/A')?></td>
-                                                    <td>
-                                                        <?php
-                                                        $severityClass = match(strtolower($disc->severity ?? '')) {
-                                                            'minor' => 'bg-warning text-dark',
-                                                            'major' => 'bg-danger',
-                                                            'severe' => 'bg-dark',
-                                                            default => 'bg-secondary'
-                                                        };
-                                                        ?>
-                                                        <span class="badge <?=$severityClass?>">
-                                                            <?=htmlspecialchars($disc->severity ?? 'N/A')?>
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <small><?=htmlspecialchars(substr($disc->description ?? '', 0, 80))?><?=strlen($disc->description ?? '') > 80 ? '...' : ''?></small>
-                                                    </td>
-                                                    <td>
-                                                        <small><?=htmlspecialchars(substr($disc->action_taken ?? '', 0, 60))?><?=strlen($disc->action_taken ?? '') > 60 ? '...' : ''?></small>
-                                                    </td>
-                                                    <td>
-                                                        <?php
-                                                        $statusClass = match(strtolower($disc->status ?? '')) {
-                                                            'resolved' => 'bg-success',
-                                                            'pending' => 'bg-warning text-dark',
-                                                            'under investigation' => 'bg-info',
-                                                            default => 'bg-secondary'
-                                                        };
-                                                        ?>
-                                                        <span class="badge <?=$statusClass?>">
-                                                            <?=htmlspecialchars($disc->status ?? 'N/A')?>
-                                                        </span>
-                                                    </td>
-                                                </tr>
-                                            <?php endforeach; ?>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            <?php else: ?>
-                                <div class="alert alert-success">
-                                    <i class="fa fa-check-circle"></i> No disciplinary records found. Clean record.
-                                </div>
-                            <?php endif; ?>
-                        <?php else: ?>
-                            <div class="alert alert-danger">
-                                <i class="fa fa-lock"></i> <strong>Access Denied:</strong> You do not have permission to view disciplinary records.
                             </div>
                         <?php endif; ?>
                     </div>

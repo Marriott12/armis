@@ -37,24 +37,21 @@ try {
         // Handle AJAX requests for filtered data
         if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             header('Content-Type: application/json');
-            
+            $timeFilter = $_GET['filter'] ?? null;
             try {
-                $timeFilter = $_GET['filter'] ?? null;
                 $enhancedPersonnel = $dashboardService->getEnhancedPersonnelStats($timeFilter);
-                
                 echo json_encode([
                     'success' => true,
                     'enhanced_personnel' => $enhancedPersonnel,
                     'filter_applied' => $timeFilter
                 ]);
-                exit;
             } catch (Exception $e) {
                 echo json_encode([
                     'success' => false,
                     'error' => $e->getMessage()
                 ]);
-                exit;
             }
+            exit;
         }
         
         $dashboardData = [
@@ -136,6 +133,7 @@ $reportGroups = [
 
 // Optimize sidebar links to reduce clutter
 // Sidebar navigation
+
 $sidebarLinks = [
     ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
     ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'],
@@ -144,11 +142,28 @@ $sidebarLinks = [
     ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/appointments.php', 'icon' => 'user-tie', 'page' => 'appointments'],
     ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medal.php', 'icon' => 'medal', 'page' => 'medals'],
     [
+        'title' => 'Seniority Rolls',
+        'icon' => 'users',
+        'children' => [
+            ['title' => 'Officer Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php?report_type=officer'],
+            ['title' => 'NCO Seniority', 'url' => '/Armis2/admin_branch/reports_nco_seniority.php?report_type=nco'],
+            ['title' => 'CE Seniority', 'url' => '/Armis2/admin_branch/reports_ce_seniority.php?report_type=ce'],
+        ]
+    ],
+    [
+        'title' => 'Norminal Rolls',
+        'icon' => 'bars',
+        'children' => [
+            ['title' => 'Officer Norminal Roll', 'url' => '/Armis2/admin_branch/reports_officer_norminal.php?report_type=officer'],
+            ['title' => 'NCO Norminal Roll', 'url' => '/Armis2/admin_branch/reports_nco_norminal.php?report_type=nco'],
+            ['title' => 'CE Norminal Roll', 'url' => '/Armis2/admin_branch/reports_ce_norminal.php?report_type=ce'],
+        ]
+    ],
+    [
         'title' => 'Reports',
         'icon' => 'chart-bar',
         'page' => 'reports',
         'children' => [
-            ['title' => 'Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php'],
             ['title' => 'Unit List', 'url' => '/Armis2/admin_branch/reports_units.php'],
             ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
             ['title' => 'Contracts', 'url' => '/Armis2/admin_branch/reports_contract.php'],
@@ -161,7 +176,6 @@ $sidebarLinks = [
             ['title' => 'Trade', 'url' => '/Armis2/admin_branch/reports_trade.php'],
             ['title' => 'Corps', 'url' => '/Armis2/admin_branch/reports_corps.php'],
             ['title' => 'Units', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Medals', 'url' => '/Armis2/admin_branch/reports_medals.php'],
         ]
     ],
 ];
@@ -172,6 +186,7 @@ echo '<link rel="stylesheet" href="css/armis-unified.css">';
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php'; 
 ?>
+
 <!-- ARMIS Dashboard - Unified Design System Applied -->
 <style>
 /* Dashboard-specific styles using unified system */
@@ -180,16 +195,13 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 }
 
 /* Apply unified table styling to existing tables */
-.table {
-    @extend .armis-table;
-}
+/* To apply .armis-table styles, add both classes in HTML or copy styles here if needed. */
 
 .table tfoot th {
     font-size: 1.25rem !important;
     font-weight: 700 !important;
     text-shadow: 0 2px 4px rgba(0,0,0,0.3);
     padding: 1rem 0.75rem !important;
-    animation: pulse-glow 2s ease-in-out infinite alternate;
 }
 
 .table-dark tfoot th {
@@ -295,59 +307,26 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 }
 </style>
 
+
 <!-- Load Chart.js early to ensure it's available for dashboard charts -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.umd.min.js"></script>
+
+<!-- Session Timeout Warning -->
+<script src="/Armis2/assets/js/session-warning.js"></script>
 
 <!-- Modern Admin Branch Dashboard -->
 <div class="content-wrapper with-sidebar">
     <div class="container-fluid p-0 p-sm-2 p-md-3">
         <div class="main-content">
-            <!-- Header Section with Breadcrumbs -->
-            <div class="row mb-2 mb-md-3">
-                <div class="col-12">
-                    <nav aria-label="breadcrumb" class="d-none d-md-block mb-2">
-                        <ol class="breadcrumb bg-light py-1 px-3 rounded">
-                            <li class="breadcrumb-item"><a href="/Armis2/">Home</a></li>
-                            <li class="breadcrumb-item active">Admin Branch</li>
-                        </ol>
-                    </nav>
-                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                        <div>
-                            <h1 class="dashboard-title h3 mb-0">
-                                <i class="fas fa-users-cog text-primary"></i> Admin Branch
-                            </h1>
-                            <p class="text-muted mb-0 small">Personnel Management & Administrative Operations</p>
-                        </div>
-                        <div class="d-flex gap-2 flex-wrap">
-                            <div class="dropdown d-inline-block">
-                                <button class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-                                    <i class="fas fa-plus"></i> <span class="d-none d-sm-inline">Quick Actions</span>
-                                </button>
-                                <ul class="dropdown-menu dropdown-menu-end">
-                                    <li><a class="dropdown-item" href="/Armis2/admin_branch/create_staff.php"><i class="fas fa-user-plus fa-fw me-1"></i> Add New Staff</a></li>
-                                    <li><a class="dropdown-item" href="/Armis2/admin_branch/edit_staff.php"><i class="fas fa-search fa-fw me-1"></i> Search Staff</a></li>
-                                    <li><a class="dropdown-item" href="/Armis2/admin_branch/promote_staff.php"><i class="fas fa-arrow-up fa-fw me-1"></i> Manage Promotions</a></li>
-                                    <li><hr class="dropdown-divider"></li>
-                                    <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#reportsModal"><i class="fas fa-chart-bar fa-fw me-1"></i> Generate Reports</a></li>
-                                </ul>
-                            </div>
-                            <div class="dropdown d-inline-block">
-                                <button class="btn btn-sm btn-outline-success dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-                                    <i class="fas fa-download"></i> <span class="d-none d-sm-inline">Export</span>
-                                </button>
-                                <ul class="dropdown-menu dropdown-menu-end">
-                                    <li><a class="dropdown-item" href="#" onclick="exportReport('personnel_summary', 'csv')"><i class="fas fa-users fa-fw me-1"></i> Personnel Summary</a></li>
-                                    <li><a class="dropdown-item" href="#" onclick="exportReport('unit_report', 'csv')"><i class="fas fa-building fa-fw me-1"></i> Unit Report</a></li>
-                                    <li><a class="dropdown-item" href="#" onclick="exportReport('kpi_report', 'csv')"><i class="fas fa-chart-line fa-fw me-1"></i> KPI Report</a></li>
-                                </ul>
-                            </div>
-                            <button class="btn btn-sm btn-outline-secondary" onclick="refreshDashboard()" title="Refresh Dashboard">
-                                <i class="fas fa-sync-alt"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            
+            <!-- Breadcrumbs -->
+            <nav aria-label="breadcrumb" class="mb-3">
+            <ol class="breadcrumb bg-light p-2 rounded shadow-sm">
+                <li class="breadcrumb-item"><a href="/Armis2/admin_branch/index.php"><i class="fas fa-home"></i> Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="#">Admin Branch</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Overview</li>
+            </ol>
+            </nav>
 
             <!-- Snapshot Summary by Category and Gender -->
             <!-- Drilldown Modal for Snapshot Cards -->
@@ -423,24 +402,24 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                             <td class="text-center fw-bold text-primary" id="military-ncos-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['ncos']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['ncos']) : '-'; ?></td>
                                                         </tr>
                                                         <tr class="table-secondary">
-                                                            <td class="ps-4 fw-semibold"><em>Recruits</em></td>
-                                                            <td colspan="3" class="text-center fw-semibold">Training Personnel</td>
+                                                            <td class="ps-4 fw-semibold"><em>Cadets/ Recruits</em></td>
+                                                            <td colspan="3" class="text-center fw-semibold"></td>
                                                         </tr>
                                                         <tr>
-                                                            <td class="ps-5">├ Officers</td>
+                                                            <td class="ps-5">├ Officer Cadets</td>
                                                             <td class="text-center" id="recruit-officers-male"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_officers_by_gender']['male']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_officers_by_gender']['male']) : '-'; ?></td>
                                                             <td class="text-center" id="recruit-officers-female"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_officers_by_gender']['female']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_officers_by_gender']['female']) : '-'; ?></td>
                                                             <td class="text-center fw-bold text-success" id="recruit-officers-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_officers']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_officers']) : '-'; ?></td>
                                                         </tr>
                                                         <tr>
-                                                            <td class="ps-5">└ NCOs</td>
+                                                            <td class="ps-5">└ Recruits</td>
                                                             <td class="text-center" id="recruit-ncos-male"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_ncos_by_gender']['male']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_ncos_by_gender']['male']) : '-'; ?></td>
                                                             <td class="text-center" id="recruit-ncos-female"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_ncos_by_gender']['female']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_ncos_by_gender']['female']) : '-'; ?></td>
                                                             <td class="text-center fw-bold text-success" id="recruit-ncos-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_ncos']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_ncos']) : '-'; ?></td>
                                                         </tr>
                                                     </tbody>
                                                     <tfoot class="table-dark">
-                                                        <tr class="fw-bold shadow-lg" style="background: linear-gradient(135deg, #0d6efd 0%, #084298 100%); color: white; animation: pulse-glow 2s ease-in-out infinite alternate; border: 2px solid #0d6efd;">
+                                                        <tr class="fw-bold shadow-sm" style="background: linear-gradient(135deg, #0d6efd 0%, #084298 100%); color: white; border: 2px solid #0d6efd;">
                                                             <th class="ps-3 py-3" style="font-size: 1.25rem; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">
                                                                 <i class="fas fa-shield-alt me-2"></i>TOTAL MILITARY
                                                             </th>
@@ -481,14 +460,14 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                             <td class="text-center fw-bold text-info" id="civilian-current-total"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['active']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['active']) : '-'; ?></td>
                                                         </tr>
                                                         <tr class="personnel-row clickable-row" data-category="civilian-new" data-type="New Hires" style="cursor: pointer;">
-                                                            <td class="ps-3 fw-semibold">New Hires</td>
+                                                            <td class="ps-3 fw-semibold">New Entrants</td>
                                                             <td class="text-center" id="civilian-new-male"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['new_by_gender']['male']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['new_by_gender']['male']) : '-'; ?></td>
                                                             <td class="text-center" id="civilian-new-female"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['new_by_gender']['female']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['new_by_gender']['female']) : '-'; ?></td>
                                                             <td class="text-center fw-bold text-success" id="civilian-new-total"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['new_1_year']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['new_1_year']) : '-'; ?></td>
                                                         </tr>
                                                     </tbody>
                                                     <tfoot class="table-dark">
-                                                        <tr class="fw-bold shadow-lg" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%); color: white; animation: pulse-glow 2s ease-in-out infinite alternate; border: 2px solid #17a2b8;">
+                                                        <tr class="fw-bold shadow-sm" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%); color: white; border: 2px solid #17a2b8;">
                                                             <th class="ps-3 py-3" style="font-size: 1.25rem; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">
                                                                 <i class="fas fa-briefcase me-2"></i>TOTAL CIVILIAN
                                                             </th>
@@ -1478,83 +1457,41 @@ const styleSheet = document.createElement('style');
 styleSheet.textContent = additionalCSS;
 document.head.appendChild(styleSheet);
 
-// Old drilldown functionality removed - using new modal system
-                                + '<span>' + rank.rank + '</span>'
-                                + '<span class="badge bg-primary rounded-pill">' + rank.count + '</span>'
-                                + '</li>';
-                        });
-                        html += '</ul></div>';
-                        html += '<div id="femaleRanksBlock" style="display:none;">'
-                            + '<h6>Female</h6><ul class="list-group mb-3">';
-                        data.ranks.female.forEach(function(rank) {
-                            html += '<li class="list-group-item d-flex justify-content-between align-items-center">'
-                                + '<span>' + rank.rank + '</span>'
-                                + '<span class="badge bg-pink rounded-pill">' + rank.count + '</span>'
-                                + '</li>';
-                        });
-                        html += '</ul></div>';
-                        modalBody.innerHTML = html;
-                        // Add toggle logic
-                        document.getElementById('showMaleRanks').addEventListener('click', function() {
-                            document.getElementById('maleRanksBlock').style.display = '';
-                            document.getElementById('femaleRanksBlock').style.display = 'none';
-                        });
-                        document.getElementById('showFemaleRanks').addEventListener('click', function() {
-                            document.getElementById('maleRanksBlock').style.display = 'none';
-                            document.getElementById('femaleRanksBlock').style.display = '';
-                        });
-                    } else {
-                        modalBody.innerHTML = '<div class="text-center text-muted">No rank breakdown data available.</div>';
-                    }
-                })
-                .catch(function() {
-                    modalBody.innerHTML = '<div class="text-center text-danger">Failed to load drilldown data.</div>';
-                });
-        });
-    });
+// Real-time Data Refresh Functionality
+let refreshInterval;
+let isRefreshing = false;
 
+function startAutoRefresh() {
+    // Refresh every 5 minutes (300,000 ms)
+    refreshInterval = setInterval(refreshPersonnelData, 300000);
+    // Add visual indicator
+    addRefreshIndicator();
+}
 
-    });
-
-    // Real-time Data Refresh Functionality
-    let refreshInterval;
-    let isRefreshing = false;
-    
-    function startAutoRefresh() {
-        // Refresh every 5 minutes (300,000 ms)
-        refreshInterval = setInterval(refreshPersonnelData, 300000);
-        
-        // Add visual indicator
-        addRefreshIndicator();
-    }
-    
-    function refreshPersonnelData() {
-        if (isRefreshing) return;
-        
-        isRefreshing = true;
-        showRefreshIndicator();
-        
-        const currentFilter = document.querySelector('input[name="personnel-filter"]:checked')?.value || 'all';
-        
-        fetch(`index.php?ajax=1&filter=${currentFilter}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    updatePersonnelDisplay(data.enhanced_personnel);
-                    showRefreshSuccess();
-                } else {
-                    showRefreshError();
-                }
-            })
-            .catch(error => {
-                console.error('Refresh error:', error);
+function refreshPersonnelData() {
+    if (isRefreshing) return;
+    isRefreshing = true;
+    showRefreshIndicator();
+    const currentFilter = document.querySelector('input[name="personnel-filter"]:checked')?.value || 'all';
+    fetch(`index.php?ajax=1&filter=${currentFilter}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updatePersonnelDisplay(data.enhanced_personnel);
+                showRefreshSuccess();
+            } else {
                 showRefreshError();
-            })
-            .finally(() => {
-                isRefreshing = false;
-                hideRefreshIndicator();
-            });
-    }
+            }
+        })
+        .catch(error => {
+            console.error('Refresh error:', error);
+            showRefreshError();
+        })
+        .finally(() => {
+            isRefreshing = false;
+            hideRefreshIndicator();
+        });
+}
     
     function updatePersonnelDisplay(personnelData) {
         // Update military data

@@ -22,39 +22,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 function handlePasswordResetRequest() {
     $email = trim($_POST['email']);
     $errors = [];
-    
     if (empty($email)) {
         $errors[] = 'Email address is required';
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $errors[] = 'Please enter a valid email address';
     }
-    
     if (empty($errors)) {
         try {
             $conn = getMysqliConnection();
-            
             // Check if user exists
-            $stmt = $conn->prepare("SELECT id, fname, lname, email FROM staff WHERE email = ? AND accStatus = 'active'");
+            $stmt = $conn->prepare("SELECT * FROM staff WHERE email = ? AND accStatus = 'active'");
             $stmt->bind_param('s', $email);
             $stmt->execute();
             $result = $stmt->get_result();
-            
             if ($result->num_rows > 0) {
                 $user = $result->fetch_assoc();
-                
                 // Generate reset token
                 $resetToken = bin2hex(random_bytes(32));
-                $expiry = date('Y-m-d H:i:s', strtotime('+24 hours'));
-                
-                // Save reset token
-                $updateStmt = $conn->prepare("UPDATE staff SET password_reset_token = ?, password_reset_expires = ? WHERE id = ?");
-                $updateStmt->bind_param('ssi', $resetToken, $expiry, $user['id']);
-                $updateStmt->execute();
-                
+                $expiry = date('Y-m-d H:i:s', strtotime('+1 hour'));
+                // Create staff_password_resets table if not exists
+                $conn->query('CREATE TABLE IF NOT EXISTS staff_password_resets (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    staff_id INT NOT NULL,
+                    reset_token VARCHAR(128) NOT NULL,
+                    expires_at DATETIME NOT NULL,
+                    used TINYINT(1) DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )');
+                // Insert token
+                $stmt2 = $conn->prepare('INSERT INTO staff_password_resets (staff_id, reset_token, expires_at) VALUES (?, ?, ?)');
+                $stmt2->bind_param('iss', $user['id'], $resetToken, $expiry);
+                $stmt2->execute();
                 // Send reset email
                 $mailer = new ARMISMailer();
                 $emailResult = $mailer->sendPasswordResetEmail($user, $resetToken);
-                
                 if ($emailResult['success']) {
                     $_SESSION['success_message'] = 'Password reset instructions have been sent to your email address.';
                 } else {
@@ -64,7 +65,6 @@ function handlePasswordResetRequest() {
                 // Don't reveal if email exists or not for security
                 $_SESSION['success_message'] = 'If an account with that email exists, password reset instructions have been sent.';
             }
-            
         } catch (Exception $e) {
             error_log("Password reset error: " . $e->getMessage());
             $_SESSION['error_message'] = 'An error occurred. Please try again.';
@@ -72,7 +72,6 @@ function handlePasswordResetRequest() {
     } else {
         $_SESSION['error_message'] = implode('<br>', $errors);
     }
-    
     header('Location: reset_password.php');
     exit;
 }
@@ -82,12 +81,10 @@ function handlePasswordReset() {
     $password = trim($_POST['password']);
     $confirmPassword = trim($_POST['confirm_password']);
     $errors = [];
-    
     // Validation
     if (empty($token)) {
         $errors[] = 'Invalid reset token';
     }
-    
     if (empty($password)) {
         $errors[] = 'Password is required';
     } elseif (strlen($password) < 8) {
@@ -95,31 +92,26 @@ function handlePasswordReset() {
     } elseif (!preg_match('/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/', $password)) {
         $errors[] = 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character';
     }
-    
     if ($password !== $confirmPassword) {
         $errors[] = 'Passwords do not match';
     }
-    
     if (empty($errors)) {
         try {
             $conn = getMysqliConnection();
-            
-            // Verify token and check expiry
-            $stmt = $conn->prepare("SELECT id, password_reset_expires FROM staff WHERE password_reset_token = ?");
+            // Find reset token in staff_password_resets
+            $stmt = $conn->prepare('SELECT * FROM staff_password_resets WHERE reset_token = ? AND used = 0 LIMIT 1');
             $stmt->bind_param('s', $token);
             $stmt->execute();
             $result = $stmt->get_result();
-            
             if ($result->num_rows > 0) {
-                $user = $result->fetch_assoc();
-                
-                if (strtotime($user['password_reset_expires']) > time()) {
+                $resetRow = $result->fetch_assoc();
+                if (strtotime($resetRow['expires_at']) > time()) {
+                    $staffId = $resetRow['staff_id'];
                     // Check password history (prevent reuse of last 3 passwords)
-                    $historyStmt = $conn->prepare("SELECT password_hash FROM staff_password_history WHERE staff_id = ? ORDER BY created_at DESC LIMIT 3");
-                    $historyStmt->bind_param('i', $user['id']);
+                    $historyStmt = $conn->prepare('SELECT password_hash FROM staff_password_history WHERE staff_id = ? ORDER BY created_at DESC LIMIT 3');
+                    $historyStmt->bind_param('i', $staffId);
                     $historyStmt->execute();
                     $historyResult = $historyStmt->get_result();
-                    
                     $passwordReused = false;
                     while ($row = $historyResult->fetch_assoc()) {
                         if (password_verify($password, $row['password_hash'])) {
@@ -127,23 +119,23 @@ function handlePasswordReset() {
                             break;
                         }
                     }
-                    
                     if ($passwordReused) {
                         $_SESSION['error_message'] = 'You cannot reuse one of your last 3 passwords.';
                     } else {
                         // Update password
                         $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
                         $now = date('Y-m-d H:i:s');
-                        
-                        $updateStmt = $conn->prepare("UPDATE staff SET password = ?, password_reset_token = NULL, password_reset_expires = NULL, temp_password = 0, force_password_change = 0, last_password_change = ? WHERE id = ?");
-                        $updateStmt->bind_param('ssi', $hashedPassword, $now, $user['id']);
+                        $updateStmt = $conn->prepare('UPDATE staff SET password = ?, temp_password = 0, force_password_change = 0, last_password_change = ? WHERE id = ?');
+                        $updateStmt->bind_param('ssi', $hashedPassword, $now, $staffId);
                         $updateStmt->execute();
-                        
                         // Add to password history
-                        $historyInsertStmt = $conn->prepare("INSERT INTO staff_password_history (staff_id, password_hash) VALUES (?, ?)");
-                        $historyInsertStmt->bind_param('is', $user['id'], $hashedPassword);
+                        $historyInsertStmt = $conn->prepare('INSERT INTO staff_password_history (staff_id, password_hash) VALUES (?, ?)');
+                        $historyInsertStmt->bind_param('is', $staffId, $hashedPassword);
                         $historyInsertStmt->execute();
-                        
+                        // Mark token as used
+                        $markUsedStmt = $conn->prepare('UPDATE staff_password_resets SET used = 1 WHERE id = ?');
+                        $markUsedStmt->bind_param('i', $resetRow['id']);
+                        $markUsedStmt->execute();
                         $_SESSION['success_message'] = 'Your password has been successfully updated. You can now log in with your new password.';
                         header('Location: login.php');
                         exit;
@@ -154,15 +146,13 @@ function handlePasswordReset() {
             } else {
                 $_SESSION['error_message'] = 'Invalid reset token.';
             }
-            
         } catch (Exception $e) {
-            error_log("Password reset error: " . $e->getMessage());
+            error_log('Password reset error: ' . $e->getMessage());
             $_SESSION['error_message'] = 'An error occurred. Please try again.';
         }
     } else {
         $_SESSION['error_message'] = implode('<br>', $errors);
     }
-    
     header('Location: reset_password.php?token=' . urlencode($token));
     exit;
 }

@@ -132,6 +132,7 @@ try {
         s.fname, s.lname, s.svcNo, s.rank, s.unit
         FROM users u 
         LEFT JOIN staff s ON u.id = s.user_id 
+        WHERE u.accStatus = 'active'
         ORDER BY u.created_at DESC");
     $userList = $stmt->fetchAll(PDO::FETCH_ASSOC);
     

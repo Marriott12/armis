@@ -26,7 +26,8 @@ if (!hasPermission(PERM_CREATE_STAFF)) {
 }
 
 // CSRF validation, input sanitization, and duplicate NRC/email check
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+// Only process regular form submissions (not CSV imports)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_FILES['csv_file'])) {
     if (!isset($_POST['csrf']) || $_POST['csrf'] !== $csrfToken) {
         // Log CSRF failure
         error_log('CSRF token mismatch on staff creation');
@@ -50,10 +51,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $altnok_phone = $_POST['altnok_phone'] ?? '';
         $altnok_email = $_POST['altnok_email'] ?? '';
 
-    $required_fields = ['email', 'fname', 'lname', 'DOB', 'svcNo', 'category', 'rankID'];
-        foreach ($required_fields as $field) {
-            if (empty($_POST[$field])) {
-                $form_errors[$field] = ucfirst(str_replace('_', ' ', $field)) . ' is required.';
+    // Required fields validation with proper error messages
+        $required_fields = [
+            'email' => 'Email',
+            'fname' => 'First Name',
+            'lname' => 'Surname',
+            'DOB' => 'Date of Birth',
+            'svcNo' => 'Service Number',
+            'category' => 'Category',
+            'rankID' => 'Rank'
+        ];
+        
+        foreach ($required_fields as $field => $label) {
+            if (empty($_POST[$field]) || trim($_POST[$field]) === '') {
+                $form_errors[$field] = $label . ' is required.';
             }
         }
     // NRC validation removed
@@ -129,12 +140,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Initialize success message variables
+
 $success_message = '';
 $display_credentials = false;
 $temp_password = '';
 $username = '';
 $staff_name = '';
 $staff_email = '';
+
+// CSV Import result variables
+$csv_import_success = [];
+$csv_import_errors = [];
+$csv_import_credentials = [];
+
+// Load import processor classes
+require_once __DIR__ . '/lib/ImportProcessor.php';
+
+// Handle CSV/Excel import POST with enhanced validation and transaction management
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['csv_file'])) {
+    if (!isset($_POST['csrf']) || $_POST['csrf'] !== $csrfToken) {
+        $csv_import_errors[] = 'Invalid CSRF token.';
+    } elseif ($_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
+        $csv_import_errors[] = 'File upload error: ' . $_FILES['csv_file']['error'];
+    } else {
+        $csvFile = $_FILES['csv_file']['tmp_name'];
+        $fileType = strtolower(pathinfo($_FILES['csv_file']['name'], PATHINFO_EXTENSION));
+        
+        // Get database connection
+        require_once dirname(__DIR__) . '/shared/database_connection.php';
+        
+        // Create import processor
+        $userId = $_SESSION['user_id'] ?? 0;
+        $processor = new ImportProcessor($pdo, $userId);
+        
+        // Check if this is validation-only mode
+        $validateOnly = isset($_POST['validate_only']) && $_POST['validate_only'] === 'on';
+        
+        // Process file based on type
+        if ($fileType === 'csv') {
+            $result = $processor->processCSV($csvFile);
+        } elseif ($fileType === 'xlsx' || $fileType === 'xls') {
+            $result = $processor->processExcel($csvFile);
+        } else {
+            $result = [
+                'success' => [],
+                'errors' => ['Unsupported file type. Please upload CSV, XLSX, or XLS files only.'],
+                'credentials' => []
+            ];
+        }
+        
+        // Extract results
+        $csv_import_success = $result['success'] ?? [];
+        $csv_import_errors = $result['errors'] ?? [];
+        $csv_import_credentials = $result['credentials'] ?? [];
+        
+        // Store credentials in session for display
+        if (!empty($csv_import_credentials)) {
+            $_SESSION['import_credentials'] = $csv_import_credentials;
+        }
+    }
+}
 
 // Check for success message from handler
 if (isset($_GET['success']) && $_GET['success'] == '1') {
@@ -350,9 +415,301 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         
                         <?php //require 'partials/create_staff_tabs.php'; ?>
                         
+                        <!-- CSV/Excel Import Form with Enhanced Features -->
+                        <div class="dashboard-card mb-4">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 class="mb-0"><i class="fas fa-file-csv"></i> Bulk Import Staff (CSV/Excel)</h5>
+                                <button class="btn btn-outline-info btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#lookupTables">
+                                    <i class="fa fa-table"></i> Show Reference Tables
+                                </button>
+                            </div>
+                            
+                            <!-- Reference Tables (Collapsible) -->
+                            <div class="collapse mb-3" id="lookupTables">
+                                <div class="alert alert-info">
+                                    <h6><i class="fa fa-info-circle"></i> Reference Tables for Import (Use these IDs)</h6>
+                                    <div class="row">
+                                        <div class="col-md-4">
+                                            <strong>Ranks:</strong>
+                                            <div style="max-height: 200px; overflow-y: auto;">
+                                                <table class="table table-sm table-bordered">
+                                                    <thead><tr><th>ID</th><th>Rank</th><th>Abbr</th></tr></thead>
+                                                    <tbody>
+                                                    <?php
+                                                    require_once dirname(__DIR__) . '/shared/database_connection.php';
+                                                    $ranksStmt = $pdo->query("SELECT id, name, abbreviation FROM ranks ORDER BY level ASC");
+                                                    while ($r = $ranksStmt->fetch(PDO::FETCH_ASSOC)) {
+                                                        echo "<tr><td>{$r['id']}</td><td>{$r['name']}</td><td>{$r['abbreviation']}</td></tr>";
+                                                    }
+                                                    ?>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <strong>Units:</strong>
+                                            <div style="max-height: 200px; overflow-y: auto;">
+                                                <table class="table table-sm table-bordered">
+                                                    <thead><tr><th>ID</th><th>Unit</th><th>Code</th></tr></thead>
+                                                    <tbody>
+                                                    <?php
+                                                    $unitsStmt = $pdo->query("SELECT id, name, code FROM units ORDER BY name ASC");
+                                                    while ($u = $unitsStmt->fetch(PDO::FETCH_ASSOC)) {
+                                                        echo "<tr><td>{$u['id']}</td><td>{$u['name']}</td><td>{$u['code']}</td></tr>";
+                                                    }
+                                                    ?>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <strong>Corps:</strong>
+                                            <div style="max-height: 200px; overflow-y: auto;">
+                                                <table class="table table-sm table-bordered">
+                                                    <thead><tr><th>ID</th><th>Corps</th></tr></thead>
+                                                    <tbody>
+                                                    <?php
+                                                    $corpsStmt = $pdo->query("SELECT id, name FROM corps ORDER BY name ASC");
+                                                    while ($c = $corpsStmt->fetch(PDO::FETCH_ASSOC)) {
+                                                        echo "<tr><td>{$c['id']}</td><td>{$c['name']}</td></tr>";
+                                                    }
+                                                    ?>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="row mt-2">
+                                        <div class="col-md-6">
+                                            <strong>Valid Genders:</strong> Male, Female<br>
+                                            <strong>Valid Marital Status:</strong> Single, Married, Divorced, Widowed, Separated
+                                        </div>
+                                        <div class="col-md-6">
+                                            <strong>Valid Blood Groups:</strong> A+, A-, B+, B-, AB+, AB-, O+, O-<br>
+                                            <strong>Date Format:</strong> YYYY-MM-DD (e.g., 2015-06-30)
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <form method="post" enctype="multipart/form-data" class="mb-3" id="importForm">
+                                <input type="hidden" name="csrf" value="<?=htmlspecialchars($csrfToken)?>">
+                                
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <label for="csv_file" class="form-label">Select File:</label>
+                                        <input type="file" id="csv_file" name="csv_file" accept=".csv,.xlsx,.xls" required class="form-control">
+                                        <small class="text-muted">
+                                            Supported: CSV (.csv), Excel (.xlsx, .xls) | Max size: 5MB
+                                        </small>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label d-block">&nbsp;</label>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="validate_only" id="validateOnly">
+                                            <label class="form-check-label" for="validateOnly">
+                                                <i class="fa fa-check-circle text-info"></i> Validate Only (Don't Import)
+                                            </label>
+                                        </div>
+                                        <small class="text-muted">Check file for errors without saving</small>
+                                    </div>
+                                </div>
+                                
+                                <div class="mt-3">
+                                    <button type="submit" class="btn btn-success">
+                                        <i class="fas fa-upload"></i> Import Staff
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary" onclick="downloadEnhancedTemplate()">
+                                        <i class="fa fa-download"></i> Download Template (with Examples)
+                                    </button>
+                                </div>
+                                
+                                <div class="alert alert-warning mt-3 mb-0">
+                                    <h6><i class="fa fa-exclamation-triangle"></i> Important Notes:</h6>
+                                    <ul class="mb-0">
+                                        <li><strong>Required Fields:</strong> fornames, surnames, email, dob</li>
+                                        <li><strong>Transaction Mode:</strong> If ANY row fails validation, NO rows will be imported (all-or-nothing)</li>
+                                        <li><strong>Duplicate Check:</strong> Service numbers, emails, and NRCs must be unique</li>
+                                        <li><strong>User Accounts:</strong> Login accounts will be automatically created for all imported staff</li>
+                                        <li><strong>Date Format:</strong> All dates must be in YYYY-MM-DD format (e.g., 1990-05-15)</li>
+                                        <li><strong>NRC Format:</strong> Must be 123456/78/9 (6 digits, slash, 2 digits, slash, 1 digit)</li>
+                                    </ul>
+                                </div>
+                            </form>
+                            
+                            <script>
+                            function downloadEnhancedTemplate() {
+                                const cols = [
+                                    'service number', 'rank_id', 'fornames', 'surnames', 'email', 'dob', 
+                                    'gender', 'marital', 'NRC', 'tel', 'unit_id', 
+                                    'corps_id', 'attestDate', 'subWef', 'tempWef', 'province', 
+                                    'bloodGp', 'intake', 'prefix', 'initials', 'titles', 
+                                    'subRank', 'tempRank', 'unitAtt', 'appt'
+                                ];
+                                
+                                // Header row
+                                let csv = cols.join(',') + '\n';
+                                
+                                // Example row with proper formats
+                                const example = [
+                                    '12345',                  // service number
+                                    '5',                      // rank_id (see reference table)
+                                    'John',                   // fornames (REQUIRED)
+                                    'Banda',                  // surnames (REQUIRED)
+                                    'john.banda@army.zm',     // email (REQUIRED)
+                                    '1990-05-15',             // dob (REQUIRED - YYYY-MM-DD)
+                                    'Male',                   // gender (Male/Female)
+                                    'Married',                // marital (Single/Married/Divorced/Widowed/Separated)
+                                    '123456/78/1',            // NRC (123456/78/9 format)
+                                    '+260977123456',          // tel (+260XXXXXXXXX)
+                                    '3',                      // unit_id (see reference table)
+                                    '2',                      // corps_id (see reference table)
+                                    '2015-06-01',             // attestDate (YYYY-MM-DD)
+                                    '2020-01-01',             // subWef (YYYY-MM-DD)
+                                    '',                       // tempWef (YYYY-MM-DD or leave blank)
+                                    'Lusaka',                 // province
+                                    'A+',                     // bloodGp (A+, A-, B+, B-, AB+, AB-, O+, O-)
+                                    '2015',                   // intake
+                                    'Mr',                     // prefix
+                                    'J.K.',                   // initials
+                                    'BA',                     // titles/qualifications
+                                    '',                       // subRank
+                                    '',                       // tempRank
+                                    '',                       // unitAtt
+                                    'Officer'                 // appt (appointment)
+                                ];
+                                
+                                csv += example.map(v => '"' + v + '"').join(',') + '\n';
+                                
+                                // Instructions
+                                csv += '\n# INSTRUCTIONS:\n';
+                                csv += '# 1. REQUIRED FIELDS: fornames, surnames, email, dob (rows will fail without these)\n';
+                                csv += '# 2. DATE FORMAT: YYYY-MM-DD (e.g., 2015-06-30)\n';
+                                csv += '# 3. NRC FORMAT: 123456/78/9 (exactly this pattern)\n';
+                                csv += '# 4. PHONE FORMAT: +260977123456 (include country code)\n';
+                                csv += '# 5. Use IDs from reference tables for rank_id, unit_id, corps_id\n';
+                                csv += '# 6. Delete this instruction section and the example row before importing\n';
+                                csv += '# 7. Keep the header row (first row with column names)\n';
+                                
+                                const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = 'staff_import_template_with_example.csv';
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                                URL.revokeObjectURL(url);
+                            }
+                            </script>
+                            
+                            <!-- Import Results -->
+                            <?php if (!empty($csv_import_success)): ?>
+                                <div class="alert alert-success alert-dismissible fade show">
+                                    <h6><i class="fas fa-check-circle"></i> Import Successful!</h6>
+                                    <strong><?= count($csv_import_success) ?> staff members imported successfully.</strong>
+                                    <details class="mt-2">
+                                        <summary style="cursor: pointer;">View Details</summary>
+                                        <ul class="mb-0 mt-2">
+                                            <?php foreach (array_slice($csv_import_success, 0, 10) as $msg): ?>
+                                                <li><?= htmlspecialchars($msg) ?></li>
+                                            <?php endforeach; ?>
+                                            <?php if (count($csv_import_success) > 10): ?>
+                                                <li><em>... and <?= count($csv_import_success) - 10 ?> more</em></li>
+                                            <?php endif; ?>
+                                        </ul>
+                                    </details>
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                                </div>
+                                
+                                <!-- User Credentials Display -->
+                                <?php if (!empty($csv_import_credentials)): ?>
+                                <div class="alert alert-info alert-dismissible fade show">
+                                    <h6><i class="fas fa-key"></i> Generated User Credentials</h6>
+                                    <p><strong>Important:</strong> Save these credentials securely. Users must change passwords on first login.</p>
+                                    <div style="max-height: 300px; overflow-y: auto;">
+                                        <table class="table table-sm table-bordered bg-white">
+                                            <thead>
+                                                <tr>
+                                                    <th>Name</th>
+                                                    <th>Email</th>
+                                                    <th>Username</th>
+                                                    <th>Temporary Password</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($csv_import_credentials as $cred): ?>
+                                                <tr>
+                                                    <td><?= htmlspecialchars($cred['name']) ?></td>
+                                                    <td><?= htmlspecialchars($cred['email']) ?></td>
+                                                    <td><code><?= htmlspecialchars($cred['username']) ?></code></td>
+                                                    <td>
+                                                        <code><?= htmlspecialchars($cred['password']) ?></code>
+                                                        <button class="btn btn-sm btn-outline-secondary" onclick="copyToClipboard('<?= htmlspecialchars($cred['password']) ?>')">
+                                                            <i class="fa fa-copy"></i>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button type="button" class="btn btn-warning btn-sm mt-2" onclick="downloadCredentials()">
+                                        <i class="fa fa-download"></i> Download Credentials as CSV
+                                    </button>
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                                </div>
+                                
+                                <script>
+                                function downloadCredentials() {
+                                    let csv = 'Name,Email,Username,Temporary Password\n';
+                                    <?php foreach ($csv_import_credentials as $cred): ?>
+                                    csv += '<?= addslashes($cred['name']) ?>,<?= addslashes($cred['email']) ?>,<?= addslashes($cred['username']) ?>,<?= addslashes($cred['password']) ?>\n';
+                                    <?php endforeach; ?>
+                                    
+                                    const blob = new Blob([csv], {type: 'text/csv'});
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = 'imported_staff_credentials_<?= date("Y-m-d_His") ?>.csv';
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                    URL.revokeObjectURL(url);
+                                }
+                                </script>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                            
+                            <?php if (!empty($csv_import_errors)): ?>
+                                <div class="alert alert-danger alert-dismissible fade show">
+                                    <h6><i class="fas fa-exclamation-triangle"></i> Import Failed - Validation Errors Found</h6>
+                                    <p><strong>Transaction rolled back - No records were imported.</strong></p>
+                                    <p>Please fix the following errors and try again:</p>
+                                    <div style="max-height: 400px; overflow-y: auto; background: #fff; padding: 10px; border-radius: 4px;">
+                                        <ul class="mb-0">
+                                            <?php foreach ($csv_import_errors as $msg): ?>
+                                                <li><?= htmlspecialchars($msg) ?></li>
+                                            <?php endforeach; ?>
+                                        </ul>
+                                    </div>
+                                    <div class="mt-3">
+                                        <strong>Quick Fixes:</strong>
+                                        <ul class="mb-0">
+                                            <li>Check that all required fields (fornames, surnames, email, dob) are filled</li>
+                                            <li>Verify date format is YYYY-MM-DD (e.g., 1990-05-15)</li>
+                                            <li>Ensure emails are valid and unique</li>
+                                            <li>Check that rank_id, unit_id, corps_id exist in reference tables</li>
+                                            <li>Verify NRC format is 123456/78/9</li>
+                                        </ul>
+                                    </div>
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+
                         <form id="createStaffForm" method="post" action="<?=htmlspecialchars($_SERVER["PHP_SELF"]);?>" autocomplete="off" novalidate aria-labelledby="formTitle">
                             <input type="hidden" name="csrf" value="<?=htmlspecialchars($csrfToken)?>">
-                            
                             <div class="tab-content" id="staffTabContent">
                                 <?php require 'partials/tab_personal.php'; ?>
                                 <?php require 'partials/tab_honours.php'; ?>

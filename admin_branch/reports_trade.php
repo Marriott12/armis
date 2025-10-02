@@ -1,5 +1,7 @@
 <?php
-define('ARMIS_ADMIN_BRANCH', true);
+define('ARMIS_ADMIN_BRANCH', true); // Include report formatting helpers
+require_once __DIR__ . '/includes/report_helpers.php';
+
 require_once __DIR__ . '/includes/auth.php';
 require_once dirname(__DIR__) . '/shared/database_connection.php';
 requireAuth();
@@ -39,6 +41,9 @@ $sidebarLinks = [
 
 $pdo = getDbConnection();
 
+// Include report formatting helpers
+require_once __DIR__ . '/includes/report_helpers.php';
+
 function getTradeOptions($pdo, $unit, $rank, $cat) {
     $tradeSql = "SELECT DISTINCT trade FROM staff WHERE svcStatus = 'Active'"; // allow empty trades
     $unitSql = "SELECT DISTINCT u.id, u.name FROM units u JOIN staff s ON s.unit_id = u.id WHERE s.svcStatus = 'Active'";
@@ -71,8 +76,23 @@ $filter_rank = $_GET['rankID'] ?? '';
 $filter_category = $_GET['category'] ?? '';
 $search = trim($_GET['search'] ?? '');
 
+// Sorting functionality
+$sortable_columns = [
+    'service_number' => 's.service_number',
+    'rank' => 'r.level',
+    'first_name' => 's.first_name', 
+    'last_name' => 's.last_name',
+    'unit' => 'u.name',
+    'trade' => 's.trade',
+    'category' => 's.category',
+    'DOB' => 's.DOB',
+    'attestDate' => 's.attestDate'
+];
+$sort_col = $_GET['sort_col'] ?? '';
+$sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
+
 $params = [];
-$sql = "SELECT s.*, r.name as rankName, r.category as rankCategory, u.name as unitName FROM staff s
+$sql = "SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, r.category as rankCategory, u.name as unitName, u.code as unitCode FROM staff s
         LEFT JOIN ranks r ON s.rank_id = r.id
         LEFT JOIN units u ON s.unit_id = u.id
         WHERE s.svcStatus = 'Active'
@@ -101,11 +121,50 @@ if ($search !== '') {
     $sql .= " AND (s.trade LIKE ? OR s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR u.name LIKE ? OR s.category LIKE ?)";
     for ($i = 0; $i < 7; $i++) $params[] = "%$search%";
 }
-$sql .= " ORDER BY r.level ASC, s.last_name ASC, s.first_name ASC";
+
+// Handle sorting
+$order_clause = '';
+if ($sort_col && isset($sortable_columns[$sort_col])) {
+    $order_clause = " ORDER BY " . $sortable_columns[$sort_col] . " $sort_dir";
+} else {
+    $order_clause = " ORDER BY r.level ASC, s.last_name ASC, s.first_name ASC";
+}
+$sql .= $order_clause;
 $per_page = intval($_GET['per_page'] ?? 25);
 $page = max(1, intval($_GET['page'] ?? 1)); $offset = ($page - 1) * $per_page;
 $sql .= " LIMIT $per_page OFFSET $offset";
+
+// Fetch paginated staff
 $staff = fetchAll($sql, $params);
+
+// Get total count for pagination
+$count_sql = "SELECT COUNT(*) FROM staff s
+    LEFT JOIN ranks r ON s.rank_id = r.id
+    LEFT JOIN units u ON s.unit_id = u.id
+    WHERE s.svcStatus = 'Active'
+    AND (r.category = 'NCO' OR r.category = 'Civilian Employee')";
+if (isset($_GET['trade']) && $_GET['trade'] !== '') {
+    if ($filter_no_trade) {
+        $count_sql .= " AND (s.trade IS NULL OR s.trade = '')";
+    } else {
+        $count_sql .= " AND s.trade = '" . addslashes($_GET['trade']) . "'";
+    }
+}
+if ($filter_unit !== '') {
+    $count_sql .= " AND s.unit_id = '" . addslashes($filter_unit) . "'";
+}
+if ($filter_rank !== '') {
+    $count_sql .= " AND s.rank_id = '" . addslashes($filter_rank) . "'";
+}
+if ($filter_category !== '') {
+    $count_sql .= " AND s.category = '" . addslashes($filter_category) . "'";
+}
+if ($search !== '') {
+    $search_esc = addslashes($search);
+    $count_sql .= " AND (s.trade LIKE '%$search_esc%' OR s.service_number LIKE '%$search_esc%' OR s.last_name LIKE '%$search_esc%' OR s.first_name LIKE '%$search_esc%' OR r.name LIKE '%$search_esc%' OR u.name LIKE '%$search_esc%' OR s.category LIKE '%$search_esc%')";
+}
+$total_staff = $pdo->query($count_sql)->fetchColumn();
+$total_pages = ceil($total_staff / $per_page);
 
 list($trades, $units, $ranks, $categories) = getTradeOptions($pdo, $filter_unit, $filter_rank, $filter_category);
 
@@ -205,7 +264,15 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <tr>
                             <th>#</th>
                             <?php foreach ($columns as $key => $label): ?>
-                                <th class="col-<?= $key ?>"><?= $label ?></th>
+                                <th class="col-<?= $key ?> <?= isset($sortable_columns[$key]) ? 'sortable' : '' ?>" 
+                                    <?= isset($sortable_columns[$key]) ? 'style="cursor: pointer;" onclick="sortTable(\'' . $key . '\')"' : '' ?>>
+                                    <?= $label ?>
+                                    <?php if (isset($sortable_columns[$key]) && $sort_col === $key): ?>
+                                        <i class="fas fa-sort-<?= $sort_dir === 'ASC' ? 'up' : 'down' ?> ms-1"></i>
+                                    <?php elseif (isset($sortable_columns[$key])): ?>
+                                        <i class="fas fa-sort ms-1 text-muted"></i>
+                                    <?php endif; ?>
+                                </th>
                             <?php endforeach; ?>
                         </tr>
                     </thead>
@@ -216,11 +283,11 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             <tr ondblclick="alert('Audit/History details coming soon.')">
                                 <td><?= $i++ ?></td>
                                 <td class="col-trade"><?= ($s->trade ?? '') !== '' ? htmlspecialchars($s->trade) : 'No Trade Assigned' ?></td>
-                                <td class="col-unit"><?= htmlspecialchars($s->unitName ?? '') ?></td>
-                                <td class="col-rank"><?= htmlspecialchars($s->rankName ?? '') ?></td>
+                                <td class="col-unit"><?= htmlspecialchars($s->unitCode ?? $s->unitName ?? '') ?></td>
+                                <td class="col-rank"><?= htmlspecialchars($s->rankAbbr ?? $s->rankName ?? '') ?></td>
                                 <td class="col-service_number"><?= htmlspecialchars($s->service_number ?? '') ?></td>
-                                <td class="col-surname"><?= htmlspecialchars($s->last_name ?? '') ?></td>
-                                <td class="col-first_name"><?= htmlspecialchars($s->first_name ?? '') ?></td>
+                                <td class="col-surname"><?= htmlspecialchars(formatSentenceCase($s->last_name ?? '')) ?></td>
+                                <td class="col-first_name"><?= htmlspecialchars(formatSentenceCase($s->first_name ?? '')) ?></td>
                                 <td class="col-category"><?= htmlspecialchars($s->category ?? '') ?></td>
                                 <td class="col-DOB"><?= htmlspecialchars($s->DOB ?? '') ?></td>
                                 <td class="col-attestDate"><?= htmlspecialchars($s->attestDate ?? '') ?></td>
@@ -238,17 +305,28 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             <div class="d-flex justify-content-center my-3">
                 <nav aria-label="Trade pagination">
                     <ul class="pagination pagination-sm">
-                        <?php
-                        $max_links=7;
-                        $start=max(1,$page-intval($max_links/2));
-                        $end=$start+$max_links-1;
-                        for ($p=$start;$p<=$end;$p++): ?>
-                        <li class="page-item<?= ($p==$page)?' active':''?>">
-                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET,['page'=>$p])) ?>"><?= $p ?></a>
+                        <li class="page-item<?= ($page <= 1) ? ' disabled' : '' ?>">
+                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page-1])) ?>" aria-label="Previous">&laquo;</a>
                         </li>
+                        <?php
+                        $max_links = 7;
+                        $start = max(1, $page - intval($max_links/2));
+                        $end = min($total_pages, $start + $max_links - 1);
+                        if ($end - $start + 1 < $max_links) $start = max(1, $end - $max_links + 1);
+                        for ($p = $start; $p <= $end; $p++):
+                        ?>
+                            <li class="page-item<?= ($p == $page) ? ' active' : '' ?>">
+                                <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $p])) ?>"><?= $p ?></a>
+                            </li>
                         <?php endfor; ?>
+                        <li class="page-item<?= ($page >= $total_pages) ? ' disabled' : '' ?>">
+                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page+1])) ?>" aria-label="Next">&raquo;</a>
+                        </li>
                     </ul>
                 </nav>
+                <div class="ms-3 align-self-center text-muted small">
+                    Page <?= $page ?> of <?= $total_pages ?> | Total: <?= $total_staff ?> records
+                </div>
             </div>
         </div>
     </div>
@@ -263,6 +341,21 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.20.0/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
+// Sort function
+function sortTable(column) {
+    const currentParams = new URLSearchParams(window.location.search);
+    let newDir = 'asc';
+    
+    if (currentParams.get('sort_col') === column && currentParams.get('sort_dir') === 'asc') {
+        newDir = 'desc';
+    }
+    
+    currentParams.set('sort_col', column);
+    currentParams.set('sort_dir', newDir);
+    
+    window.location.search = currentParams.toString();
+}
+
 document.querySelectorAll('.toggle-col').forEach(function(box) {
     let saved = localStorage.getItem('col-' + box.dataset.col);
     if (saved !== null) box.checked = saved === 'true';
@@ -309,21 +402,70 @@ document.getElementById('exportPDFBtn').addEventListener('click', function(){
     let table = document.getElementById('tradeTable');
     let rows = Array.from(table.rows).map(row => Array.from(row.cells).map(cell => cell.innerText));
     const { jsPDF } = window.jspdf;
-    let doc = new jsPDF();
+    let doc = new jsPDF({orientation: 'landscape'});
     let startY = 20;
     doc.text("Trade Report", 14, startY);
+    let colCount = rows[0].length;
+    let colWidth = (doc.internal.pageSize.width - 28) / colCount;
     rows.forEach(function(row, idx){
-        doc.text(row.join(" | "), 14, startY + 8 + idx*8);
+        row.forEach(function(cell, cidx){
+            doc.text(cell, 14 + cidx*colWidth, startY + 8 + idx*8, {maxWidth: colWidth-2});
+        });
     });
     doc.save("trade_report.pdf");
 });
 document.querySelector('.print-btn').addEventListener('click', function(){
     window.print();
 });
-['tradeFilter','unitFilter','rankFilter','categoryFilter'].forEach(function(id){
-    document.getElementById(id).addEventListener('change', function(){
-        document.forms[0].submit();
+function updateTradeFilterOptions(changed) {
+    const trade = document.getElementById('tradeFilter').value;
+    const rank = document.getElementById('rankFilter').value;
+    const unit = document.getElementById('unitFilter').value;
+    const category = document.getElementById('categoryFilter').value;
+    const endpoints = [
+        {id: 'tradeFilter', type: 'trade'},
+        {id: 'rankFilter', type: 'rank'},
+        {id: 'unitFilter', type: 'unit'},
+        {id: 'categoryFilter', type: 'category'}
+    ];
+    endpoints.forEach(ep => {
+        if (ep.id === changed) return;
+        fetch(`ajax_trade_filters.php?type=${ep.type}&trade=${encodeURIComponent(trade)}&rankID=${encodeURIComponent(rank)}&unitID=${encodeURIComponent(unit)}&category=${encodeURIComponent(category)}`)
+            .then(r => {
+                if (!r.ok) throw new Error('Network error');
+                return r.json();
+            })
+            .then(options => {
+                const sel = document.getElementById(ep.id);
+                const prev = sel.value;
+                let label = sel.getAttribute('aria-label') || sel.name;
+                label = label.replace('Filter by ','').replace(/ID$/,'')
+                sel.innerHTML = `<option value="">All ${label.charAt(0).toUpperCase()+label.slice(1)}</option>`;
+                options.forEach(opt => {
+                    let val = opt.value === '' ? '__NO_TRADE_ASSIGNED__' : opt.value;
+                    let text = (opt.value === '' || opt.value === '__NO_TRADE_ASSIGNED__') ? 'No Trade Assigned' : opt.label;
+                    sel.innerHTML += `<option value="${val}"${val==prev?' selected':''}>${text}</option>`;
+                });
+            })
+            .catch(err => {
+                alert('Failed to update filter options: ' + err.message);
+            });
     });
+}
+['tradeFilter','rankFilter','unitFilter','categoryFilter'].forEach(function(id){
+    document.getElementById(id).addEventListener('change', function(){
+        updateTradeFilterOptions(id);
+    });
+});
+['tradeSearch','per_page'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) {
+        if (id==='tradeSearch') {
+            el.addEventListener('keydown', function(e){ if(e.key==='Enter'){ this.form.submit(); }});
+        } else {
+            el.addEventListener('change', function(){ this.form.submit(); });
+        }
+    }
 });
 document.getElementById('tradeSearch').addEventListener('input', function() {
     const query = this.value.toLowerCase();

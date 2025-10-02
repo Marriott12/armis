@@ -2,6 +2,7 @@
 define('ARMIS_ADMIN_BRANCH', true);
 require_once __DIR__ . '/includes/auth.php';
 require_once dirname(__DIR__) . '/shared/database_connection.php';
+require_once __DIR__ . '/includes/report_helpers.php';
 requireAuth();
 
 $pageTitle = "Rank Report as at " . date('d-M-Y');
@@ -57,10 +58,10 @@ $search = trim($_GET['search'] ?? '');
 list($ranks, $units, $categories) = getRankOptions($pdo, $filter_unit, $filter_category);
 
 $params = [];
-$sql = "SELECT s.*, r.name as rankName, u.name as unitName FROM staff s
-        LEFT JOIN ranks r ON s.rank_id = r.id
-        LEFT JOIN units u ON s.unit_id = u.id
-        WHERE s.svcStatus = 'Active'";
+$sql = "SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, u.name as unitName, u.code as unitCode FROM staff s
+    LEFT JOIN ranks r ON s.rank_id = r.id
+    LEFT JOIN units u ON s.unit_id = u.id
+    WHERE s.svcStatus = 'Active'";
 if ($filter_rank !== '')      { $sql .= " AND s.rank_id = ?"; $params[] = $filter_rank; }
 if ($filter_unit !== '')      { $sql .= " AND s.unit_id = ?"; $params[] = $filter_unit; }
 if ($filter_category !== '')  { $sql .= " AND s.category = ?"; $params[] = $filter_category; }
@@ -68,11 +69,28 @@ if ($search !== '') {
     $sql .= " AND (r.name LIKE ? OR s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR u.name LIKE ? OR s.category LIKE ?)";
     for ($i = 0; $i < 6; $i++) $params[] = "%$search%";
 }
-$sql .= " ORDER BY r.level ASC, s.last_name ASC, s.first_name ASC";
+$sql .= " ORDER BY r.level ASC, COALESCE(s.subWef, s.tempWef, s.attestDate) ASC, s.service_number ASC";
 $per_page = intval($_GET['per_page'] ?? 25);
 $page = max(1, intval($_GET['page'] ?? 1)); $offset = ($page - 1) * $per_page;
 $sql .= " LIMIT $per_page OFFSET $offset";
+
+// Fetch paginated staff
 $staff = fetchAll($sql, $params);
+
+// Get total count for pagination
+$count_sql = "SELECT COUNT(*) FROM staff s
+    LEFT JOIN ranks r ON s.rank_id = r.id
+    LEFT JOIN units u ON s.unit_id = u.id
+    WHERE s.svcStatus = 'Active'";
+if ($filter_rank !== '')      { $count_sql .= " AND s.rank_id = '" . addslashes($filter_rank) . "'"; }
+if ($filter_unit !== '')      { $count_sql .= " AND s.unit_id = '" . addslashes($filter_unit) . "'"; }
+if ($filter_category !== '')  { $count_sql .= " AND s.category = '" . addslashes($filter_category) . "'"; }
+if ($search !== '') {
+    $search_esc = addslashes($search);
+    $count_sql .= " AND (r.name LIKE '%$search_esc%' OR s.service_number LIKE '%$search_esc%' OR s.last_name LIKE '%$search_esc%' OR s.first_name LIKE '%$search_esc%' OR u.name LIKE '%$search_esc%' OR s.category LIKE '%$search_esc%')";
+}
+$total_staff = $pdo->query($count_sql)->fetchColumn();
+$total_pages = ceil($total_staff / $per_page);
 
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';
@@ -108,7 +126,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             </div>
             <form class="row g-3 mb-4" method="get" action="">
                 <div class="col-md-2">
-                    <select name="rankID" id="rankFilter" class="form-select">
+                    <select name="rankID" id="rankFilter" class="form-select" aria-label="Filter by rank">
                         <option value="">Rank</option>
                         <?php foreach ($ranks as $r): ?>
                             <option value="<?= $r->id ?>" <?= ($filter_rank == $r->id) ? 'selected':''?>><?= htmlspecialchars($r->name) ?></option>
@@ -116,7 +134,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <select name="unitID" id="unitFilter" class="form-select">
+                    <select name="unitID" id="unitFilter" class="form-select" aria-label="Filter by unit">
                         <option value="">Unit</option>
                         <?php foreach ($units as $u): ?>
                             <option value="<?= $u->id ?>" <?= ($filter_unit == $u->id) ? 'selected':''?>><?= htmlspecialchars($u->name) ?></option>
@@ -124,7 +142,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <select name="category" id="categoryFilter" class="form-select">
+                    <select name="category" id="categoryFilter" class="form-select" aria-label="Filter by category">
                         <option value="">Category</option>
                         <?php foreach ($categories as $cat): ?>
                             <option value="<?= htmlspecialchars($cat->category) ?>" <?= ($filter_category == $cat->category) ? 'selected' : '' ?>><?= htmlspecialchars($cat->category) ?></option>
@@ -168,11 +186,11 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <?php else: $i=1; foreach($staff as $s): ?>
                             <tr ondblclick="alert('Audit/History details coming soon.')">
                                 <td><?= $i++ ?></td>
-                                <td class="col-rank"><?= htmlspecialchars($s->rankName ?? '') ?></td>
-                                <td class="col-unit"><?= htmlspecialchars($s->unitName ?? '') ?></td>
+                                <td class="col-rank"><?= htmlspecialchars($s->rankAbbr ?? $s->rankName ?? '') ?></td>
+                                <td class="col-unit"><?= htmlspecialchars($s->unitCode ?? $s->unitName ?? '') ?></td>
                                 <td class="col-service_number"><?= htmlspecialchars($s->service_number ?? '') ?></td>
-                                <td class="col-surname"><?= htmlspecialchars($s->last_name ?? '') ?></td>
-                                <td class="col-first_name"><?= htmlspecialchars($s->first_name ?? '') ?></td>
+                                <td class="col-surname"><?= htmlspecialchars(formatSentenceCase($s->last_name ?? '')) ?></td>
+                                <td class="col-first_name"><?= htmlspecialchars(formatSentenceCase($s->first_name ?? '')) ?></td>
                                 <td class="col-category"><?= htmlspecialchars($s->category ?? '') ?></td>
                                 <td class="col-DOB"><?= htmlspecialchars($s->DOB ?? '') ?></td>
                                 <td class="col-attestDate"><?= htmlspecialchars($s->attestDate ?? '') ?></td>
@@ -190,17 +208,28 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             <div class="d-flex justify-content-center my-3">
                 <nav aria-label="Rank pagination">
                     <ul class="pagination pagination-sm">
-                        <?php
-                        $max_links=7;
-                        $start=max(1,$page-intval($max_links/2));
-                        $end=$start+$max_links-1;
-                        for ($p=$start;$p<=$end;$p++): ?>
-                        <li class="page-item<?= ($p==$page)?' active':''?>">
-                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET,['page'=>$p])) ?>"><?= $p ?></a>
+                        <li class="page-item<?= ($page <= 1) ? ' disabled' : '' ?>">
+                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page-1])) ?>" aria-label="Previous">&laquo;</a>
                         </li>
+                        <?php
+                        $max_links = 7;
+                        $start = max(1, $page - intval($max_links/2));
+                        $end = min($total_pages, $start + $max_links - 1);
+                        if ($end - $start + 1 < $max_links) $start = max(1, $end - $max_links + 1);
+                        for ($p = $start; $p <= $end; $p++):
+                        ?>
+                            <li class="page-item<?= ($p == $page) ? ' active' : '' ?>">
+                                <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $p])) ?>"><?= $p ?></a>
+                            </li>
                         <?php endfor; ?>
+                        <li class="page-item<?= ($page >= $total_pages) ? ' disabled' : '' ?>">
+                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page+1])) ?>" aria-label="Next">&raquo;</a>
+                        </li>
                     </ul>
                 </nav>
+                <div class="ms-3 align-self-center text-muted small">
+                    Page <?= $page ?> of <?= $total_pages ?> | Total: <?= $total_staff ?> records
+                </div>
             </div>
         </div>
     </div>
@@ -261,20 +290,57 @@ document.getElementById('exportPDFBtn').addEventListener('click', function(){
     let table = document.getElementById('rankTable');
     let rows = Array.from(table.rows).map(row => Array.from(row.cells).map(cell => cell.innerText));
     const { jsPDF } = window.jspdf;
-    let doc = new jsPDF();
+    let doc = new jsPDF({orientation: 'landscape'});
     let startY = 20;
     doc.text("Rank Report", 14, startY);
+    let colCount = rows[0].length;
+    let colWidth = (doc.internal.pageSize.width - 28) / colCount;
     rows.forEach(function(row, idx){
-        doc.text(row.join(" | "), 14, startY + 8 + idx*8);
+        row.forEach(function(cell, cidx){
+            doc.text(cell, 14 + cidx*colWidth, startY + 8 + idx*8, {maxWidth: colWidth-2});
+        });
     });
     doc.save("rank_report.pdf");
 });
 document.querySelector('.print-btn').addEventListener('click', function(){
     window.print();
 });
+function updateRankFilterOptions(changed) {
+    const rank = document.getElementById('rankFilter').value;
+    const unit = document.getElementById('unitFilter').value;
+    const category = document.getElementById('categoryFilter').value;
+    const endpoints = [
+        {id: 'rankFilter', type: 'rank'},
+        {id: 'unitFilter', type: 'unit'},
+        {id: 'categoryFilter', type: 'category'}
+    ];
+    endpoints.forEach(ep => {
+        if (ep.id === changed) return;
+        fetch(`ajax_rank_filters.php?type=${ep.type}&rankID=${encodeURIComponent(rank)}&unitID=${encodeURIComponent(unit)}&category=${encodeURIComponent(category)}`)
+            .then(r => {
+                if (!r.ok) throw new Error('Network error');
+                return r.json();
+            })
+            .then(options => {
+                const sel = document.getElementById(ep.id);
+                const prev = sel.value;
+                let label = sel.getAttribute('aria-label') || sel.name;
+                label = label.replace('Filter by ','').replace(/ID$/,'')
+                sel.innerHTML = `<option value="">All ${label.charAt(0).toUpperCase()+label.slice(1)}</option>`;
+                options.forEach(opt => {
+                    let val = opt.value;
+                    let text = opt.label;
+                    sel.innerHTML += `<option value="${val}"${val==prev?' selected':''}>${text}</option>`;
+                });
+            })
+            .catch(err => {
+                alert('Failed to update filter options: ' + err.message);
+            });
+    });
+}
 ['rankFilter','unitFilter','categoryFilter'].forEach(function(id){
     document.getElementById(id).addEventListener('change', function(){
-        document.forms[0].submit();
+        updateRankFilterOptions(id);
     });
 });
 document.getElementById('rankSearch').addEventListener('input', function() {

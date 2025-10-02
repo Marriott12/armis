@@ -9,6 +9,25 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// --- SESSION TIMEOUT ENFORCEMENT ---
+// Set timeout duration (in seconds)
+$SESSION_TIMEOUT = 20 * 60; // 20 minutes
+
+if (isset($_SESSION['LAST_ACTIVITY'])) {
+    if (time() - $_SESSION['LAST_ACTIVITY'] > $SESSION_TIMEOUT) {
+        // Session expired due to inactivity
+        session_unset();
+        session_destroy();
+        // Optionally, start a new session to show a message
+        session_start();
+        $_SESSION['timeout_message'] = 'Your session has expired due to inactivity. Please log in again.';
+        header('Location: /Armis2/login.php');
+        exit();
+    }
+}
+// Update last activity timestamp
+$_SESSION['LAST_ACTIVITY'] = time();
+
 // Include configuration and utilities
 require_once __DIR__ . '/config.php';
 require_once dirname(dirname(__DIR__)) . '/shared/database_connection.php';

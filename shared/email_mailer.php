@@ -19,11 +19,11 @@ class ARMISMailer {
     
     private function loadConfig() {
         // Email configuration - Update these settings for your environment
-        $this->smtp_host = 'smtp.gmail.com'; // or your SMTP server
+        $this->smtp_host = 'smtp.envisagezm.com'; // or your SMTP server
         $this->smtp_port = 587;
-        $this->smtp_username = 'your-email@gmail.com'; // Update this
-        $this->smtp_password = 'your-app-password'; // Update this
-        $this->from_email = 'noreply@armis.mil.zm'; // Update this
+        $this->smtp_username = 'support@envisagezm.com'; // Update this
+        $this->smtp_password = 'Envisage@2025'; // Update this
+        $this->from_email = 'support@envisagezm.com'; // Update this
         $this->from_name = 'ARMIS System';
         
         // You can also load from environment variables or config file

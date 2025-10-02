@@ -129,7 +129,14 @@ class DashboardService {
                     ]
                 ];
 
-                // Military Personnel - Enhanced query for detailed breakdowns
+                // --- Military Personnel: Apply time-based filter if set ---
+                $militaryDateFilter = '';
+                $militaryParams = [];
+                if ($timeFilter === '1_month') {
+                    $militaryDateFilter = ' AND s.attestDate >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)';
+                } elseif ($timeFilter === '1_year') {
+                    $militaryDateFilter = ' AND s.attestDate >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)';
+                }
                 $militaryQuery = "
                     SELECT 
                         r.category,
@@ -143,11 +150,11 @@ class DashboardService {
                     WHERE s.service_number IS NOT NULL 
                     AND s.svcStatus != 'Discharged'
                     AND r.category IN ('Officer', 'NCO')
+                    " . $militaryDateFilter . "
                     GROUP BY r.category, r.name, r.abbreviation, s.svcStatus, s.gender
                 ";
-                
                 $stmt = $this->db->prepare($militaryQuery);
-                $stmt->execute();
+                $stmt->execute($militaryParams);
                 $militaryResults = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 
                 foreach ($militaryResults as $row) {

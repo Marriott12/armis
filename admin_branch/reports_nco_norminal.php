@@ -1,6 +1,7 @@
 <?php
 // Define module constants
 define('ARMIS_ADMIN_BRANCH', true);
+define('ARMIS_DEVELOPMENT', false);
 
 // Include admin branch authentication and database
 require_once __DIR__ . '/includes/auth.php';
@@ -9,29 +10,48 @@ require_once dirname(__DIR__) . '/shared/database_connection.php';
 // Require authentication
 requireAuth();
 
-$pageTitle = "Appointment Report as at " . date('d-M-Y');
+$pageTitle = "NCO Nominal Roll as at " . date('d-M-Y');
 $moduleName = "Admin Branch";
 $moduleIcon = "users-cog";
-$currentPage = "reports";
+$currentPage = "nco_nominal";
+
+// Determine report type (officer, nco, ce)
+$reportType = $_GET['report_type'] ?? 'nco';
+
+// Sidebar navigation
 
 $sidebarLinks = [
     ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create_staff'],
-    ['title' => 'Edit Staff', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'user-edit', 'page' => 'edit_staff'],
-    ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/appointments.php', 'icon' => 'briefcase', 'page' => 'appointments'],
-    ['title' => 'Batch Appointments', 'url' => '/Armis2/admin_branch/batch_appointments.php', 'icon' => 'tasks', 'page' => 'batch_appointments'],
-    ['title' => 'Pending Approvals', 'url' => '/Armis2/admin_branch/pending_appointments.php', 'icon' => 'clock', 'page' => 'pending_appointments'],
-    ['title' => 'Appointment History', 'url' => '/Armis2/admin_branch/appointment_history.php', 'icon' => 'history', 'page' => 'appointment_history'],
-    ['title' => 'Appointment Types', 'url' => '/Armis2/admin_branch/appointment_types.php', 'icon' => 'clipboard-list', 'page' => 'appointment_types'],
-    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/medals.php', 'icon' => 'medal', 'page' => 'medals'],
+    ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'],
+    ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create'],
+    ['title' => 'Promotions', 'url' => '/Armis2/admin_branch/promote_staff.php', 'icon' => 'arrow-up', 'page' => 'promotions'],
+    ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/appointments.php', 'icon' => 'user-tie', 'page' => 'appointments'],
+    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medal.php', 'icon' => 'medal', 'page' => 'medals'],
+    [
+        'title' => 'Seniority Rolls',
+        'icon' => 'users',
+        'children' => [
+            ['title' => 'Officer Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php?report_type=officer', 'page' => 'seniority'],
+            ['title' => 'NCO Seniority', 'url' => '/Armis2/admin_branch/reports_nco_seniority.php?report_type=nco', 'page' => 'seniority'],
+            ['title' => 'CE Seniority', 'url' => '/Armis2/admin_branch/reports_ce_seniority.php?report_type=ce', 'page' => 'seniority'],
+        ]
+    ],
+    [
+        'title' => 'Norminal Rolls',
+        'icon' => 'bars',
+        'children' => [
+            ['title' => 'Officer Norminal Roll', 'url' => '/Armis2/admin_branch/reports_officer_norminal.php?report_type=officer'],
+            ['title' => 'NCO Norminal Roll', 'url' => '/Armis2/admin_branch/reports_nco_norminal.php?report_type=nco'],
+            ['title' => 'CE Norminal Roll', 'url' => '/Armis2/admin_branch/reports_ce_norminal.php?report_type=ce'],
+        ]
+    ],
     [
         'title' => 'Reports',
         'icon' => 'chart-bar',
         'page' => 'reports',
         'children' => [
-            ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
-            ['title' => 'Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php'],
             ['title' => 'Unit List', 'url' => '/Armis2/admin_branch/reports_units.php'],
+            ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
             ['title' => 'Contracts', 'url' => '/Armis2/admin_branch/reports_contract.php'],
             ['title' => 'Courses', 'url' => '/Armis2/admin_branch/reports_courses.php'],
             ['title' => 'Deceased', 'url' => '/Armis2/admin_branch/reports_deceased.php'],
@@ -40,11 +60,13 @@ $sidebarLinks = [
             ['title' => 'Rank', 'url' => '/Armis2/admin_branch/reports_rank.php'],
             ['title' => 'Retired', 'url' => '/Armis2/admin_branch/reports_retired.php'],
             ['title' => 'Trade', 'url' => '/Armis2/admin_branch/reports_trade.php'],
-            ['title' => 'Corps', 'url' => '/Armis2/admin_branch/reports_corps.php']
+            ['title' => 'Corps', 'url' => '/Armis2/admin_branch/reports_corps.php'],
+            ['title' => 'Units', 'url' => '/Armis2/admin_branch/reports_units.php'],
         ]
     ],
 ];
 
+// Get database connection
 $pdo = getDbConnection();
 
 // Helper function to format names in title case (capitalize each word)
@@ -53,16 +75,15 @@ function formatSentenceCase($name) {
     return ucwords(strtolower(trim($name)));
 }
 
-function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory, $selectedAppt) {
-    $rankSql = "SELECT DISTINCT r.id, r.name FROM ranks r JOIN staff s ON s.rank_id = r.id WHERE s.svcStatus = 'Active'";
-    $unitSql = "SELECT DISTINCT u.id, u.name FROM units u JOIN staff s ON s.unit_id = u.id WHERE s.svcStatus = 'Active'";
-    $catSql = "SELECT DISTINCT s.category FROM staff s WHERE s.category IS NOT NULL AND s.category <> '' AND s.svcStatus = 'Active'";
-    $apptSql = "SELECT DISTINCT s.appt FROM staff s WHERE s.appt IS NOT NULL AND s.appt <> '' AND s.svcStatus = 'Active'";
-    
+// Dynamic filter options (only for active NCO staff)
+function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory) {
+    $rankSql = "SELECT DISTINCT r.id, r.name FROM ranks r JOIN staff s ON s.rank_id = r.id WHERE s.svcStatus = 'Active' AND s.category = 'NCO'";
+    $unitSql = "SELECT DISTINCT u.id, u.name FROM units u JOIN staff s ON s.unit_id = u.id WHERE s.svcStatus = 'Active' AND s.category = 'NCO'";
+    $catSql  = "SELECT DISTINCT s.category FROM staff s WHERE s.category IS NOT NULL AND s.category <> '' AND s.svcStatus = 'Active'";
+
     $rankParams = [];
     $unitParams = [];
-    $catParams = [];
-    $apptParams = [];
+    $catParams  = [];
 
     if ($selectedUnit) {
         $rankSql .= " AND s.unit_id = ?";
@@ -72,10 +93,6 @@ function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory
         $rankSql .= " AND s.category = ?";
         $rankParams[] = $selectedCategory;
     }
-    if ($selectedAppt) {
-        $rankSql .= " AND s.appt = ?";
-        $rankParams[] = $selectedAppt;
-    }
     if ($selectedRank) {
         $unitSql .= " AND s.rank_id = ?";
         $unitParams[] = $selectedRank;
@@ -83,10 +100,6 @@ function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory
     if ($selectedCategory) {
         $unitSql .= " AND s.category = ?";
         $unitParams[] = $selectedCategory;
-    }
-    if ($selectedAppt) {
-        $unitSql .= " AND s.appt = ?";
-        $unitParams[] = $selectedAppt;
     }
     if ($selectedUnit) {
         $catSql .= " AND s.unit_id = ?";
@@ -96,68 +109,56 @@ function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory
         $catSql .= " AND s.rank_id = ?";
         $catParams[] = $selectedRank;
     }
-    if ($selectedAppt) {
-        $catSql .= " AND s.appt = ?";
-        $catParams[] = $selectedAppt;
-    }
-    if ($selectedUnit) {
-        $apptSql .= " AND s.unit_id = ?";
-        $apptParams[] = $selectedUnit;
-    }
-    if ($selectedRank) {
-        $apptSql .= " AND s.rank_id = ?";
-        $apptParams[] = $selectedRank;
-    }
-    if ($selectedCategory) {
-        $apptSql .= " AND s.category = ?";
-        $apptParams[] = $selectedCategory;
-    }
 
     $ranks = fetchAll($rankSql . " ORDER BY r.name ASC", $rankParams);
     $units = fetchAll($unitSql . " ORDER BY u.name ASC", $unitParams);
     $categories = fetchAll($catSql . " ORDER BY s.category ASC", $catParams);
-    $appointments = fetchAll($apptSql . " ORDER BY s.appt ASC", $apptParams);
 
-    return [$ranks, $units, $categories, $appointments];
+    return [$ranks, $units, $categories];
 }
 
 $filter_rank = $_GET['rankID'] ?? '';
 $filter_unit = $_GET['unitID'] ?? '';
 $filter_category = $_GET['category'] ?? '';
-$filter_appt = $_GET['appointment'] ?? '';
 $search = trim($_GET['search'] ?? '');
 $params = [];
 
-list($ranks, $units, $categories, $appointments) = getDynamicOptions($pdo, $filter_rank, $filter_unit, $filter_category, $filter_appt);
+list($ranks, $units, $categories) = getDynamicOptions($pdo, $filter_rank, $filter_unit, $filter_category);
 
 $per_page = intval($_GET['per_page'] ?? 25);
 $page = max(1, intval($_GET['page'] ?? 1));
 $offset = ($page - 1) * $per_page;
 
 $sortable_columns = [
-    'appt' => 's.appt',
-    'rank' => 'r.level',
     'service_number' => 's.service_number',
+    'rank' => 'r.level',
     'surname' => 's.last_name',
     'first_name' => 's.first_name',
     'unit' => 'u.name',
     'category' => 's.category',
     'DOB' => 's.DOB',
-    'attestDate' => 's.attestDate'
+    'attestDate' => 's.attestDate',
+    'subWef' => 's.subWef',
+    'tempWef' => 's.tempWef',
+    'svcStatus' => 's.svcStatus'
 ];
 $sort_col = $_GET['sort_col'] ?? '';
 $sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
+
 
 $sql = "SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, r.level as rankIndex, u.name as unitName, u.code as unitCode
         FROM staff s
         LEFT JOIN ranks r ON s.rank_id = r.id
         LEFT JOIN units u ON s.unit_id = u.id
-        WHERE s.svcStatus = 'Active'";
-
+        WHERE s.svcStatus = 'Active' AND s.category = 'NCO'";
 $count_sql = "SELECT COUNT(*) FROM staff s
         LEFT JOIN ranks r ON s.rank_id = r.id
         LEFT JOIN units u ON s.unit_id = u.id
-        WHERE s.svcStatus = 'Active'";
+        WHERE s.svcStatus = 'Active' AND s.category = 'NCO'";
+
+// Filter by report type
+// Already filtered to NCO in the base query
+
 $count_params = [];
 
 if ($filter_rank !== '') {
@@ -178,33 +179,28 @@ if ($filter_category !== '') {
     $params[] = $filter_category;
     $count_params[] = $filter_category;
 }
-if ($filter_appt !== '') {
-    $sql .= " AND s.appt = ?";
-    $count_sql .= " AND s.appt = ?";
-    $params[] = $filter_appt;
-    $count_params[] = $filter_appt;
-}
 if ($search !== '') {
-    $sql .= " AND (s.appt LIKE ? OR s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR u.name LIKE ? OR s.category LIKE ?)";
-    $count_sql .= " AND (s.appt LIKE ? OR s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR u.name LIKE ? OR s.category LIKE ?)";
-    for ($i = 0; $i < 7; $i++) {
+    $sql .= " AND (s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR u.name LIKE ? OR s.category LIKE ? OR s.svcStatus LIKE ? OR s.DOB LIKE ? OR s.attestDate LIKE ?)";
+    $count_sql .= " AND (s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR u.name LIKE ? OR s.category LIKE ? OR s.svcStatus LIKE ? OR s.DOB LIKE ? OR s.attestDate LIKE ?)";
+    for ($i = 0; $i < 9; $i++) {
         $params[] = "%$search%";
         $count_params[] = "%$search%";
     }
 }
 
-// Handle sorting
-
-if ($sort_col && isset($sortable_columns[$sort_col])) {
+if ($sort_col && array_key_exists($sort_col, $sortable_columns)) {
     $sql .= " ORDER BY " . $sortable_columns[$sort_col] . " $sort_dir";
 } else {
-    $sql .= " ORDER BY r.level ASC, COALESCE(s.subWef, s.tempWef, s.attestDate) ASC, s.service_number ASC";
+    $sql .= " ORDER BY s.service_number ASC";
 }
+
 $sql .= " LIMIT $per_page OFFSET $offset";
 
 $staff = fetchAll($sql, $params);
-$total_records = fetchAll($count_sql, $count_params)[0]->{'COUNT(*)'};
-$total_pages = ceil($total_records / $per_page);
+$stmt = $pdo->prepare($count_sql);
+$stmt->execute($count_params);
+$total_staff = $stmt->fetchColumn();
+$total_pages = ceil($total_staff / $per_page);
 
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';
@@ -213,7 +209,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
     <div class="container-fluid">
         <div class="main-content">
             <h1 class="section-title mb-4">
-                <i class="fas fa-briefcase"></i> <?= htmlspecialchars($pageTitle) ?>
+                <i class="fas fa-list"></i> <?= htmlspecialchars($pageTitle) ?>
             </h1>
             <div class="alert alert-info d-flex align-items-center mb-3" role="alert">
                 <i class="fas fa-question-circle me-2"></i>
@@ -226,15 +222,29 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                 <div class="modal-dialog">
                     <div class="modal-content">
                         <div class="modal-header">
-                            <h5 class="modal-title" id="helpModalLabel">Report Help</h5>
+                            <h5 class="modal-title" id="helpModalLabel">NCO Nominal Roll Help</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
+                            <ul class="nav nav-tabs mb-3" id="seniorityTabs" role="tablist">
+                                <?php foreach ([
+                                    'officer' => 'Officers',
+                                    'nco' => 'NCOs',
+                                    'ce' => 'CEs'
+                                ] as $key => $label): ?>
+                                    <li class="nav-item" role="presentation">
+                                        <a class="nav-link<?= (($reportType ?? ($_GET['report_type'] ?? 'officer'))==$key)?' active':'' ?>" href="/Armis2/admin_branch/reports_<?= $key == 'officer' ? 'officer' : ($key == 'nco' ? 'nco' : 'ce') ?>_norminal.php?report_type=<?= $key ?>&page=1" role="tab">
+                                            <?= $label ?> Report
+                                        </a>
+                                    </li>
+                                <?php endforeach; ?>
+                            </ul>
                         <div class="modal-body">
                             <ul>
-                                <li>Use filters and search for instant results.</li>
-                                <li>Export: CSV, Excel, PDF. Print for a print-friendly table.</li>
-                                <li>Show/hide columns using the checkboxes.</li>
-                                <li>Double-click row for history/audit details.</li>
+                                <li><b>Filtering:</b> Use dropdowns to filter, and type in the search box for instant filtering.</li>
+                                <li><b>Export:</b> Export to CSV, Excel, or PDF with the export buttons.</li>
+                                <li><b>Print:</b> Click Print for a print-friendly version of the table.</li>
+                                <li><b>Customize Columns:</b> Show/hide columns using checkboxes above the table.</li>
+                                <li><b>Details:</b> Double-click a row to see audit/history details.</li>
                             </ul>
                         </div>
                     </div>
@@ -242,15 +252,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             </div>
             <form class="row g-3 mb-4" method="get" action="">
                 <div class="col-md-2">
-                    <select name="appointment" id="apptFilter" class="form-select">
-                        <option value="">All Appointments</option>
-                        <?php foreach ($appointments as $a): ?>
-                            <option value="<?= htmlspecialchars($a->appt) ?>" <?= ($filter_appt == $a->appt) ? 'selected' : '' ?>><?= htmlspecialchars($a->appt) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <select name="rankID" id="rankFilter" class="form-select">
+                    <select name="rankID" id="rankFilter" class="form-select" aria-label="Filter by rank">
                         <option value="">All Ranks</option>
                         <?php foreach ($ranks as $r): ?>
                             <option value="<?= $r->id ?>" <?= ($filter_rank == $r->id) ? 'selected' : '' ?>><?= htmlspecialchars($r->name) ?></option>
@@ -258,45 +260,50 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <select name="unitID" id="unitFilter" class="form-select">
+                    <select name="unitID" id="unitFilter" class="form-select" aria-label="Filter by unit">
                         <option value="">All Units</option>
                         <?php foreach ($units as $u): ?>
                             <option value="<?= $u->id ?>" <?= ($filter_unit == $u->id) ? 'selected' : '' ?>><?= htmlspecialchars($u->name) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-md-2">
-                    <select name="category" id="categoryFilter" class="form-select">
-                        <option value="">All Categories</option>
-                        <?php foreach ($categories as $cat): ?>
-                            <option value="<?= htmlspecialchars($cat->category) ?>" <?= ($filter_category == $cat->category) ? 'selected' : '' ?>><?= htmlspecialchars($cat->category) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
                 <div class="col-md-3">
-                    <input type="text" id="appointmentSearch" name="search" class="form-control" placeholder="Quick Search..." value="<?= htmlspecialchars($search) ?>">
+                    <input type="text" id="senioritySearch" name="search" class="form-control" placeholder="Quick Search..." aria-label="Quick search" value="<?=htmlspecialchars($search)?>">
                 </div>
                 <div class="col-md-1">
-                    <select name="per_page" class="form-select">
-                        <?php foreach ([10,25,50,100] as $pp): ?>
-                        <option value="<?= $pp ?>" <?= ($per_page == $pp) ? 'selected' : '' ?>><?= $pp ?></option>
+                    <select name="per_page" class="form-select" title="Records per page">
+                        <?php foreach ([10, 25, 50, 100] as $pp): ?>
+                            <option value="<?= $pp ?>" <?= ($per_page == $pp) ? 'selected' : '' ?>><?= $pp ?></option>
                         <?php endforeach; ?>
                     </select>
+                </div>
+                <div class="col-md-2 d-grid">
+                    <button type="submit" class="btn btn-primary"><i class="fa fa-search"></i> Filter</button>
                 </div>
             </form>
             <div class="mb-2">
                 <strong>Show/Hide Columns:</strong>
-                <?php $columns = [
-                    'appt'=>'Appointment','rank'=>'Rank','service_number'=>'Service No','surname'=>'Surname','first_name'=>'First Name(s)',
-                    'unit'=>'Unit','category'=>'Category','DOB'=>'Date of Birth','attestDate'=>'Date of Enlistment'
-                ]; foreach ($columns as $key => $label): ?>
-                <input type="checkbox" checked data-col="<?= $key ?>" class="toggle-col" id="col_<?= $key ?>">
-                <label for="col_<?= $key ?>" class="me-2"><?= $label ?></label>
+                <?php
+                $columns = [
+                    'service_number' => 'Service No',
+                    'rank' => 'Rank',
+                    'surname' => 'Surname',
+                    'first_name' => 'First Name(s)',
+                    'unit' => 'Unit',
+                    'DOB' => 'Date of Birth',
+                    'attestDate' => 'Date of Enlistment',
+                    'svcStatus' => 'Status'
+                ];
+                foreach ($columns as $key => $label):
+                ?>
+                    <label class="me-3">
+                        <input type="checkbox" class="toggle-col" data-col="<?= $key ?>" checked> <?= $label ?>
+                    </label>
                 <?php endforeach; ?>
             </div>
             <div class="table-responsive print-friendly">
                 <form id="batchForm" method="post" action="/Armis2/admin_branch/batch_action.php">
-                <table class="table table-bordered table-hover align-middle" id="appointmentTable">
+                <table class="table table-bordered table-hover align-middle" id="seniorityTable">
                     <thead class="table-light">
                         <tr>
                             <th><input type="checkbox" id="selectAllRows" aria-label="Select all"></th>
@@ -318,20 +325,21 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if (!$staff): ?>
-                            <tr><td colspan="<?= count($columns)+2 ?>" class="text-center text-muted">No staff found.</td></tr>
-                        <?php else: foreach($staff as $s): ?>
+                        <?php if (count($staff) == 0): ?>
+                            <tr><td colspan="<?= count($columns)+2 ?>" class="text-center text-muted">No NCOs found.</td></tr>
+                        <?php else: $i=1; foreach ($staff as $s): ?>
                             <tr>
-                                <td><input type="checkbox" name="selected_ids[]" value="<?= htmlspecialchars($s->id) ?>" class="rowCheckbox"></td>
-                                <td class="col-appt"><?= htmlspecialchars($s->appt ?? '') ?></td>
-                                <td class="col-rank"><?= htmlspecialchars($s->rankAbbr ?? '') ?></td>
+                                <td>
+                                    <input type="checkbox" name="selected_ids[]" value="<?= htmlspecialchars($s->id) ?>" class="rowCheckbox">
+                                </td>
                                 <td class="col-service_number"><?= htmlspecialchars($s->service_number ?? '') ?></td>
+                                <td class="col-rank"><?= htmlspecialchars($s->rankAbbr ?? $s->rankName ?? '') ?></td>
                                 <td class="col-surname"><?= htmlspecialchars(formatSentenceCase($s->last_name ?? '')) ?></td>
                                 <td class="col-first_name"><?= htmlspecialchars(formatSentenceCase($s->first_name ?? '')) ?></td>
-                                <td class="col-unit"><?= htmlspecialchars($s->unitCode ?? '') ?></td>
-                                <td class="col-category"><?= htmlspecialchars($s->category ?? '') ?></td>
+                                <td class="col-unit"><?= htmlspecialchars($s->unitCode ?? $s->unitName ?? '') ?></td>
                                 <td class="col-DOB"><?= htmlspecialchars($s->DOB ?? '') ?></td>
                                 <td class="col-attestDate"><?= htmlspecialchars($s->attestDate ?? '') ?></td>
+                                <td class="col-svcStatus"><?= htmlspecialchars($s->svcStatus ?? '') ?></td>
                                 <td>
                                     <?php if (!empty($s->id)): ?>
                                         <a href="/Armis2/admin_branch/view_staff.php?id=<?= urlencode($s->id) ?>" class="btn btn-outline-primary btn-sm" target="_blank" aria-label="View staff">View</a>
@@ -339,89 +347,65 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         <span class="text-muted">N/A</span>
                                     <?php endif; ?>
                                     <a href="/Armis2/admin_branch/edit_staff.php?svcNo=<?= urlencode($s->service_number) ?>" class="btn btn-outline-secondary btn-sm ms-1" aria-label="Edit staff">Edit</a>
-                                    <a href="/Armis2/admin_branch/reset_password.php?svcNo=<?= urlencode($s->service_number) ?>" class="btn btn-outline-warning btn-sm ms-1" aria-label="Reset password">Reset Password</a>
+                                    <!--<a href="/Armis2/reset_password.php?svcNo=<?= urlencode($s->service_number) ?>" class="btn btn-outline-warning btn-sm ms-1" aria-label="Reset password">Reset Password</a>-->
                                 </td>
                             </tr>
                         <?php endforeach; endif; ?>
                     </tbody>
                 </table>
                 <div class="d-flex justify-content-start align-items-center gap-2 mb-2">
-                    <button type="submit" name="action" value="export" class="btn btn-outline-success btn-sm"><i class="fa fa-file-csv"></i> Export Selected</button>
+                    <button type="button" id="exportCSVBtn" class="btn btn-outline-success btn-sm"><i class="fa fa-file-csv"></i> Export CSV</button>
                     <button type="button" id="exportExcelBtn" class="btn btn-outline-success btn-sm"><i class="fa fa-file-excel"></i> Excel</button>
                     <button type="button" id="exportPDFBtn" class="btn btn-outline-danger btn-sm"><i class="fa fa-file-pdf"></i> PDF</button>
+                    <button type="button" class="btn btn-outline-info btn-sm print-btn"><i class="fa fa-print"></i> Print</button>
                     <button type="submit" name="action" value="delete" class="btn btn-outline-danger btn-sm" onclick="return confirm('Are you sure you want to delete selected records?');"><i class="fa fa-trash"></i> Delete Selected</button>
                 </div>
                 </form>
-                <div class="text-end mt-2">
-                    <button onclick="window.print()" class="btn btn-outline-secondary btn-sm print-btn"><i class="fa fa-print"></i> Print Report</button>
-                    <button id="exportCSVBtn" class="btn btn-outline-success btn-sm ms-2"><i class="fa fa-file-csv"></i> Export CSV</button>
-                    <button id="exportExcelBtn" class="btn btn-outline-success btn-sm"><i class="fa fa-file-excel"></i> Excel</button>
-                    <button id="exportPDFBtn" class="btn btn-outline-danger btn-sm"><i class="fa fa-file-pdf"></i> PDF</button>
-                </div>
             </div>
             <div class="d-flex justify-content-center my-3">
-                <nav aria-label="Appointments pagination">
+                <nav aria-label="Seniority pagination">
                     <ul class="pagination pagination-sm">
+                        <li class="page-item<?= ($page <= 1) ? ' disabled' : '' ?>">
+                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page-1])) ?>" aria-label="Previous">&laquo;</a>
+                        </li>
                         <?php
                         $max_links = 7;
-                        $start = max(1, $page - intval($max_links / 2));
+                        $start = max(1, $page - intval($max_links/2));
                         $end = min($total_pages, $start + $max_links - 1);
-                        
-                        if ($page > 1): ?>
-                        <li class="page-item">
-                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => 1])) ?>">&laquo; First</a>
+                        if ($end - $start + 1 < $max_links) $start = max(1, $end - $max_links + 1);
+                        for ($p = $start; $p <= $end; $p++):
+                        ?>
+                            <li class="page-item<?= ($p == $page) ? ' active' : '' ?>">
+                                <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $p])) ?>"><?= $p ?></a>
+                            </li>
+                        <?php endfor; ?>
+                        <li class="page-item<?= ($page >= $total_pages) ? ' disabled' : '' ?>">
+                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page+1])) ?>" aria-label="Next">&raquo;</a>
                         </li>
-                        <li class="page-item">
-                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page - 1])) ?>">&lsaquo; Prev</a>
-                        </li>
-                        <?php endif;
-                        
-                        for ($p = $start; $p <= $end; $p++): ?>
-                        <li class="page-item<?= ($p == $page) ? ' active' : '' ?>">
-                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $p])) ?>"><?= $p ?></a>
-                        </li>
-                        <?php endfor;
-                        
-                        if ($page < $total_pages): ?>
-                        <li class="page-item">
-                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page + 1])) ?>">Next &rsaquo;</a>
-                        </li>
-                        <li class="page-item">
-                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $total_pages])) ?>">Last &raquo;</a>
-                        </li>
-                        <?php endif; ?>
                     </ul>
                 </nav>
             </div>
-            <p class="text-muted small">Showing <?= count($staff) ?> of <?= $total_records ?> records (Page <?= $page ?> of <?= $total_pages ?>)</p>
         </div>
     </div>
 </div>
 <style>
 @media print {
-    body * { visibility: hidden !important; }
-    .print-friendly, .print-friendly * { visibility: visible !important; }
-    .print-friendly { position: absolute !important; left: 0; top: 0; width: 100vw; }
+    body * {
+        visibility: hidden !important;
+    }
+    .print-friendly, .print-friendly * {
+        visibility: visible !important;
+        print-color-adjust: exact;
+    }
+    .print-friendly {
+        position: absolute !important;
+        left: 0; top: 0; width: 100vw;
+    }
 }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.20.0/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
-// Sort function
-function sortTable(column) {
-    const currentParams = new URLSearchParams(window.location.search);
-    let newDir = 'asc';
-    
-    if (currentParams.get('sort_col') === column && currentParams.get('sort_dir') === 'asc') {
-        newDir = 'desc';
-    }
-    
-    currentParams.set('sort_col', column);
-    currentParams.set('sort_dir', newDir);
-    
-    window.location.search = currentParams.toString();
-}
-
 document.querySelectorAll('.toggle-col').forEach(function(box) {
     let saved = localStorage.getItem('col-' + box.dataset.col);
     if (saved !== null) box.checked = saved === 'true';
@@ -438,8 +422,15 @@ document.querySelectorAll('.toggle-col').forEach(function(box) {
     });
 });
 
+document.getElementById('selectAllRows').addEventListener('change', function() {
+    var checked = this.checked;
+    document.querySelectorAll('.rowCheckbox').forEach(function(cb) {
+        cb.checked = checked;
+    });
+});
+
 document.getElementById('exportCSVBtn').addEventListener('click', function() {
-    let table = document.getElementById('appointmentTable');
+    let table = document.getElementById('seniorityTable');
     let rows = Array.from(table.rows);
     let visibleCols = [];
     rows[0].querySelectorAll('th').forEach(function(th, idx) {
@@ -455,48 +446,49 @@ document.getElementById('exportCSVBtn').addEventListener('click', function() {
     let blob = new Blob([csv], {type:'text/csv'});
     let link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = 'appointment_report.csv';
+    link.download = 'nco_nominal_report.csv';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 });
 
 document.getElementById('exportExcelBtn').addEventListener('click', function() {
-    let table = document.getElementById('appointmentTable');
-    let wb = XLSX.utils.table_to_book(table, {sheet:"Appointments"});
-    XLSX.writeFile(wb, 'appointment_report.xlsx');
+    let table = document.getElementById('seniorityTable');
+    let wb = XLSX.utils.table_to_book(table, {sheet:"NCO Nominal"});
+    XLSX.writeFile(wb, 'nco_nominal_report.xlsx');
 });
 
 document.getElementById('exportPDFBtn').addEventListener('click', function(){
-    let table = document.getElementById('appointmentTable');
+    let table = document.getElementById('seniorityTable');
     let rows = Array.from(table.rows).map(row => Array.from(row.cells).map(cell => cell.innerText));
     const { jsPDF } = window.jspdf;
     let doc = new jsPDF();
     let startY = 20;
-    doc.text("Appointment Report", 14, startY);
+    doc.text("NCO Nominal Report", 14, startY);
     rows.forEach(function(row, idx){
         doc.text(row.join(" | "), 14, startY + 8 + idx*8);
     });
-    doc.save("appointment_report.pdf");
+    doc.save("nco_nominal_report.pdf");
 });
 
 document.querySelector('.print-btn').addEventListener('click', function(){
     window.print();
 });
 
-['apptFilter','rankFilter','unitFilter','categoryFilter'].forEach(function(id){
+// Dynamic dropdown filtering via AJAX (simulate for demo, ideally do via endpoint)
+['rankFilter','unitFilter'].forEach(function(id){
     document.getElementById(id).addEventListener('change', function(){
         document.forms[0].submit();
     });
 });
 
-document.getElementById('appointmentSearch').addEventListener('input', function() {
+// Dynamic searchbar: client-side instant filter
+document.getElementById('senioritySearch').addEventListener('input', function() {
     const query = this.value.toLowerCase();
-    document.querySelectorAll('#appointmentTable tbody tr').forEach(function(row) {
+    document.querySelectorAll('#seniorityTable tbody tr').forEach(function(row) {
         const text = row.textContent.toLowerCase();
         row.style.display = text.includes(query) ? '' : 'none';
     });
 });
 </script>
-
 <?php include dirname(__DIR__) . '/shared/footer.php'; ?>

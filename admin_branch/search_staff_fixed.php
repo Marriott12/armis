@@ -21,29 +21,6 @@ require_once dirname(__DIR__) . '/shared/database_connection.php';
 requireAuth();
 
 // Set JSON header
-
-/**
- * Staff Search AJAX Endpoint
- * 
- * Provides staff search functionality for dropdowns and forms
- */
-
-// Enable error reporting for debugging
-error_reporting(E_ALL);
-ini_set('display_errors', 0);
-ini_set('log_errors', 1);
-
-// Start session and check authentication
-session_start();
-
-// Include required files
-require_once __DIR__ . '/includes/auth.php';
-require_once dirname(__DIR__) . '/shared/database_connection.php';
-
-// Verify user is logged in
-requireAuth();
-
-// Set JSON header
 header('Content-Type: application/json');
 
 try {
@@ -105,7 +82,7 @@ try {
     }
     
     // Add ordering and limit
-    $sql .= " ORDER BY r.level ASC, s.last_name ASC, s.first_name ASC LIMIT :limit";
+    $sql .= " ORDER BY r.level ASC, s.last_name ASC, s.first_name ASC LIMIT " . $limit;
     
     // Prepare and execute query
     $stmt = $pdo->prepare($sql);
@@ -114,7 +91,6 @@ try {
     foreach ($params as $key => $value) {
         $stmt->bindValue($key, $value);
     }
-    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
     
     $stmt->execute();
     $results = $stmt->fetchAll(PDO::FETCH_ASSOC);

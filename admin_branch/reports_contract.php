@@ -39,6 +39,12 @@ $sidebarLinks = [
 
 $pdo = getDbConnection();
 
+// Helper function to format names in title case (capitalize each word)
+function formatSentenceCase($name) {
+    if (empty($name)) return '';
+    return ucwords(strtolower(trim($name)));
+}
+
 function getContractOptions($pdo, $unit, $rank, $cat) {
     $apptSql = "SELECT DISTINCT appt FROM staff WHERE appt IS NOT NULL AND appt <> '' AND svcStatus = 'Contract'";
     $unitSql = "SELECT DISTINCT u.id, u.name FROM units u JOIN staff s ON s.unit_id = u.id WHERE s.svcStatus = 'Contract'";
@@ -59,8 +65,23 @@ $search = trim($_GET['search'] ?? '');
 
 list($appts, $units, $ranks, $categories) = getContractOptions($pdo, $filter_unit, $filter_rank, $filter_category);
 
+// Sorting functionality
+$sortable_columns = [
+    'appt' => 's.appt',
+    'rank' => 'r.level',
+    'service_number' => 's.service_number',
+    'surname' => 's.last_name',
+    'first_name' => 's.first_name',
+    'unit' => 'u.name',
+    'category' => 's.category',
+    'DOB' => 's.DOB',
+    'attestDate' => 's.attestDate'
+];
+$sort_col = $_GET['sort_col'] ?? '';
+$sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
+
 $params = [];
-$sql = "SELECT s.*, r.name as rankName, u.name as unitName FROM staff s
+$sql = "SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, u.name as unitName, u.code as unitCode FROM staff s
         LEFT JOIN ranks r ON s.rank_id = r.id
         LEFT JOIN units u ON s.unit_id = u.id
         WHERE s.svcStatus = 'Contract'";
@@ -72,7 +93,14 @@ if ($search !== '') {
     $sql .= " AND (s.appt LIKE ? OR s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR u.name LIKE ? OR s.category LIKE ?)";
     for ($i = 0; $i < 7; $i++) $params[] = "%$search%";
 }
-$sql .= " ORDER BY r.level ASC, s.last_name ASC, s.first_name ASC";
+
+// Add sorting
+if ($sort_col && isset($sortable_columns[$sort_col])) {
+    $sql .= " ORDER BY " . $sortable_columns[$sort_col] . " " . $sort_dir;
+} else {
+    $sql .= " ORDER BY r.level ASC, s.last_name ASC, s.first_name ASC";
+}
+
 $per_page = intval($_GET['per_page'] ?? 25);
 $page = max(1, intval($_GET['page'] ?? 1)); $offset = ($page - 1) * $per_page;
 $sql .= " LIMIT $per_page OFFSET $offset";
@@ -170,7 +198,18 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <tr>
                             <th>#</th>
                             <?php foreach ($columns as $key => $label): ?>
-                                <th class="col-<?= $key ?>"><?= $label ?></th>
+                                <th class="col-<?= $key ?>">
+                                    <a href="?<?= http_build_query(array_merge($_GET, ['sort_col' => $key, 'sort_dir' => ($sort_col==$key && $sort_dir=='ASC')?'desc':'asc', 'page'=>1])) ?>"
+                                       class="text-decoration-none text-dark"
+                                       aria-label="Sort by <?= $label ?>">
+                                        <?= $label ?>
+                                        <?php if ($sort_col == $key): ?>
+                                            <i class="fa fa-sort-<?= strtolower($sort_dir)=='asc' ? 'up' : 'down' ?>"></i>
+                                        <?php else: ?>
+                                            <i class="fa fa-sort text-muted"></i>
+                                        <?php endif; ?>
+                                    </a>
+                                </th>
                             <?php endforeach; ?>
                         </tr>
                     </thead>
@@ -181,11 +220,11 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             <tr ondblclick="alert('Audit/History details coming soon.')">
                                 <td><?= $i++ ?></td>
                                 <td class="col-appt"><?= htmlspecialchars($s->appt ?? '') ?></td>
-                                <td class="col-rank"><?= htmlspecialchars($s->rankName ?? '') ?></td>
+                                <td class="col-rank"><?= htmlspecialchars($s->rankAbbr ?? $s->rankName ?? '') ?></td>
                                 <td class="col-service_number"><?= htmlspecialchars($s->service_number ?? '') ?></td>
-                                <td class="col-surname"><?= htmlspecialchars($s->last_name ?? '') ?></td>
-                                <td class="col-first_name"><?= htmlspecialchars($s->first_name ?? '') ?></td>
-                                <td class="col-unit"><?= htmlspecialchars($s->unitName ?? '') ?></td>
+                                <td class="col-surname"><?= htmlspecialchars(formatSentenceCase($s->last_name ?? '')) ?></td>
+                                <td class="col-first_name"><?= htmlspecialchars(formatSentenceCase($s->first_name ?? '')) ?></td>
+                                <td class="col-unit"><?= htmlspecialchars($s->unitCode ?? $s->unitName ?? '') ?></td>
                                 <td class="col-category"><?= htmlspecialchars($s->category ?? '') ?></td>
                                 <td class="col-DOB"><?= htmlspecialchars($s->DOB ?? '') ?></td>
                                 <td class="col-attestDate"><?= htmlspecialchars($s->attestDate ?? '') ?></td>

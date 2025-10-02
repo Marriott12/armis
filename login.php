@@ -3,7 +3,6 @@ session_start();
 
 // Include database functions
 require_once __DIR__ . '/shared/database_connection.php';
-require_once __DIR__ . '/shared/debug.php';
 
 // Debug: Log form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -286,8 +285,12 @@ $pageTitle = "Login";
                         </button>
                     </form>
                     
+                    <div class="text-center mt-3 mb-2">
+                        <a href="/Armis2/reset_password.php" class="btn btn-link text-decoration-none">
+                            <i class="fas fa-key"></i> Forgot Password?
+                        </a>
+                    </div>
                     <hr class="my-4">
-                    
                     <div class="text-center">
                         <a href="/Armis2/" class="btn btn-outline-secondary">
                             <i class="fas fa-home"></i> Back to Home
