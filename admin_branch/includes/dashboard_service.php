@@ -508,7 +508,7 @@ class DashboardService {
     /**
      * Get rank distribution for analytics
      */
-    private function getRankDistribution() {
+    public function getRankDistribution() {
         try {
             $stmt = $this->db->prepare("
                 SELECT 

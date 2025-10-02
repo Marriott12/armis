@@ -182,13 +182,8 @@ try {
         // Mark notification as read - DISABLED
         case 'mark_notification_read':
             // Notifications completely disabled
-            $response['data'] = ['message' => 'Notifications are disabled'];
-                    $response['message'] = 'Database error';
-                }
-            } else {
-                $response['success'] = false;
-                $response['message'] = 'Invalid request';
-            }
+            $response['success'] = false;
+            $response['message'] = 'Notifications are disabled';
             break;
             
         case 'get_all_dashboard_data':
