@@ -2138,170 +2138,26 @@ class DashboardService {
 }
 
 /**
- * Get dashboard data as JSON (for AJAX calls)
+ * LEGACY CODE REMOVED
+ * 
+ * The following functions were removed as they are no longer used:
+ * - getDashboardDataJSON() - Replaced by dashboard_api.php
+ * - getPersonnelTableData() - Now a class method
+ * - getActivitiesTableData() - Undefined, not implemented
+ * - getAlertsTableData() - Undefined, not implemented
+ * - getDrilldownData() - Undefined, not implemented
+ * - getDistinctValues() - Used mysqli instead of PDO
+ * - getRecentActivityFeed() - Used non-existent activity_log table
+ * - getHeatmapData() - Used non-existent performance_heatmap table
+ * 
+ * All dashboard data is now accessed via:
+ * - dashboard_api.php (main API endpoint)
+ * - DashboardService class methods (this file)
+ * 
+ * Migration Notes:
+ * - Use dashboard_api.php?action=get_[endpoint] for all AJAX calls
+ * - All methods are properly implemented as class methods above
+ * - Uses PDO consistently throughout
+ * - Proper error handling and caching implemented
  */
-function getDashboardDataJSON($type = 'all') {
-    global $pdo;
-    
-    try {
-        $service = new DashboardService($pdo);
-        $data = [];
-        
-        switch ($type) {
-            case 'kpi':
-                $data = $service->getKPIData();
-                break;
-            case 'personnel':
-                $data = $service->getPersonnelDistribution();
-                break;
-            case 'recruitment':
-                $data = $service->getRecruitmentTrends();
-                break;
-            case 'performance':
-                $data = $service->getPerformanceMetrics();
-                break;
-            case 'activities':
-                $data = $service->getRecentActivities();
-                break;
-            case 'ranks':
-                $data = $service->getRankDistribution();
-                break;
-            case 'all':
-            default:
-                $data = [
-                    'kpi' => $service->getKPIData(),
-                    'personnel_distribution' => $service->getPersonnelDistribution(),
-                    'recruitment_trends' => $service->getRecruitmentTrends(),
-                    'performance_metrics' => $service->getPerformanceMetrics(),
-                    'recent_activities' => $service->getRecentActivities(),
-                    'rank_distribution' => $service->getRankDistribution(),
-                    // Add personnel categories summary
-                    'personnel_categories' => $service->getPersonnelCategories(),
-                    // Add gender statistics for all categories
-                    'gender_stats' => $service->getGenderStats()
-                ];
-                break;
-        }
-        
-        header('Content-Type: application/json');
-        echo json_encode($data);
-        
-    } catch (Exception $e) {
-        error_log("Dashboard Data JSON Error: " . $e->getMessage());
-        header('Content-Type: application/json');
-        http_response_code(500);
-        echo json_encode(['error' => 'Failed to load dashboard data']);
-    }
-}
-
-// Handle AJAX requests for dashboard data
-if (isset($_GET['action']) && $_GET['action'] === 'get_dashboard_data') {
-    $type = $_GET['type'] ?? 'all';
-    
-    // Handle additional endpoint types
-    if ($type === 'personnel_table') {
-        header('Content-Type: application/json');
-        echo json_encode(['success' => true, 'data' => getPersonnelTableData($_GET)]);
-        exit;
-    }
-    
-    if ($type === 'activities_table') {
-        header('Content-Type: application/json');
-        echo json_encode(['success' => true, 'data' => getActivitiesTableData($_GET)]);
-        exit;
-    }
-    
-    if ($type === 'alerts_table') {
-        header('Content-Type: application/json');
-        echo json_encode(['success' => true, 'data' => getAlertsTableData($_GET)]);
-        exit;
-    }
-    
-    if ($type === 'drilldown') {
-        header('Content-Type: application/json');
-        echo json_encode(['success' => true, 'data' => getDrilldownData($_GET)]);
-        exit;
-    }
-    
-    if ($type === 'export') {
-        header('Content-Type: application/json');
-        echo json_encode(['success' => true, 'message' => exportDashboardData($_GET)]);
-        exit;
-    }
-    
-    if ($type === 'widget_state') {
-        header('Content-Type: application/json');
-        echo json_encode(['success' => true, 'message' => handleWidgetState($_GET)]);
-        exit;
-    }
-    
-    if ($type === 'activity_feed') {
-        // Return recent user activity feed
-        $feed = getRecentActivityFeed();
-        echo json_encode(['success' => true, 'feed' => $feed]);
-        exit;
-    }
-    
-    if ($type === 'heatmap') {
-        // Return heatmap data
-        $heatmap = getHeatmapData();
-        echo json_encode(['success' => true, 'heatmap' => $heatmap]);
-        exit;
-    }
-    
-    if ($type === 'filter_options') {
-        // Return units, ranks, statuses for filter dropdowns
-        $units = getDistinctValues('unit');
-        $ranks = getDistinctValues('rank');
-        $statuses = getDistinctValues('svcStatus');
-        echo json_encode(['success' => true, 'units' => $units, 'ranks' => $ranks, 'statuses' => $statuses]);
-        exit;
-    }
-    
-    // Default: handle standard dashboard data via the existing method
-    getDashboardDataJSON($type);
-    exit;
-}
-
-/**
- * Helper function to get distinct values from a staff field
- */
-function getDistinctValues($field) {
-    global $db;
-    $values = [];
-    $sql = "SELECT DISTINCT `$field` FROM staff WHERE `$field` IS NOT NULL AND `$field` <> ''";
-    $result = $db->query($sql);
-    while ($row = $result->fetch_assoc()) {
-        $values[] = $row[$field];
-    }
-    return $values;
-}
-
-/**
- * Get recent activity feed for dashboard
- */
-function getRecentActivityFeed() {
-    global $db;
-    $feed = [];
-    $sql = "SELECT user, action, time FROM activity_log ORDER BY time DESC LIMIT 20";
-    $result = $db->query($sql);
-    while ($row = $result->fetch_assoc()) {
-        $feed[] = $row;
-    }
-    return $feed;
-}
-
-/**
- * Get heatmap data for dashboard performance visualization
- */
-function getHeatmapData() {
-    global $db;
-    $data = [];
-    $sql = "SELECT date, activity_count FROM performance_heatmap ORDER BY date ASC";
-    $result = $db->query($sql);
-    while ($row = $result->fetch_assoc()) {
-        $data[] = $row;
-    }
-    return $data;
-}
 ?>
