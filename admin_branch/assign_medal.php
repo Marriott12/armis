@@ -424,7 +424,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         sm.id,
                         sm.award_date,
                         sm.citation,
-                        sm.awarded_by,
+                        sm.created_by,
                         sm.created_at,
                         s.service_number,
                         s.first_name,
@@ -522,9 +522,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <?php endif; ?>
                                     </td>
                                     <td>
-                                        <?php if (!empty($medal->awarded_by)): ?>
+                                        <?php if (!empty($medal->created_by)): ?>
                                             <span class="badge bg-secondary">
-                                                <?= htmlspecialchars($medal->awarded_by) ?>
+                                                <?= htmlspecialchars($medal->created_by) ?>
                                             </span>
                                         <?php else: ?>
                                             <span class="text-muted">N/A</span>
