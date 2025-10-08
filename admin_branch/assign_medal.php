@@ -124,20 +124,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Handle both staff ID (numeric) and service number (may be alphanumeric)
             $staffIdOrServiceNumber = trim($staffIdOrServiceNumber);
             
-            // Try to find staff by ID first, then by service number
-            if (ctype_digit($staffIdOrServiceNumber)) {
-                // It's a numeric ID
+            // Try multiple lookup strategies
+            $row = null;
+            
+            // Strategy 1: Try as database ID (most common)
+            if (ctype_digit($staffIdOrServiceNumber) && $staffIdOrServiceNumber > 0) {
                 $stmt = $pdo->prepare("SELECT id, service_number, CONCAT(first_name, ' ', last_name) as full_name FROM staff WHERE id = ?");
                 $stmt->execute([$staffIdOrServiceNumber]);
-            } else {
-                // It's a service number
-                $stmt = $pdo->prepare("SELECT id, service_number, CONCAT(first_name, ' ', last_name) as full_name FROM staff WHERE service_number = ?");
-                $stmt->execute([$staffIdOrServiceNumber]);
+                $row = $stmt->fetch(PDO::FETCH_ASSOC);
             }
             
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            // Strategy 2: If not found, try as service number
+            if (!$row) {
+                $stmt = $pdo->prepare("SELECT id, service_number, CONCAT(first_name, ' ', last_name) as full_name FROM staff WHERE service_number = ?");
+                $stmt->execute([$staffIdOrServiceNumber]);
+                $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            }
+            
+            // Strategy 3: If still not found, try with leading zeros removed (for cases like "007414" -> "7414")
+            if (!$row && ctype_digit($staffIdOrServiceNumber)) {
+                $numericValue = ltrim($staffIdOrServiceNumber, '0');
+                if ($numericValue !== $staffIdOrServiceNumber && $numericValue !== '') {
+                    $stmt = $pdo->prepare("SELECT id, service_number, CONCAT(first_name, ' ', last_name) as full_name FROM staff WHERE service_number = ? OR id = ?");
+                    $stmt->execute([$numericValue, $numericValue]);
+                    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+                }
+            }
+            
+            // If still not found, log error and continue
             if (!$row || empty($row['service_number'])) {
-                $errors[] = "Staff member {$staffIdOrServiceNumber} not found.";
+                // Log for debugging
+                error_log("Medal Assignment: Staff lookup failed for identifier: {$staffIdOrServiceNumber}");
+                $errors[] = "Staff member with identifier '{$staffIdOrServiceNumber}' not found. Please verify the staff exists in the system.";
                 continue;
             }
             
@@ -804,9 +822,15 @@ function initDataTable() {
     
     // Convert staff data for DataTables with proper seniority sorting
     const tableData = allStaffData.map(staff => {
+        // Ensure we have the correct ID mapping
+        // search_staff.php returns: staff_id (database ID), id (service_number), service_number
+        const databaseId = staff.staff_id || staff.id;
+        const serviceNumber = staff.service_number || staff.id;
+        
         return {
-            id: staff.staff_id || staff.id || staff.service_number,
-            service_number: staff.service_number || 'N/A',
+            id: databaseId,                      // Use database ID for operations
+            staff_id: databaseId,                // Alias for clarity
+            service_number: serviceNumber,       // Service number for display
             first_name: staff.first_name || '',
             last_name: staff.last_name || '',
             rank_name: staff.rank_name || 'N/A',
@@ -993,8 +1017,16 @@ function bindEventHandlers() {
             if (!selectedStaff.find(s => s.service_number === serviceNumber)) {
                 const staffData = allStaffData.find(s => s.service_number === serviceNumber);
                 if (staffData) {
+                    console.log('Selected staff:', {
+                        service_number: staffData.service_number,
+                        staff_id: staffData.staff_id,
+                        id: staffData.id,
+                        name: staffData.first_name + ' ' + staffData.last_name
+                    });
                     selectedStaff.push(staffData);
                     row.addClass('selected');
+                } else {
+                    console.error('Staff data not found for service number:', serviceNumber);
                 }
             }
         } else {
@@ -1132,7 +1164,17 @@ function updateHiddenInputs() {
     inputsContainer.empty();
     
     selectedStaff.forEach(staff => {
-        inputsContainer.append(`<input type="hidden" name="selected_staff[]" value="${staff.staff_id || staff.id}">`);
+        // Use staff_id (database ID) for submission, not service_number
+        const staffId = staff.staff_id || staff.id;
+        
+        // Debug log
+        console.log('Adding hidden input for staff:', {
+            service_number: staff.service_number,
+            staff_id: staffId,
+            name: staff.first_name + ' ' + staff.last_name
+        });
+        
+        inputsContainer.append(`<input type="hidden" name="selected_staff[]" value="${staffId}">`);
     });
 }
 
