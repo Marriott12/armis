@@ -59,7 +59,7 @@ try {
     if ($limit > 100) $limit = 100;
     if ($limit < 1) $limit = 50;
     
-    // Build base SQL query
+    // Build base SQL query with rank level for proper seniority sorting
     $sql = "SELECT 
                 s.service_number,
                 CONCAT(
@@ -72,13 +72,20 @@ try {
                         ELSE ''
                     END
                 ) as text,
+                s.id,
                 s.first_name,
                 s.last_name,
                 s.rank_id,
                 r.name as rank_name,
+                r.level as rank_level,
+                r.abbreviation as rank_abbr,
                 u.name as unit_name,
                 s.corps,
-                s.svcStatus
+                s.svcStatus,
+                s.attestDate,
+                s.subWef,
+                s.tempWef,
+                s.DOB
             FROM staff s
             LEFT JOIN ranks r ON s.rank_id = r.id
             LEFT JOIN units u ON s.unit_id = u.id
@@ -104,8 +111,14 @@ try {
         $params[':query'] = '%' . $query . '%';
     }
     
-    // Add ordering and limit
-    $sql .= " ORDER BY r.level ASC, s.last_name ASC, s.first_name ASC LIMIT :limit";
+    // Add military seniority ordering (same as reports_seniority.php)
+    $sql .= " ORDER BY 
+        r.level ASC,
+        s.subWef ASC,
+        s.tempWef ASC,
+        s.attestDate ASC,
+        s.service_number ASC 
+        LIMIT :limit";
     
     // Prepare and execute query
     $stmt = $pdo->prepare($sql);
@@ -125,14 +138,21 @@ try {
         $formatted[] = [
             'id' => $row['service_number'],
             'service_number' => $row['service_number'],
+            'staff_id' => $row['id'],
             'text' => $row['text'],
             'first_name' => $row['first_name'],
             'last_name' => $row['last_name'],
             'rank_id' => $row['rank_id'],
             'rank_name' => $row['rank_name'],
+            'rank_level' => $row['rank_level'],
+            'rank_abbr' => $row['rank_abbr'],
             'unit_name' => $row['unit_name'],
             'corps' => $row['corps'],
-            'status' => $row['svcStatus']
+            'status' => $row['svcStatus'],
+            'attestDate' => $row['attestDate'],
+            'subWef' => $row['subWef'],
+            'tempWef' => $row['tempWef'],
+            'DOB' => $row['DOB']
         ];
     }
     

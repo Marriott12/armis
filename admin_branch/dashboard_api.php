@@ -124,6 +124,18 @@ try {
             $response['data'] = $service->getTrainingCompletionRates();
             break;
             
+        case 'get_personnel_by_category':
+            $category = $_GET['category'] ?? '';
+            $gender = $_GET['gender'] ?? null;
+            
+            if (empty($category)) {
+                $response['success'] = false;
+                $response['message'] = 'Category parameter is required';
+            } else {
+                $response['data'] = $service->getPersonnelByCategory($category, $gender);
+            }
+            break;
+            
         case 'get_cohort_analysis':
             $response['data'] = $service->getCohortAnalysis();
             break;
@@ -143,8 +155,10 @@ try {
                 
                 // Handle file download if requested
                 if ($exportResult['success'] && isset($_POST['download']) && $_POST['download'] == 1) {
-                    $response['data'] = $exportResult;
-                    $response['data']['download_url'] = 'downloads/' . $exportResult['filename'];
+                    $response['data'] = is_array($exportResult) ? $exportResult : [];
+                    if (!is_array($response['data'])) {
+                        $response['data'] = [];
+                    }
                 } else {
                     $response['data'] = $exportResult;
                 }

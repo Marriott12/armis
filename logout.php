@@ -1,6 +1,9 @@
 <?php
 session_start();
 
+// Check if logout is due to timeout
+$reason = $_GET['reason'] ?? 'manual';
+
 // Clear all session data
 $_SESSION = [];
 
@@ -16,7 +19,11 @@ if (ini_get("session.use_cookies")) {
 // Destroy the session
 session_destroy();
 
-// Redirect to login page
-header('Location: /Armis2/login.php');
+// Redirect to login page with reason
+if ($reason === 'timeout') {
+    header('Location: /Armis2/login.php?reason=timeout');
+} else {
+    header('Location: /Armis2/login.php');
+}
 exit();
 ?>

@@ -68,7 +68,7 @@
         </div>
         <div class="col-md-4 mb-2">
             <label class="form-label form-label-sm">Next of Kin Contact *</label>
-            <input type="tel" name="nok_tel" class="form-control form-control-sm" required value="<?=old('nok_tel')?>">
+            <input type="tel" name="nok_tel" class="form-control form-control-sm" required value="<?=old('nok_tel')?>" placeholder="+260 XX XXX XXXX">
         </div>
         </div>
         <div class="row mb-3">
@@ -78,7 +78,8 @@
         </div>
         <div class="col-md-4 mb-2">
             <label class="form-label form-label-sm">Alternate Next of Kin NRC</label>
-            <input type="text" name="alt_nok_nrc" class="form-control form-control-sm" value="<?=old('alt_nok_nrc')?>">
+            <input type="text" name="alt_nok_nrc" class="form-control form-control-sm" value="<?=old('alt_nok_nrc')?>" placeholder="123456/78/1" pattern="[0-9]{6}/[0-9]{2}/1">
+            <small class="form-text text-muted">Format: 123456/78/1</small>
         </div>
         <div class="col-md-4 mb-2">
             <label class="form-label form-label-sm">Alternate Next of Kin Relationship</label>
@@ -91,7 +92,7 @@
         </div>
         <div class="col-md-4 mb-2">
             <label class="form-label form-label-sm">Alternate Next of Kin Contact</label>
-            <input type="tel" name="alt_nok_tel" class="form-control form-control-sm" value="<?=old('alt_nok_tel')?>">
+            <input type="tel" name="alt_nok_tel" class="form-control form-control-sm" value="<?=old('alt_nok_tel')?>" placeholder="+260 XX XXX XXXX">
         </div>
     </div>
 </div>

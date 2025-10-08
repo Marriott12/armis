@@ -4,6 +4,28 @@ session_start();
 // Include database functions
 require_once __DIR__ . '/shared/database_connection.php';
 
+/**
+ * Validate return URL to prevent open redirect vulnerabilities
+ */
+function isValidReturnUrl($url) {
+    // Must start with /Armis2/
+    if (strpos($url, '/Armis2/') !== 0) {
+        return false;
+    }
+    
+    // Must not contain protocol or domain
+    if (preg_match('#^https?://#i', $url)) {
+        return false;
+    }
+    
+    // Must not contain special characters that could be used for XSS
+    if (preg_match('/[<>"\'()]/', $url)) {
+        return false;
+    }
+    
+    return true;
+}
+
 // Debug: Log form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     error_log("Login form submitted with data: " . print_r($_POST, true));
@@ -55,12 +77,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Include RBAC functions for centralized role management
             require_once __DIR__ . '/shared/rbac.php';
             
+            // Check for saved state from session timeout
+            $savedState = null;
+            if (isset($_GET['reason']) && $_GET['reason'] === 'timeout') {
+                // User was redirected here due to timeout
+                // State should be in sessionStorage (handled by JavaScript)
+                $_SESSION['restore_state'] = true;
+            }
+            
+            // Check for return URL parameter
+            $returnUrl = $_GET['return_url'] ?? null;
+            
             // For admin role, always go directly to admin dashboard
             if ($user['role'] === 'admin') {
-                $dashboardUrl = '/Armis2/admin/index.php';
+                // If there's a return URL and it's valid, use it
+                if ($returnUrl && isValidReturnUrl($returnUrl)) {
+                    $dashboardUrl = $returnUrl;
+                } else {
+                    $dashboardUrl = '/Armis2/admin/index.php';
+                }
             } else {
                 // Get role-specific dashboard URL using centralized function
-                $dashboardUrl = getRoleDashboardUrl($user['role']);
+                if ($returnUrl && isValidReturnUrl($returnUrl)) {
+                    $dashboardUrl = $returnUrl;
+                } else {
+                    $dashboardUrl = getRoleDashboardUrl($user['role']);
+                }
             }
             
             // Track login redirect in session
@@ -271,6 +313,44 @@ $pageTitle = "Login";
         // Auto-focus username field
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('username').focus();
+            
+            // Check if we need to add return URL to login form
+            const urlParams = new URLSearchParams(window.location.search);
+            const reason = urlParams.get('reason');
+            
+            if (reason === 'timeout') {
+                // Get saved state from sessionStorage
+                const savedState = sessionStorage.getItem('armis_saved_state');
+                
+                if (savedState) {
+                    try {
+                        const state = JSON.parse(savedState);
+                        console.log('Found saved state:', state);
+                        
+                        // Add return URL to login form
+                        const form = document.querySelector('form[action="/Armis2/login.php"]');
+                        if (form && state.pathname) {
+                            const returnUrlInput = document.createElement('input');
+                            returnUrlInput.type = 'hidden';
+                            returnUrlInput.name = 'return_url';
+                            returnUrlInput.value = state.pathname + (state.search || '');
+                            form.appendChild(returnUrlInput);
+                            
+                            // Show notification about session timeout
+                            const alertDiv = document.createElement('div');
+                            alertDiv.className = 'alert alert-info alert-dismissible fade show';
+                            alertDiv.innerHTML = `
+                                <i class="fas fa-info-circle"></i> 
+                                Your session expired due to inactivity. Please login again to continue where you left off.
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            `;
+                            form.parentElement.insertBefore(alertDiv, form);
+                        }
+                    } catch (e) {
+                        console.error('Error parsing saved state:', e);
+                    }
+                }
+            }
         });
     </script>
 </body>

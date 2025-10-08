@@ -69,7 +69,8 @@ if (!function_exists('hasModuleAccess')) {
         }
         
         // Admin role always has access to all modules (case-insensitive check)
-        if (strtolower($userRole) === 'admin' || strtolower($userRole) === 'administrator') {
+        $adminRoles = ['admin', 'administrator', 'admin_branch'];
+        if (in_array(strtolower($userRole), $adminRoles)) {
             return true;
         }
     

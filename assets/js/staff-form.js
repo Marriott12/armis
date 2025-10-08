@@ -1,13 +1,57 @@
 // NOK and ALT NOK real-time validation
 document.addEventListener('DOMContentLoaded', function() {
-    // NOK NRC removed
-    // NOK phone
-    const nokPhoneInput = document.querySelector('[name="nok_phone"]');
+    // Main NRC validation
+    const nrcInput = document.querySelector('[name="nrc"]');
+    if (nrcInput) {
+        nrcInput.addEventListener('input', function() {
+            // Auto-format NRC as user types
+            let value = this.value.replace(/[^0-9]/g, ''); // Remove non-digits
+            if (value.length > 6) {
+                value = value.substring(0, 6) + '/' + value.substring(6);
+            }
+            if (value.length > 9) {
+                value = value.substring(0, 9) + '/' + value.substring(9);
+            }
+            if (value.length > 11) {
+                value = value.substring(0, 11);
+            }
+            this.value = value;
+        });
+        
+        nrcInput.addEventListener('blur', function() {
+            clearFieldError('nrc');
+            if (nrcInput.value && !validateNRC(nrcInput.value)) {
+                showFieldError('nrc', 'Invalid NRC format. Use: 123456/78/1');
+            }
+        });
+    }
+    
+    // Main phone validation with auto-formatting
+    const phoneInput = document.querySelector('[name="phone"]');
+    if (phoneInput) {
+        phoneInput.addEventListener('blur', function() {
+            clearFieldError('phone');
+            if (phoneInput.value) {
+                const formatted = formatZambianPhone(phoneInput.value);
+                phoneInput.value = formatted;
+                if (!validatePhone(formatted)) {
+                    showFieldError('phone', 'Invalid phone number. Use format: +260XXXXXXXXX');
+                }
+            }
+        });
+    }
+    
+    // NOK phone with auto-formatting
+    const nokPhoneInput = document.querySelector('[name="nok_tel"]');
     if (nokPhoneInput) {
         nokPhoneInput.addEventListener('blur', function() {
-            clearFieldError('nok_phone');
-            if (nokPhoneInput.value && !validatePhone(nokPhoneInput.value)) {
-                showFieldError('nok_phone', 'Invalid phone number for Next of Kin.');
+            clearFieldError('nok_tel');
+            if (nokPhoneInput.value) {
+                const formatted = formatZambianPhone(nokPhoneInput.value);
+                nokPhoneInput.value = formatted;
+                if (!validatePhone(formatted)) {
+                    showFieldError('nok_tel', 'Invalid phone number for Next of Kin. Use format: +260XXXXXXXXX');
+                }
             }
         });
     }
@@ -21,14 +65,17 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-    // ALT NOK NRC removed
-    // ALT NOK phone
-    const altnokPhoneInput = document.querySelector('[name="altnok_phone"]');
+    // ALT NOK phone with auto-formatting
+    const altnokPhoneInput = document.querySelector('[name="alt_nok_tel"]');
     if (altnokPhoneInput) {
         altnokPhoneInput.addEventListener('blur', function() {
-            clearFieldError('altnok_phone');
-            if (altnokPhoneInput.value && !validatePhone(altnokPhoneInput.value)) {
-                showFieldError('altnok_phone', 'Invalid phone number for Alternate Next of Kin.');
+            clearFieldError('alt_nok_tel');
+            if (altnokPhoneInput.value) {
+                const formatted = formatZambianPhone(altnokPhoneInput.value);
+                altnokPhoneInput.value = formatted;
+                if (!validatePhone(formatted)) {
+                    showFieldError('alt_nok_tel', 'Invalid phone number for Alternate Next of Kin. Use format: +260XXXXXXXXX');
+                }
             }
         });
     }
@@ -42,14 +89,71 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+    
+    // ALT NOK NRC validation
+    const altNokNrcInput = document.querySelector('[name="alt_nok_nrc"]');
+    if (altNokNrcInput) {
+        altNokNrcInput.addEventListener('input', function() {
+            // Auto-format ALT NOK NRC as user types
+            let value = this.value.replace(/[^0-9]/g, ''); // Remove non-digits
+            if (value.length > 6) {
+                value = value.substring(0, 6) + '/' + value.substring(6);
+            }
+            if (value.length > 9) {
+                value = value.substring(0, 9) + '/' + value.substring(9);
+            }
+            if (value.length > 11) {
+                value = value.substring(0, 11);
+            }
+            this.value = value;
+        });
+        
+        altNokNrcInput.addEventListener('blur', function() {
+            clearFieldError('alt_nok_nrc');
+            if (altNokNrcInput.value && !validateNRC(altNokNrcInput.value)) {
+                showFieldError('alt_nok_nrc', 'Invalid NRC format. Use: 123456/78/1');
+            }
+        });
+    }
+    
+    // Blood group validation
+    const bloodGroupInput = document.querySelector('[name="blood_group"]');
+    if (bloodGroupInput) {
+        bloodGroupInput.addEventListener('change', function() {
+            clearFieldError('blood_group');
+            if (bloodGroupInput.value && !validateBloodGroup(bloodGroupInput.value)) {
+                showFieldError('blood_group', 'Please select a valid blood group.');
+            }
+        });
+    }
 });
 // Real-time validation helpers
-// validateNRC removed
+function validateNRC(nrc) {
+    return /^\d{6}\/\d{2}\/1$/.test(nrc);
+}
 function validateEmail(email) {
     return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
 }
 function validatePhone(phone) {
-    return /^\+?\d{8,15}$/.test(phone);
+    return /^\+260\d{9}$/.test(phone);
+}
+// Validate blood group
+function validateBloodGroup(bloodGroup) {
+    const validBloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+    return validBloodGroups.includes(bloodGroup);
+}
+// Auto-format phone number to Zambian format
+function formatZambianPhone(phone) {
+    // Remove all non-digits
+    const digits = phone.replace(/[^0-9]/g, '');
+    
+    // Auto-format based on length
+    if (digits.length === 9) {
+        return '+260' + digits;
+    } else if (digits.length === 12 && digits.startsWith('260')) {
+        return '+' + digits;
+    }
+    return phone;
 }
 function validateRequired(val) {
     return val && val.trim().length > 0;

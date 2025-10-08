@@ -38,12 +38,28 @@ try {
         if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             header('Content-Type: application/json');
             $timeFilter = $_GET['filter'] ?? null;
+            $startDate = $_GET['start_date'] ?? null;
+            $endDate = $_GET['end_date'] ?? null;
+            
             try {
-                $enhancedPersonnel = $dashboardService->getEnhancedPersonnelStats($timeFilter);
+                // Handle period filter
+                if ($timeFilter === 'period' && $startDate && $endDate) {
+                    $enhancedPersonnel = $dashboardService->getEnhancedPersonnelStatsByPeriod($startDate, $endDate);
+                    $_SESSION['period_filter'] = [
+                        'start_date' => $startDate,
+                        'end_date' => $endDate,
+                        'applied_at' => date('Y-m-d H:i:s')
+                    ];
+                } else {
+                    // Handle existing time filters (1_month, 1_year)
+                    $enhancedPersonnel = $dashboardService->getEnhancedPersonnelStats($timeFilter);
+                }
+                
                 echo json_encode([
                     'success' => true,
                     'enhanced_personnel' => $enhancedPersonnel,
-                    'filter_applied' => $timeFilter
+                    'filter_applied' => $timeFilter,
+                    'period' => ($timeFilter === 'period') ? ['start' => $startDate, 'end' => $endDate] : null
                 ]);
             } catch (Exception $e) {
                 echo json_encode([
@@ -194,6 +210,19 @@ include dirname(__DIR__) . '/shared/sidebar.php';
     overflow-x: hidden;
 }
 
+/* Gender percentage styling - consistent with admin_branch design system */
+.text-muted {
+    color: #6c757d !important;
+    font-weight: 500;
+}
+
+/* Hover effect for cells with percentages */
+td:has(.text-muted):hover .text-muted {
+    color: #0d6efd !important;
+    font-weight: 600;
+    transition: all 0.2s ease-in-out;
+}
+
 /* Apply unified table styling to existing tables */
 /* To apply .armis-table styles, add both classes in HTML or copy styles here if needed. */
 
@@ -311,13 +340,60 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 <!-- Load Chart.js early to ensure it's available for dashboard charts -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.umd.min.js"></script>
 
-<!-- Session Timeout Warning -->
-<script src="/Armis2/assets/js/session-warning.js"></script>
+<!-- Session Management and State Restoration -->
+<script src="/Armis2/assets/js/session-manager.js"></script>
+<script>
+    // Pass PHP session restore flag to JavaScript
+    var PHP_SESSION_RESTORE_STATE = <?php echo isset($_SESSION['restore_state']) && $_SESSION['restore_state'] === true ? 'true' : 'false'; ?>;
+    <?php
+    // Clear the flag after passing to JavaScript
+    if (isset($_SESSION['restore_state'])) {
+        unset($_SESSION['restore_state']);
+    }
+    ?>
+</script>
+<script src="/Armis2/assets/js/state-restoration.js"></script>
 
 <!-- Modern Admin Branch Dashboard -->
 <div class="content-wrapper with-sidebar">
     <div class="container-fluid p-0 p-sm-2 p-md-3">
         <div class="main-content">
+
+            <!-- Module Header -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card border-0 shadow-sm" style="background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);">
+                        <div class="card-body py-3">
+                            <div class="d-flex align-items-center justify-content-between">
+                                <div class="d-flex align-items-center">
+                                    <div class="me-3" style="font-size: 2.5rem; color: #ffd700;">
+                                        <i class="fas fa-<?php echo htmlspecialchars($moduleIcon); ?>"></i>
+                                    </div>
+                                    <div>
+                                        <h2 class="mb-0 text-white" style="font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+                                            <?php echo htmlspecialchars($moduleName); ?> Dashboard
+                                        </h2>
+                                        <p class="mb-0 text-white" style="opacity: 0.9; font-size: 0.95rem;">
+                                            <i class="fas fa-calendar-alt me-1"></i>
+                                            <?php echo date('l, F j, Y'); ?>
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="text-end text-white">
+                                    <div style="font-size: 0.9rem; opacity: 0.9;">
+                                        <i class="fas fa-user me-1"></i>
+                                        Welcome, <strong><?php echo htmlspecialchars($_SESSION['user_name'] ?? 'User'); ?></strong>
+                                    </div>
+                                    <div style="font-size: 0.85rem; opacity: 0.8;">
+                                        <i class="fas fa-shield-alt me-1"></i>
+                                        <?php echo htmlspecialchars($_SESSION['user_role'] ?? 'Administrator'); ?>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
             
             <!-- Breadcrumbs -->
             <nav aria-label="breadcrumb" class="mb-3">
@@ -327,6 +403,76 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                 <li class="breadcrumb-item active" aria-current="page">Overview</li>
             </ol>
             </nav>
+
+            <!-- Period Filter Panel -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-header bg-white border-0 py-2">
+                            <div class="d-flex align-items-center justify-content-between">
+                                <h6 class="mb-0 text-primary">
+                                    <i class="fas fa-filter me-2"></i>Filter by Enlistment Period
+                                </h6>
+                                <button class="btn btn-sm btn-link text-decoration-none" type="button" data-bs-toggle="collapse" data-bs-target="#periodFilterCollapse" aria-expanded="true" aria-controls="periodFilterCollapse">
+                                    <i class="fas fa-chevron-down"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="collapse show" id="periodFilterCollapse">
+                            <div class="card-body py-3">
+                                <form id="periodFilterForm" class="row g-3 align-items-end">
+                                    <!-- Quick Period Buttons -->
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold small">Quick Periods</label>
+                                        <div class="btn-group w-100" role="group">
+                                            <button type="button" class="btn btn-outline-primary btn-sm quick-period" data-period="30">30 Days</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm quick-period" data-period="90">3 Months</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm quick-period" data-period="180">6 Months</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm quick-period" data-period="365">1 Year</button>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Custom Date Range -->
+                                    <div class="col-md-3">
+                                        <label for="filterStartDate" class="form-label fw-semibold small">Start Date</label>
+                                        <input type="date" class="form-control form-control-sm" id="filterStartDate" name="start_date">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="filterEndDate" class="form-label fw-semibold small">End Date</label>
+                                        <input type="date" class="form-control form-control-sm" id="filterEndDate" name="end_date" value="<?php echo date('Y-m-d'); ?>">
+                                    </div>
+                                    
+                                    <!-- Action Buttons -->
+                                    <div class="col-12">
+                                        <div class="d-flex gap-2">
+                                            <button type="submit" class="btn btn-primary btn-sm">
+                                                <i class="fas fa-search me-1"></i>Apply Filter
+                                            </button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" id="clearPeriodFilter">
+                                                <i class="fas fa-times me-1"></i>Clear Filter
+                                            </button>
+                                            <button type="button" class="btn btn-outline-success btn-sm" id="exportFilteredData">
+                                                <i class="fas fa-file-excel me-1"></i>Export Results
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Active Filter Badge -->
+                                    <div class="col-12" id="activeFilterBadge" style="display: none;">
+                                        <div class="alert alert-info alert-dismissible fade show mb-0 py-2" role="alert">
+                                            <i class="fas fa-info-circle me-2"></i>
+                                            <strong>Active Filter:</strong> <span id="filterDateRange"></span>
+                                            <span class="ms-3">
+                                                <span id="filteredCount" class="badge bg-primary"></span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <!-- Snapshot Summary by Category and Gender -->
             <!-- Drilldown Modal for Snapshot Cards -->
@@ -391,14 +537,52 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                     <tbody>
                                                         <tr class="personnel-row clickable-row" data-category="military-officers" data-type="Officers" style="cursor: pointer;">
                                                             <td class="ps-3 fw-semibold">Officers</td>
-                                                            <td class="text-center" id="military-officers-male"><?php echo isset($dashboardData['enhanced_personnel']['military']['officers_by_gender']['male']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['officers_by_gender']['male']) : '-'; ?></td>
-                                                            <td class="text-center" id="military-officers-female"><?php echo isset($dashboardData['enhanced_personnel']['military']['officers_by_gender']['female']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['officers_by_gender']['female']) : '-'; ?></td>
+                                                            <td class="text-center" id="military-officers-male">
+                                                                <?php 
+                                                                $officersMale = isset($dashboardData['enhanced_personnel']['military']['officers_by_gender']['male']) ? $dashboardData['enhanced_personnel']['military']['officers_by_gender']['male'] : 0;
+                                                                $officersTotal = isset($dashboardData['enhanced_personnel']['military']['officers']) ? $dashboardData['enhanced_personnel']['military']['officers'] : 0;
+                                                                $officersMalePerc = $officersTotal > 0 ? round(($officersMale / $officersTotal) * 100, 1) : 0;
+                                                                echo htmlspecialchars($officersMale);
+                                                                if ($officersTotal > 0) {
+                                                                    echo ' <small class="text-muted" style="font-size: 0.8rem;">(' . htmlspecialchars($officersMalePerc) . '%)</small>';
+                                                                }
+                                                                ?>
+                                                            </td>
+                                                            <td class="text-center" id="military-officers-female">
+                                                                <?php 
+                                                                $officersFemale = isset($dashboardData['enhanced_personnel']['military']['officers_by_gender']['female']) ? $dashboardData['enhanced_personnel']['military']['officers_by_gender']['female'] : 0;
+                                                                $officersFemalePerc = $officersTotal > 0 ? round(($officersFemale / $officersTotal) * 100, 1) : 0;
+                                                                echo htmlspecialchars($officersFemale);
+                                                                if ($officersTotal > 0) {
+                                                                    echo ' <small class="text-muted" style="font-size: 0.8rem;">(' . htmlspecialchars($officersFemalePerc) . '%)</small>';
+                                                                }
+                                                                ?>
+                                                            </td>
                                                             <td class="text-center fw-bold text-primary" id="military-officers-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['officers']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['officers']) : '-'; ?></td>
                                                         </tr>
                                                         <tr class="personnel-row clickable-row" data-category="military-ncos" data-type="NCOs" style="cursor: pointer;">
                                                             <td class="ps-3 fw-semibold">NCOs</td>
-                                                            <td class="text-center" id="military-ncos-male"><?php echo isset($dashboardData['enhanced_personnel']['military']['ncos_by_gender']['male']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['ncos_by_gender']['male']) : '-'; ?></td>
-                                                            <td class="text-center" id="military-ncos-female"><?php echo isset($dashboardData['enhanced_personnel']['military']['ncos_by_gender']['female']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['ncos_by_gender']['female']) : '-'; ?></td>
+                                                            <td class="text-center" id="military-ncos-male">
+                                                                <?php 
+                                                                $ncosMale = isset($dashboardData['enhanced_personnel']['military']['ncos_by_gender']['male']) ? $dashboardData['enhanced_personnel']['military']['ncos_by_gender']['male'] : 0;
+                                                                $ncosTotal = isset($dashboardData['enhanced_personnel']['military']['ncos']) ? $dashboardData['enhanced_personnel']['military']['ncos'] : 0;
+                                                                $ncosMalePerc = $ncosTotal > 0 ? round(($ncosMale / $ncosTotal) * 100, 1) : 0;
+                                                                echo htmlspecialchars($ncosMale);
+                                                                if ($ncosTotal > 0) {
+                                                                    echo ' <small class="text-muted" style="font-size: 0.8rem;">(' . htmlspecialchars($ncosMalePerc) . '%)</small>';
+                                                                }
+                                                                ?>
+                                                            </td>
+                                                            <td class="text-center" id="military-ncos-female">
+                                                                <?php 
+                                                                $ncosFemale = isset($dashboardData['enhanced_personnel']['military']['ncos_by_gender']['female']) ? $dashboardData['enhanced_personnel']['military']['ncos_by_gender']['female'] : 0;
+                                                                $ncosFemalePerc = $ncosTotal > 0 ? round(($ncosFemale / $ncosTotal) * 100, 1) : 0;
+                                                                echo htmlspecialchars($ncosFemale);
+                                                                if ($ncosTotal > 0) {
+                                                                    echo ' <small class="text-muted" style="font-size: 0.8rem;">(' . htmlspecialchars($ncosFemalePerc) . '%)</small>';
+                                                                }
+                                                                ?>
+                                                            </td>
                                                             <td class="text-center fw-bold text-primary" id="military-ncos-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['ncos']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['ncos']) : '-'; ?></td>
                                                         </tr>
                                                         <tr class="table-secondary">
@@ -427,6 +611,32 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                             <th class="text-center py-3" style="font-size: 1.15rem;" id="military-total-female"><?php echo isset($dashboardData['enhanced_personnel']['military']['by_gender']['female']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['by_gender']['female']) : '-'; ?></th>
                                                             <th class="text-center py-3" style="font-size: 1.75rem; font-weight: 900; text-shadow: 0 2px 4px rgba(0,0,0,0.3); color: #ffd700;" id="military-grand-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['total']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['total']) : '-'; ?></th>
                                                         </tr>
+                                                        <?php 
+                                                        // Calculate gender percentages for military
+                                                        $militaryTotal = isset($dashboardData['enhanced_personnel']['military']['total']) ? $dashboardData['enhanced_personnel']['military']['total'] : 0;
+                                                        $militaryMale = isset($dashboardData['enhanced_personnel']['military']['by_gender']['male']) ? $dashboardData['enhanced_personnel']['military']['by_gender']['male'] : 0;
+                                                        $militaryFemale = isset($dashboardData['enhanced_personnel']['military']['by_gender']['female']) ? $dashboardData['enhanced_personnel']['military']['by_gender']['female'] : 0;
+                                                        $malePercentage = $militaryTotal > 0 ? round(($militaryMale / $militaryTotal) * 100, 1) : 0;
+                                                        $femalePercentage = $militaryTotal > 0 ? round(($militaryFemale / $militaryTotal) * 100, 1) : 0;
+                                                        ?>
+                                                        <tr style="background: linear-gradient(135deg, #084298 0%, #052c65 100%); color: white; border-top: 1px solid rgba(255,255,255,0.2);">
+                                                            <th class="ps-3 py-2" style="font-size: 0.9rem; opacity: 0.95;">
+                                                                <i class="fas fa-chart-pie me-2"></i>Gender Distribution
+                                                            </th>
+                                                            <th class="text-center py-2" style="font-size: 0.95rem; opacity: 0.95;">
+                                                                <span class="badge" style="background: rgba(13, 110, 253, 0.3); color: #fff; font-size: 0.85rem; padding: 0.4rem 0.6rem;">
+                                                                    <i class="fas fa-male me-1"></i><?php echo htmlspecialchars($malePercentage); ?>%
+                                                                </span>
+                                                            </th>
+                                                            <th class="text-center py-2" style="font-size: 0.95rem; opacity: 0.95;">
+                                                                <span class="badge" style="background: rgba(220, 53, 69, 0.3); color: #fff; font-size: 0.85rem; padding: 0.4rem 0.6rem;">
+                                                                    <i class="fas fa-female me-1"></i><?php echo htmlspecialchars($femalePercentage); ?>%
+                                                                </span>
+                                                            </th>
+                                                            <th class="text-center py-2" style="font-size: 0.9rem; opacity: 0.9;">
+                                                                <small><i class="fas fa-info-circle me-1"></i>Breakdown</small>
+                                                            </th>
+                                                        </tr>
                                                     </tfoot>
                                                 </table>
                                             </div>
@@ -453,17 +663,11 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        <tr class="personnel-row clickable-row" data-category="civilian-current" data-type="Current Staff" style="cursor: pointer;">
-                                                            <td class="ps-3 fw-semibold">Current Staff</td>
+                                                        <tr class="personnel-row clickable-row" data-category="civilian-current" data-type="Staff" style="cursor: pointer;">
+                                                            <td class="ps-3 fw-semibold">Staff</td>
                                                             <td class="text-center" id="civilian-current-male"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['current_by_gender']['male']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['current_by_gender']['male']) : '-'; ?></td>
                                                             <td class="text-center" id="civilian-current-female"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['current_by_gender']['female']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['current_by_gender']['female']) : '-'; ?></td>
                                                             <td class="text-center fw-bold text-info" id="civilian-current-total"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['active']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['active']) : '-'; ?></td>
-                                                        </tr>
-                                                        <tr class="personnel-row clickable-row" data-category="civilian-new" data-type="New Hires" style="cursor: pointer;">
-                                                            <td class="ps-3 fw-semibold">New Entrants</td>
-                                                            <td class="text-center" id="civilian-new-male"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['new_by_gender']['male']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['new_by_gender']['male']) : '-'; ?></td>
-                                                            <td class="text-center" id="civilian-new-female"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['new_by_gender']['female']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['new_by_gender']['female']) : '-'; ?></td>
-                                                            <td class="text-center fw-bold text-success" id="civilian-new-total"><?php echo isset($dashboardData['enhanced_personnel']['civilian']['new_1_year']) ? htmlspecialchars($dashboardData['enhanced_personnel']['civilian']['new_1_year']) : '-'; ?></td>
                                                         </tr>
                                                     </tbody>
                                                     <tfoot class="table-dark">
@@ -704,6 +908,28 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 
 <!-- Include Dashboard JavaScript -->
 <script>
+// Utility function for animated element updates (global scope)
+function updateElementWithAnimation(selector, value) {
+    const element = document.querySelector(selector);
+    if (element) {
+        // Fade out, update, fade in with scale effect
+        element.style.transition = 'all 0.2s ease-out';
+        element.style.opacity = '0.3';
+        element.style.transform = 'scale(0.95)';
+        
+        setTimeout(() => {
+            element.textContent = value || '-';
+            element.style.opacity = '1';
+            element.style.transform = 'scale(1.05)';
+            element.style.transition = 'all 0.3s ease-in';
+            
+            setTimeout(() => {
+                element.style.transform = 'scale(1)';
+            }, 200);
+        }, 100);
+    }
+}
+
 // Filter functionality moved to main initialization to avoid conflicts
 function initializePersonnelFilters() {
     // Enhanced personnel filter functionality with smooth animations
@@ -743,19 +969,24 @@ function initializePersonnelFilters() {
                 const ep = data.enhanced_personnel;
                 
                 // Update military stats with animation
-                updateElementWithAnimation('#military-total', ep.military.total);
-                updateElementWithAnimation('#military-active', ep.military.active);
-                updateElementWithAnimation('#military-officers', ep.military.officers);
-                updateElementWithAnimation('#military-ncos', ep.military.ncos);
-                updateElementWithAnimation('#retirees-total', ep.retirees);
+                updateElementWithAnimation('#military-grand-total', ep.military.total);
+                updateElementWithAnimation('#military-officers-total', ep.military.officers);
+                updateElementWithAnimation('#military-ncos-total', ep.military.ncos);
+                
+                // Update military by gender
+                if (ep.military.by_gender) {
+                    updateElementWithAnimation('#military-total-male', ep.military.by_gender.male || 0);
+                    updateElementWithAnimation('#military-total-female', ep.military.by_gender.female || 0);
+                }
                 
                 // Update civilian stats with animation
-                updateElementWithAnimation('#civilian-total', ep.civilian.total);
-                updateElementWithAnimation('#civilian-active', ep.civilian.active);
-                updateElementWithAnimation('#civilian-new-1month', ep.civilian.new_1_month);
-                updateElementWithAnimation('#civilian-new-1year', ep.civilian.new_1_year);
-                updateElementWithAnimation('#civilian-male', ep.civilian.by_gender.male);
-                updateElementWithAnimation('#civilian-female', ep.civilian.by_gender.female);
+                updateElementWithAnimation('#civilian-grand-total', ep.civilian.total);
+                
+                // Update civilian by gender
+                if (ep.civilian.by_gender) {
+                    updateElementWithAnimation('#civilian-total-male', ep.civilian.by_gender.male || 0);
+                    updateElementWithAnimation('#civilian-total-female', ep.civilian.by_gender.female || 0);
+                }
                 
                 // Highlight filtered metrics based on selection
                 highlightFilteredMetrics(timeFilter);
@@ -779,27 +1010,6 @@ function initializePersonnelFilters() {
                 });
             }, 300);
         });
-    }
-    
-    function updateElementWithAnimation(selector, value) {
-        const element = document.querySelector(selector);
-        if (element) {
-            // Fade out, update, fade in with scale effect
-            element.style.transition = 'all 0.2s ease-out';
-            element.style.opacity = '0.3';
-            element.style.transform = 'scale(0.95)';
-            
-            setTimeout(() => {
-                element.textContent = value || '-';
-                element.style.opacity = '1';
-                element.style.transform = 'scale(1.05)';
-                element.style.transition = 'all 0.3s ease-in';
-                
-                setTimeout(() => {
-                    element.style.transform = 'scale(1)';
-                }, 200);
-            }, 100);
-        }
     }
     
     function highlightFilteredMetrics(timeFilter) {
@@ -908,6 +1118,188 @@ function initializePersonnelFilters() {
         }
     `;
     document.head.appendChild(animationCSS);
+}
+
+// Period Filter Functionality
+function initializePeriodFilter() {
+    const periodFilterForm = document.getElementById('periodFilterForm');
+    const quickPeriodButtons = document.querySelectorAll('.quick-period');
+    const startDateInput = document.getElementById('filterStartDate');
+    const endDateInput = document.getElementById('filterEndDate');
+    const clearFilterBtn = document.getElementById('clearPeriodFilter');
+    const exportFilterBtn = document.getElementById('exportFilteredData');
+    const activeFilterBadge = document.getElementById('activeFilterBadge');
+    const filterDateRange = document.getElementById('filterDateRange');
+    const filteredCount = document.getElementById('filteredCount');
+    
+    // Quick period button handlers
+    quickPeriodButtons.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const days = parseInt(this.dataset.period);
+            const endDate = new Date();
+            const startDate = new Date();
+            startDate.setDate(startDate.getDate() - days);
+            
+            // Set input values
+            startDateInput.value = formatDate(startDate);
+            endDateInput.value = formatDate(endDate);
+            
+            // Highlight active button
+            quickPeriodButtons.forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            
+            // Auto-submit form
+            periodFilterForm.dispatchEvent(new Event('submit'));
+        });
+    });
+    
+    // Form submission handler
+    periodFilterForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const startDate = startDateInput.value;
+        const endDate = endDateInput.value;
+        
+        if (!startDate || !endDate) {
+            alert('Please select both start and end dates');
+            return;
+        }
+        
+        if (new Date(startDate) > new Date(endDate)) {
+            alert('Start date cannot be after end date');
+            return;
+        }
+        
+        // Apply filter
+        applyPeriodFilter(startDate, endDate);
+    });
+    
+    // Clear filter handler
+    clearFilterBtn.addEventListener('click', function() {
+        startDateInput.value = '';
+        endDateInput.value = formatDate(new Date());
+        activeFilterBadge.style.display = 'none';
+        quickPeriodButtons.forEach(b => b.classList.remove('active'));
+        
+        // Reload page to show all data
+        window.location.href = window.location.pathname;
+    });
+    
+    // Export filtered data handler
+    exportFilterBtn.addEventListener('click', function() {
+        const startDate = startDateInput.value;
+        const endDate = endDateInput.value;
+        
+        if (!startDate || !endDate) {
+            alert('Please apply a filter first before exporting');
+            return;
+        }
+        
+        // Redirect to export endpoint
+        window.location.href = `export_personnel.php?start_date=${startDate}&end_date=${endDate}`;
+    });
+    
+    function applyPeriodFilter(startDate, endDate) {
+        // Show loading state
+        const cards = document.querySelectorAll('.personnel-card');
+        cards.forEach(card => card.classList.add('loading'));
+        
+        // Make AJAX request for filtered data
+        fetch(`${window.location.pathname}?ajax=1&filter=period&start_date=${startDate}&end_date=${endDate}`, {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+            .then(data => {
+                if (data.success && data.enhanced_personnel) {
+                    const ep = data.enhanced_personnel;
+                    
+                    // Update military stats
+                    updateElementWithAnimation('#military-grand-total', ep.military.total);
+                    updateElementWithAnimation('#military-officers-total', ep.military.officers);
+                    updateElementWithAnimation('#military-ncos-total', ep.military.ncos);
+                    
+                    // Update military by gender
+                    if (ep.military.by_gender) {
+                        updateElementWithAnimation('#military-total-male', ep.military.by_gender.male || 0);
+                        updateElementWithAnimation('#military-total-female', ep.military.by_gender.female || 0);
+                    }
+                    
+                    // Update civilian stats
+                    updateElementWithAnimation('#civilian-grand-total', ep.civilian.total);
+                    
+                    // Update civilian by gender
+                    if (ep.civilian.by_gender) {
+                        updateElementWithAnimation('#civilian-total-male', ep.civilian.by_gender.male || 0);
+                        updateElementWithAnimation('#civilian-total-female', ep.civilian.by_gender.female || 0);
+                    }
+                    
+                    // Calculate total filtered
+                    const totalFiltered = ep.military.total + ep.civilian.total;
+                    
+                    // Show active filter badge
+                    activeFilterBadge.style.display = 'block';
+                    filterDateRange.textContent = `${formatDateDisplay(startDate)} to ${formatDateDisplay(endDate)}`;
+                    filteredCount.textContent = `${totalFiltered} staff members`;
+                    
+                    // Store filter in session
+                    sessionStorage.setItem('periodFilter', JSON.stringify({
+                        startDate: startDate,
+                        endDate: endDate,
+                        count: totalFiltered
+                    }));
+                    
+                    // Success notification (optional)
+                    console.log('Period filter applied successfully');
+                } else {
+                    alert('Error applying filter: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching filtered data:', error);
+                alert('Failed to apply filter. Please try again.');
+            })
+            .finally(() => {
+                // Remove loading state
+                setTimeout(() => {
+                    cards.forEach(card => card.classList.remove('loading'));
+                }, 300);
+            });
+    }
+    
+    function formatDate(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+    
+    function formatDateDisplay(dateStr) {
+        const date = new Date(dateStr);
+        return date.toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'short', 
+            day: 'numeric' 
+        });
+    }
+    
+    // Restore filter from session if exists
+    const savedFilter = sessionStorage.getItem('periodFilter');
+    if (savedFilter) {
+        try {
+            const filter = JSON.parse(savedFilter);
+            startDateInput.value = filter.startDate;
+            endDateInput.value = filter.endDate;
+            activeFilterBadge.style.display = 'block';
+            filterDateRange.textContent = `${formatDateDisplay(filter.startDate)} to ${formatDateDisplay(filter.endDate)}`;
+            filteredCount.textContent = `${filter.count} staff members`;
+        } catch (e) {
+            console.error('Error restoring filter:', e);
+        }
+    }
 }
 
 // Enhanced Analytics Charts Initialization
@@ -1031,6 +1423,9 @@ function initializeAnalyticsCharts() {
 
 // Initialize analytics charts when DOM is ready and Chart.js is loaded
 document.addEventListener('DOMContentLoaded', function() {
+    // Initialize period filter
+    initializePeriodFilter();
+    
     // Wait for Chart.js to load before initializing charts
     function waitForChart() {
         if (typeof Chart !== 'undefined') {
@@ -1698,9 +2093,17 @@ function refreshPersonnelData() {
         // Initialize Bootstrap modal with error handling
         const personnelModal = checkBootstrapAndInitModal();
         
+        // Store current category for API calls
+        let currentCategory = '';
+        let currentType = '';
+        
         // Function to update modal content
         function updateModalContent(rowElement, category, type) {
             console.log('🔄 Updating modal content for:', type, 'Category:', category);
+            
+            // Store category for later use
+            currentCategory = category;
+            currentType = type;
             
             try {
                 // Update modal title
@@ -1728,11 +2131,19 @@ function refreshPersonnelData() {
                 // Get data from row cells
                 const cells = rowElement.querySelectorAll('td');
                 console.log('📊 Row cells found:', cells.length);
+                console.log('📊 Row element:', rowElement);
+                console.log('📊 Category:', category, 'Type:', type);
                 
                 if (cells.length >= 4) {
-                    const maleCount = cells[1].textContent.trim();
-                    const femaleCount = cells[2].textContent.trim();
-                    const totalCount = cells[3].textContent.trim();
+                    // Extract text content - handle percentages in parentheses
+                    const maleText = cells[1].textContent.trim();
+                    const femaleText = cells[2].textContent.trim();
+                    const totalText = cells[3].textContent.trim();
+                    
+                    // Remove percentage text if present (e.g., "15 (45.5%)" -> "15")
+                    const maleCount = maleText.split('(')[0].trim();
+                    const femaleCount = femaleText.split('(')[0].trim();
+                    const totalCount = totalText.split('(')[0].trim();
                     
                     console.log('📈 Extracted data:', {
                         male: maleCount,
@@ -1761,15 +2172,20 @@ function refreshPersonnelData() {
                     
                     if (successCount === 3) {
                         console.log('🎉 All modal data updated successfully!');
+                        // Automatically load personnel list after modal content is updated
+                        loadPersonnelList();
                     } else {
                         console.warn(`⚠️ Only ${successCount}/3 elements updated successfully`);
                     }
                 } else {
                     console.error('❌ Not enough cells in row:', cells.length, 'Need at least 4 cells');
+                    console.error('❌ Row HTML:', rowElement.innerHTML);
                     alert('Error: Row data format is incorrect. Please refresh the page.');
                 }
             } catch (error) {
                 console.error('❌ Error extracting row data:', error);
+                console.error('❌ Error stack:', error.stack);
+                console.error('❌ Row element:', rowElement);
                 alert('Error processing row data. Please try again.');
             }
         }
@@ -1854,107 +2270,254 @@ function refreshPersonnelData() {
         }
         
         console.log('🎉 Dashboard initialization complete!');
-    });
-    
-    // Modal action buttons functionality
-    function setupModalActionButtons() {
-        console.log('⚙️ Setting up modal action buttons...');
         
-        // View Personnel List button
-        const viewListBtn = document.getElementById('view-personnel-list');
-        if (viewListBtn) {
-            viewListBtn.addEventListener('click', function() {
-                console.log('📋 View Personnel List clicked');
-                
-                const loadingEl = document.getElementById('modal-loading');
-                const personnelListEl = document.getElementById('modal-personnel-list');
-                const listBody = document.getElementById('personnel-list-body');
-                
-                // Show loading
-                if (loadingEl) loadingEl.style.display = 'block';
-                if (personnelListEl) personnelListEl.style.display = 'none';
-                
-                // Simulate loading personnel data (replace with actual API call)
-                setTimeout(() => {
+        // Function to load personnel list (defined inside DOMContentLoaded for access to currentCategory)
+        function loadPersonnelList() {
+            console.log('📋 Loading personnel list for category:', currentCategory);
+            
+            const loadingEl = document.getElementById('modal-loading');
+            const personnelListEl = document.getElementById('modal-personnel-list');
+            const listBody = document.getElementById('personnel-list-body');
+            
+            // Show loading, hide list
+            if (loadingEl) loadingEl.style.display = 'block';
+            if (personnelListEl) personnelListEl.style.display = 'none';
+            
+            // Determine if this is civilian category
+            const isCivilian = currentCategory.includes('civilian');
+            
+            // Update table headers based on category type
+            const tableHeaders = document.querySelector('#modal-personnel-list thead tr');
+            if (tableHeaders) {
+                if (isCivilian) {
+                    // Civilian: Name, Unit, Gender, Status (no rank column)
+                    tableHeaders.innerHTML = `
+                        <th>Name</th>
+                        <th>Unit</th>
+                        <th>Gender</th>
+                        <th>Status</th>
+                    `;
+                } else {
+                    // Military: Name, Rank, Unit, Gender, Status
+                    tableHeaders.innerHTML = `
+                        <th>Name</th>
+                        <th>Rank</th>
+                        <th>Unit</th>
+                        <th>Gender</th>
+                        <th>Status</th>
+                    `;
+                }
+            }
+            
+            // Fetch real personnel data from API
+            console.log('📡 Fetching personnel data for category:', currentCategory);
+            
+            fetch(`dashboard_api.php?action=get_personnel_by_category&category=${encodeURIComponent(currentCategory)}`)
+                .then(response => response.json())
+                .then(data => {
+                    console.log('📊 API Response:', data);
+                    console.log('📊 Data object:', data.data);
+                    console.log('📊 Personnel array:', data.data?.personnel);
+                    console.log('📊 Personnel count:', data.data?.count);
+                    
+                    // Hide loading, show list
                     if (loadingEl) loadingEl.style.display = 'none';
                     if (personnelListEl) personnelListEl.style.display = 'block';
                     
-                    if (listBody) {
+                    const colspanCount = isCivilian ? 4 : 5;
+                    
+                    if (data.success && data.data && data.data.personnel) {
+                        const personnel = data.data.personnel;
+                        
+                        if (personnel.length === 0) {
+                            listBody.innerHTML = `
+                                <tr>
+                                    <td colspan="${colspanCount}" class="text-center text-muted">
+                                        <i class="fas fa-info-circle me-2"></i>No personnel found in this category.
+                                    </td>
+                                </tr>
+                            `;
+                        } else {
+                            // Build table rows with real data
+                            let rows = '';
+                            personnel.forEach(person => {
+                                const statusClass = person.status === 'Active' ? 'success' : 'secondary';
+                                const unit = person.unit || 'N/A';
+                                
+                                if (isCivilian) {
+                                    // Civilian: Name, Unit, Gender, Status
+                                    rows += `
+                                        <tr>
+                                            <td>${person.name}</td>
+                                            <td>${unit}</td>
+                                            <td>${person.gender}</td>
+                                            <td><span class="badge bg-${statusClass}">${person.status}</span></td>
+                                        </tr>
+                                    `;
+                                } else {
+                                    // Military: Name, Rank, Unit, Gender, Status
+                                    const rank = person.rank || 'N/A';
+                                    rows += `
+                                        <tr>
+                                            <td>${person.name}</td>
+                                            <td>${rank}</td>
+                                            <td>${unit}</td>
+                                            <td>${person.gender}</td>
+                                            <td><span class="badge bg-${statusClass}">${person.status}</span></td>
+                                        </tr>
+                                    `;
+                                }
+                            });
+                            
+                            listBody.innerHTML = rows;
+                            console.log(`✅ Displayed ${personnel.length} personnel records`);
+                        }
+                    } else {
                         listBody.innerHTML = `
                             <tr>
-                                <td>Sample Person 1</td>
-                                <td>Captain</td>
-                                <td>1st Battalion</td>
-                                <td>Male</td>
-                                <td><span class="badge bg-success">Active</span></td>
-                            </tr>
-                            <tr>
-                                <td>Sample Person 2</td>
-                                <td>Lieutenant</td>
-                                <td>2nd Battalion</td>
-                                <td>Female</td>
-                                <td><span class="badge bg-success">Active</span></td>
-                            </tr>
-                            <tr>
-                                <td colspan="5" class="text-center text-muted">
-                                    <em>This is sample data. Connect to API for real personnel list.</em>
+                                <td colspan="${colspanCount}" class="text-center text-danger">
+                                    <i class="fas fa-exclamation-triangle me-2"></i>
+                                    ${data.message || 'Error loading personnel data'}
                                 </td>
                             </tr>
                         `;
+                        console.error('❌ API Error:', data.message);
                     }
+                })
+                .catch(error => {
+                    console.error('❌ Fetch Error:', error);
                     
-                    console.log('✅ Personnel list displayed');
-                }, 1500);
-            });
+                    const colspanCount = isCivilian ? 4 : 5;
+                    
+                    if (loadingEl) loadingEl.style.display = 'none';
+                    if (personnelListEl) personnelListEl.style.display = 'block';
+                    
+                    listBody.innerHTML = `
+                        <tr>
+                            <td colspan="${colspanCount}" class="text-center text-danger">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                Network error. Please check your connection and try again.
+                            </td>
+                        </tr>
+                    `;
+                });
         }
         
-        // Export Data button
-        const exportBtn = document.getElementById('export-personnel-data');
-        if (exportBtn) {
-            exportBtn.addEventListener('click', function() {
-                console.log('📊 Export Data clicked');
-                
-                const modalTitle = document.getElementById('personnelDetailModalLabel');
-                const categoryType = modalTitle ? modalTitle.textContent.replace(' Details', '') : 'Personnel';
-                
-                // Create sample CSV data
-                const csvData = [
-                    ['Name', 'Rank', 'Unit', 'Gender', 'Status'],
-                    ['Sample Person 1', 'Captain', '1st Battalion', 'Male', 'Active'],
-                    ['Sample Person 2', 'Lieutenant', '2nd Battalion', 'Female', 'Active']
-                ];
-                
-                // Convert to CSV string
-                const csvContent = csvData.map(row => row.join(',')).join('\n');
-                
-                // Create and download file
-                const blob = new Blob([csvContent], { type: 'text/csv' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${categoryType.replace(/[^a-zA-Z0-9]/g, '_')}_Export_${new Date().getTime()}.csv`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
-                
-                console.log('✅ Data exported as CSV');
-                
-                // Show success message
-                this.innerHTML = '<i class="fas fa-check me-1"></i>Exported!';
-                this.classList.remove('btn-outline-secondary');
-                this.classList.add('btn-success');
-                
-                setTimeout(() => {
-                    this.innerHTML = '<i class="fas fa-download me-1"></i>Export Data';
-                    this.classList.remove('btn-success');
-                    this.classList.add('btn-outline-secondary');
-                }, 2000);
-            });
+        // Modal action buttons functionality (defined inside DOMContentLoaded for access to currentCategory)
+        function setupModalActionButtons() {
+            console.log('⚙️ Setting up modal action buttons...');
+            
+            // View Personnel List button
+            const viewListBtn = document.getElementById('view-personnel-list');
+            if (viewListBtn) {
+                viewListBtn.addEventListener('click', function() {
+                    console.log('📋 View Personnel List button clicked');
+                    loadPersonnelList();
+                });
+                console.log('✅ View Personnel List button handler attached');
+            } else {
+                console.warn('⚠️ View Personnel List button not found');
+            }
+            
+            // Export Data button
+            const exportBtn = document.getElementById('export-personnel-data');
+            if (exportBtn) {
+                exportBtn.addEventListener('click', function() {
+                    console.log('📊 Export Data clicked for category:', currentCategory);
+                    
+                    const exportButton = this;
+                    const originalContent = exportButton.innerHTML;
+                    
+                    // Show loading state
+                    exportButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Exporting...';
+                    exportButton.disabled = true;
+                    
+                    // Fetch data from API for export
+                    fetch(`dashboard_api.php?action=get_personnel_by_category&category=${encodeURIComponent(currentCategory)}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success && data.data && data.data.personnel) {
+                                const personnel = data.data.personnel;
+                                
+                                // Create CSV header
+                                const csvData = [['Name', 'Rank', 'Unit', 'Gender', 'Status', 'Joined Date']];
+                                
+                                // Add data rows
+                                personnel.forEach(person => {
+                                    const rank = person.rank_abbr ? `${person.rank} (${person.rank_abbr})` : person.rank;
+                                    const unit = person.unit || 'N/A';
+                                    const joinedDate = person.joined_date || 'N/A';
+                                    
+                                    csvData.push([
+                                        person.name,
+                                        rank,
+                                        unit,
+                                        person.gender,
+                                        person.status,
+                                        joinedDate
+                                    ]);
+                                });
+                                
+                                // Convert to CSV string (properly escape quotes)
+                                const csvContent = csvData.map(row => 
+                                    row.map(cell => {
+                                        // Escape quotes and wrap in quotes if contains comma or quote
+                                        const cellStr = String(cell);
+                                        if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+                                            return '"' + cellStr.replace(/"/g, '""') + '"';
+                                        }
+                                        return cellStr;
+                                    }).join(',')
+                                ).join('\n');
+                                
+                                // Create and download file
+                                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = `${currentType.replace(/[^a-zA-Z0-9]/g, '_')}_Export_${new Date().toISOString().split('T')[0]}.csv`;
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                                window.URL.revokeObjectURL(url);
+                                
+                                console.log(`✅ Exported ${personnel.length} records as CSV`);
+                                
+                                // Show success message
+                                exportButton.innerHTML = '<i class="fas fa-check me-1"></i>Exported!';
+                                exportButton.classList.remove('btn-outline-secondary');
+                                exportButton.classList.add('btn-success');
+                                
+                                setTimeout(() => {
+                                    exportButton.innerHTML = originalContent;
+                                    exportButton.classList.remove('btn-success');
+                                    exportButton.classList.add('btn-outline-secondary');
+                                    exportButton.disabled = false;
+                                }, 2000);
+                            } else {
+                                throw new Error(data.message || 'Failed to fetch personnel data');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('❌ Export Error:', error);
+                            
+                            exportButton.innerHTML = '<i class="fas fa-times me-1"></i>Export Failed';
+                            exportButton.classList.remove('btn-outline-secondary');
+                            exportButton.classList.add('btn-danger');
+                            
+                            setTimeout(() => {
+                                exportButton.innerHTML = originalContent;
+                                exportButton.classList.remove('btn-danger');
+                                exportButton.classList.add('btn-outline-secondary');
+                                exportButton.disabled = false;
+                            }, 2000);
+                        });
+                });
+            }
+            
+            console.log('✅ Modal action buttons set up successfully!');
         }
-        
-        console.log('✅ Modal action buttons set up successfully!');
-    }
+    });
 </script>
 <!-- <script src="js/dashboard.js"></script> Disabled - conflicts with inline charts -->
 

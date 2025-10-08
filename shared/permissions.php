@@ -32,8 +32,9 @@ function hasPermission($permission, $userRole = null) {
         $userRole = $_SESSION['role'] ?? '';
     }
     
-    // Admin/administrator role has all permissions
-    if (strtolower($userRole) === 'admin' || strtolower($userRole) === 'administrator') {
+    // Admin/administrator/admin_branch roles have all permissions
+    $adminRoles = ['admin', 'administrator', 'admin_branch'];
+    if (in_array(strtolower($userRole), $adminRoles)) {
         return true;
     }
     
@@ -51,6 +52,12 @@ function hasPermission($permission, $userRole = null) {
             PERM_PROMOTE_STAFF, PERM_MANAGE_APPOINTMENTS, PERM_ASSIGN_MEDALS,
             PERM_VIEW_REPORTS, PERM_ADMIN_ACCESS, PERM_ADMIN_BRANCH_ACCESS, PERM_SYSTEM_SETTINGS
         ],
+        'admin_branch' => [
+            // Admin Branch has all admin permissions
+            PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_CREATE_STAFF, PERM_DELETE_STAFF,
+            PERM_PROMOTE_STAFF, PERM_MANAGE_APPOINTMENTS, PERM_ASSIGN_MEDALS,
+            PERM_VIEW_REPORTS, PERM_ADMIN_ACCESS, PERM_ADMIN_BRANCH_ACCESS, PERM_SYSTEM_SETTINGS
+        ],
         'hr_officer' => [
             PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_CREATE_STAFF, 
             PERM_PROMOTE_STAFF, PERM_MANAGE_APPOINTMENTS, PERM_VIEW_REPORTS,
@@ -61,6 +68,18 @@ function hasPermission($permission, $userRole = null) {
         ],
         'commander' => [
             PERM_VIEW_STAFF, PERM_VIEW_REPORTS, PERM_ASSIGN_MEDALS
+        ],
+        'command' => [
+            // Command role has similar permissions to commander
+            PERM_VIEW_STAFF, PERM_VIEW_REPORTS, PERM_ASSIGN_MEDALS, PERM_ADMIN_BRANCH_ACCESS
+        ],
+        'training' => [
+            // Training role can view and manage staff for training purposes
+            PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_VIEW_REPORTS, PERM_ADMIN_BRANCH_ACCESS
+        ],
+        'operations' => [
+            // Operations role can view and manage staff for operational purposes
+            PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_VIEW_REPORTS, PERM_ADMIN_BRANCH_ACCESS
         ],
         'staff_officer' => [
             PERM_VIEW_STAFF, PERM_VIEW_REPORTS
@@ -127,8 +146,9 @@ function getUserPermissions($userRole = null) {
         PERM_VIEW_REPORTS, PERM_ADMIN_ACCESS, PERM_ADMIN_BRANCH_ACCESS, PERM_SYSTEM_SETTINGS
     ];
     
-    // For admin/administrator, return all permissions
-    if (strtolower($userRole) === 'admin' || strtolower($userRole) === 'administrator') {
+    // For admin/administrator/admin_branch, return all permissions
+    $adminRoles = ['admin', 'administrator', 'admin_branch'];
+    if (in_array(strtolower($userRole), $adminRoles)) {
         return $allPermissions;
     }
     

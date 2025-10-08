@@ -349,7 +349,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     <i class="fa fa-print"></i> Print
                 </button>
                 <?php if (defined('ARMIS_ADMIN_BRANCH') && ARMIS_ADMIN_BRANCH): ?>
-                    <a href="edit_staff.php?id=<?=$staff->id?>" class="btn btn-warning">
+                    <a href="edit_staff.php?svcNo=<?=urlencode($staff->service_number)?>" class="btn btn-warning">
                         <i class="fa fa-edit"></i> Edit Profile
                     </a>
                 <?php endif; ?>
@@ -572,7 +572,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
         </div>
 
         <!-- ==================== STATISTICS CARDS ==================== -->
-        <div class="row mb-4">
+        <!--<div class="row mb-4">
             <div class="col-md-2 col-sm-6 mb-3">
                 <div class="card stat-card shadow-sm">
                     <div class="card-body text-center">
@@ -621,7 +621,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     </div>
                 </div>
             </div>
-        </div>
+        </div>-->
 
         <!-- ==================== TABBED SECTIONS ==================== -->
         <div class="card shadow-sm">

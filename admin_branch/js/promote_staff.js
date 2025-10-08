@@ -88,8 +88,12 @@ function initPromotionPage() {
         }
     });
 
-    // Initialize Select2 for staff selection
-    initSelect2StaffSelect();
+    // Initialize Select2 for staff selection (only if element exists and select2 is available)
+    if ($('#selected_staff').length > 0 && typeof $.fn.select2 !== 'undefined') {
+        initSelect2StaffSelect();
+    } else {
+        console.log('Select2 not needed - using DataTables for staff selection');
+    }
 
     // Initialize next rank on page load if promotion type is already selected
     if ($('#promotion_type').val()) {
@@ -536,7 +540,8 @@ function renderStaffPanels(selected) {
  */
 function validateForm() {
     let allFilled = true;
-    let hasStaff = $('#selected_staff').val()?.length > 0;
+    // Check for selected staff using DataTable checkboxes instead of Select2
+    let hasStaff = $('.staff-checkbox:checked').length > 0;
     let hasPromotionType = !!$('#promotion_type').val();
     let hasNextRank = !!$('#next_rank').val();
     let hasDate = !!$('input[name="promotion_date"]').val();
@@ -558,6 +563,9 @@ function validateForm() {
     // Update promote button state
     const canPromote = allFilled && hasStaff && hasPromotionType && hasNextRank && hasDate;
     $('#showConfirmModal').prop('disabled', !canPromote);
+    
+    // Debug logging
+    console.log('validateForm called - Staff:', hasStaff, 'Type:', hasPromotionType, 'Rank:', hasNextRank, 'Date:', hasDate, '=> Can Promote:', canPromote);
     
     // Show help text if button is disabled
     if (!canPromote) {

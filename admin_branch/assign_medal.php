@@ -241,11 +241,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
                 <div class="mb-3">
                     <label for="selected_staff" class="form-label" aria-label="Select Staff Members">Select Staff Members <span class="text-danger">*</span></label>
-                    <select name="selected_staff[]" id="selected_staff" class="form-select" multiple required aria-required="true" style="width:100%;"></select>
-                    <small class="text-muted">Type Service Number or name to search staff.</small>
-                    <div id="staff-loading" class="spinner-border text-primary d-none mt-1" role="status" style="width:1.5rem;height:1.5rem;"><span class="visually-hidden">Loading...</span></div>
+                    
+                    <!-- Staff Selection Controls -->
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="mb-0">
+                            <i class="fa fa-users"></i> 
+                            Select Staff Members for Medal Assignment
+                        </h6>
+                        <div>
+                            <button type="button" class="btn btn-sm btn-success" id="selectAllBtn">
+                                <i class="fa fa-check-double"></i> Select All
+                            </button>
+                            <button type="button" class="btn btn-sm btn-warning" id="deselectAllBtn">
+                                <i class="fa fa-times"></i> Deselect All
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="fa fa-info-circle"></i>
+                            <strong>Total Staff:</strong> <span id="totalStaffCount">0</span> | 
+                            <strong>Selected:</strong> <span id="selectionCount">0</span> staff member(s)
+                        </div>
+                    </div>
+                    
+                    <!-- Staff Selection Table -->
+                    <div class="table-responsive" id="staffTableContainer">
+                        <table class="table table-hover table-sm" id="staffSelectionTable" style="width:100%">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 40px;">
+                                        <input type="checkbox" id="masterCheckbox" class="form-check-input" title="Select/Deselect All">
+                                    </th>
+                                    <th>Service No.</th>
+                                    <th>Rank</th>
+                                    <th>Name</th>
+                                    <th>Unit</th>
+                                    <th>Corps</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- DataTables will populate this -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Hidden container to store selected staff for form submission -->
+                    <div id="selectedStaffInputs"></div>
+                    
+                    <!-- Legacy Select2 hidden input for compatibility -->
+                    <select name="selected_staff[]" id="selected_staff" multiple style="display: none;">
+                        <!-- Will be populated by JavaScript -->
+                    </select>
                 </div>
-                <div id="staff-counter" class="form-text" aria-live="polite"></div>
                 <div class="mb-3">
                     <label for="remark" class="form-label" aria-label="Citation or Remarks">Citation / Remarks</label>
                     <input type="text" class="form-control" id="remark" name="remark" value="<?=htmlspecialchars($_POST['remark'] ?? '')?>">
@@ -299,10 +349,268 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 </div>
+
+<!-- Recent Medal Assignments Table -->
+<div class="container-fluid p-4">
+    <div class="card shadow-sm mt-4">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0"><i class="fa fa-history"></i> Recent Medal Assignments</h5>
+        </div>
+        <div class="card-body">
+            <?php
+            // Fetch recent medal assignments
+            try {
+                $recentMedalsStmt = $pdo->prepare("
+                    SELECT 
+                        sm.id,
+                        sm.award_date,
+                        sm.citation,
+                        sm.awarded_by,
+                        sm.created_at,
+                        s.service_number,
+                        s.first_name,
+                        s.last_name,
+                        r.name AS rank_name,
+                        r.abbreviation AS rank_abbr,
+                        u.name AS unit_name,
+                        m.name AS medal_name,
+                        m.description AS medal_description
+                    FROM staff_medals sm
+                    LEFT JOIN staff s ON sm.staff_id = s.id
+                    LEFT JOIN ranks r ON s.rank_id = r.id
+                    LEFT JOIN units u ON s.unit_id = u.id
+                    LEFT JOIN medals m ON sm.medal_id = m.id
+                    ORDER BY sm.created_at DESC, sm.award_date DESC
+                    LIMIT 20
+                ");
+                $recentMedalsStmt->execute();
+                $recentMedals = $recentMedalsStmt->fetchAll(PDO::FETCH_OBJ);
+            } catch (PDOException $e) {
+                $recentMedals = [];
+                error_log("Error fetching recent medals: " . $e->getMessage());
+            }
+            ?>
+
+            <?php if (!empty($recentMedals)): ?>
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover" id="recentMedalsTable">
+                        <thead class="table-dark">
+                            <tr>
+                                <th><i class="fa fa-hashtag"></i> #</th>
+                                <th><i class="fa fa-calendar"></i> Award Date</th>
+                                <th><i class="fa fa-user"></i> Staff Member</th>
+                                <th><i class="fa fa-medal"></i> Medal</th>
+                                <th><i class="fa fa-quote-left"></i> Citation</th>
+                                <th><i class="fa fa-user-shield"></i> Awarded By</th>
+                                <th><i class="fa fa-clock"></i> Assigned On</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($recentMedals as $index => $medal): ?>
+                                <tr>
+                                    <td><?= $index + 1 ?></td>
+                                    <td>
+                                        <?php if (!empty($medal->award_date)): ?>
+                                            <span class="badge bg-primary">
+                                                <?= date('d M Y', strtotime($medal->award_date)) ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="text-muted">N/A</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <div>
+                                                <strong>
+                                                    <?= htmlspecialchars($medal->service_number ?? 'N/A') ?>
+                                                </strong>
+                                                <br>
+                                                <small class="text-muted">
+                                                    <?php if (!empty($medal->rank_abbr)): ?>
+                                                        <?= htmlspecialchars($medal->rank_abbr) ?>
+                                                    <?php endif; ?>
+                                                    <?= htmlspecialchars(($medal->first_name ?? '') . ' ' . ($medal->last_name ?? '')) ?>
+                                                </small>
+                                                <?php if (!empty($medal->unit_name)): ?>
+                                                    <br>
+                                                    <small class="text-info">
+                                                        <i class="fa fa-building"></i> <?= htmlspecialchars($medal->unit_name) ?>
+                                                    </small>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-warning text-dark">
+                                            <i class="fa fa-medal"></i> <?= htmlspecialchars($medal->medal_name ?? 'Unknown Medal') ?>
+                                        </span>
+                                        <?php if (!empty($medal->medal_description)): ?>
+                                            <br>
+                                            <small class="text-muted">
+                                                <?= htmlspecialchars(substr($medal->medal_description, 0, 50)) ?>
+                                                <?= strlen($medal->medal_description ?? '') > 50 ? '...' : '' ?>
+                                            </small>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if (!empty($medal->citation)): ?>
+                                            <span class="text-muted">
+                                                <?= htmlspecialchars(substr($medal->citation, 0, 60)) ?>
+                                                <?= strlen($medal->citation) > 60 ? '...' : '' ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <em class="text-muted">No citation</em>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if (!empty($medal->awarded_by)): ?>
+                                            <span class="badge bg-secondary">
+                                                <?= htmlspecialchars($medal->awarded_by) ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="text-muted">N/A</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if (!empty($medal->created_at)): ?>
+                                            <small class="text-muted">
+                                                <?= date('d M Y H:i', strtotime($medal->created_at)) ?>
+                                            </small>
+                                        <?php else: ?>
+                                            <span class="text-muted">N/A</span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Table Footer with Summary -->
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <small class="text-muted">
+                            <i class="fa fa-info-circle"></i> 
+                            Showing the latest <?= count($recentMedals) ?> medal assignments
+                        </small>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <a href="view_staff.php" class="btn btn-outline-primary btn-sm">
+                            <i class="fa fa-eye"></i> View All Staff Records
+                        </a>
+                    </div>
+                </div>
+
+            <?php else: ?>
+                <div class="alert alert-info">
+                    <i class="fa fa-info-circle"></i>
+                    <strong>No Medal Assignments Found</strong>
+                    <p class="mb-0">No recent medal assignments to display. Use the form above to assign medals to staff members.</p>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+
+<!-- DataTables CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.6/css/dataTables.bootstrap5.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-responsive-bs5@2.5.0/css/responsive.bootstrap5.min.css">
+
 <style>
 .stepper { list-style: none; padding: 0; display: flex; gap: 10px; }
 .step { padding: 4px 10px; border-radius: 12px; background: #eee; color: #333; }
 .step.active { background: #17a2b8; color: #fff; font-weight: bold; }
+
+/* DataTables Custom Styling */
+#staffSelectionTable {
+    font-size: 0.9rem;
+}
+
+#staffSelectionTable thead th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+    border-bottom: 2px solid #dee2e6;
+    padding: 12px 8px;
+}
+
+#staffSelectionTable tbody tr {
+    transition: background-color 0.2s ease;
+}
+
+#staffSelectionTable tbody tr:hover {
+    background-color: #f1f3f5;
+    cursor: pointer;
+}
+
+/* Selected row styling */
+#staffSelectionTable tbody tr.selected {
+    background-color: #cfe2ff !important;
+    border-left: 4px solid #0d6efd !important;
+}
+
+#staffSelectionTable tbody tr.selected:hover {
+    background-color: #b6d4fe !important;
+}
+
+.staff-checkbox {
+    cursor: pointer;
+    width: 18px;
+    height: 18px;
+}
+
+#masterCheckbox {
+    cursor: pointer;
+    width: 18px;
+    height: 18px;
+}
+
+/* Loading state */
+#staffTableContainer.loading {
+    position: relative;
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+#staffTableContainer.loading::after {
+    content: 'Loading staff data...';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(255, 255, 255, 0.95);
+    padding: 20px 40px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    font-weight: 600;
+    color: #0d6efd;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    #staffSelectionTable {
+        font-size: 0.8rem;
+    }
+    
+    #staffSelectionTable thead th,
+    #staffSelectionTable tbody td {
+        padding: 0.5rem 0.25rem;
+    }
+    
+    /* Hide less important columns on mobile */
+    #staffSelectionTable th:nth-child(6),
+    #staffSelectionTable td:nth-child(6),
+    #staffSelectionTable th:nth-child(7),
+    #staffSelectionTable td:nth-child(7),
+    #staffSelectionTable th:nth-child(8),
+    #staffSelectionTable td:nth-child(8) {
+        display: none;
+    }
+    
+    .d-flex.justify-content-between {
+        flex-direction: column;
+        gap: 10px;
+    }
+}
 .select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__choice {
     background-color: #0d6efd;
     border-color: #0d6efd;
@@ -313,78 +621,377 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     color: #fff;
     margin-right: 6px;
     font-weight: bold;
-    cursor: pointer;
-}
 </style>
-<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<!-- Load jQuery first from allowed CDN -->
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+<!-- DataTables JavaScript -->
+<script src="https://cdn.jsdelivr.net/npm/datatables.net@1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/datatables.net-responsive@2.5.0/js/dataTables.responsive.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/datatables.net-responsive-bs5@2.5.0/js/responsive.bootstrap5.min.js"></script>
 <script>
-$('#selected_staff').select2({
-    theme: 'bootstrap-5',
-    placeholder: "Type Service Number or name to search staff.",
-    allowClear: true,
-    width: '100%',
-    minimumInputLength: 1,
-    multiple: true,
-    ajax: {
+let staffTable;
+let allStaffData = [];
+let selectedStaff = [];
+
+// Wait for jQuery to be available (either from app or CDN)
+function waitForJQuery(callback) {
+    if (typeof jQuery !== 'undefined' && typeof $ !== 'undefined') {
+        callback();
+    } else {
+        console.log('Waiting for jQuery to load...');
+        setTimeout(() => waitForJQuery(callback), 100);
+    }
+}
+
+// Initialize when jQuery is ready
+waitForJQuery(function() {
+    $(document).ready(function() {
+        console.log('Assign Medal page loaded, initializing staff table...');
+        
+        // Add loading indicator
+        $('#staffTableContainer').addClass('loading');
+        
+        initializeStaffTable();
+        bindEventHandlers();
+        
+        // Initial button state check
+        enableAssignButton();
+    });
+});
+
+function initializeStaffTable() {
+    // Load all staff data with proper seniority information
+    $.ajax({
         url: 'search_staff.php',
+        method: 'GET',
+        data: { q: 'all', limit: 1000 },
         dataType: 'json',
-        delay: 250,
-        data: function(params) {
-            $('#staff-loading').removeClass('d-none');
-            return { q: params.term || '' };
+        success: function(response) {
+            console.log('Staff data loaded:', response);
+            
+            if (Array.isArray(response)) {
+                allStaffData = response;
+                initDataTable();
+            } else if (response && response.results && Array.isArray(response.results)) {
+                allStaffData = response.results;
+                initDataTable();
+            } else {
+                console.error('Invalid response format:', response);
+                allStaffData = [];
+                initDataTable();
+            }
         },
-        processResults: function(data) {
-            $('#staff-loading').addClass('d-none');
-            return { results: data };
+        error: function(xhr, status, error) {
+            console.error('Error loading staff data:', error);
+            console.error('Response:', xhr.responseText);
+            // Initialize empty table on error
+            allStaffData = [];
+            initDataTable();
         }
-    },
-    templateResult: function(item) {
-        if (item.loading) return item.text;
-        // Display as: 007414 - Lieutenant Numba Marriott Gift
-        return `<span><strong>${item.service_number}</strong> - ${item.rank_name ? item.rank_name + ' ' : ''}${item.last_name} ${item.first_name}</span>`;
-    },
-    templateSelection: function(item) {
-        if (!item.id || !item.service_number) return item.text || item.id;
-        return `${item.service_number} - ${item.rank_name ? item.rank_name + ' ' : ''}${item.last_name} ${item.first_name}`;
-    },
-    escapeMarkup: function(markup) { return markup; },
-    closeOnSelect: false // keep input open for more selection
-});
-$('#selected_staff').on('change', function() {
-    let selected = $(this).select2('data');
-    $('#staff-counter').text(selected.length + ' staff selected');
-});
+    });
+}
+
+function initDataTable() {
+    console.log('Initializing DataTable with', allStaffData.length, 'staff members');
+    
+    // Remove loading indicator
+    $('#staffTableContainer').removeClass('loading');
+    
+    // Helper function to format names in sentence case (same as reports_seniority.php)
+    function formatSentenceCase(name) {
+        if (!name) return '';
+        return name.split(' ').map(word => 
+            word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+        ).join(' ');
+    }
+    
+    // Convert staff data for DataTables with proper seniority sorting
+    const tableData = allStaffData.map(staff => {
+        return {
+            id: staff.staff_id || staff.id || staff.service_number,
+            service_number: staff.service_number || 'N/A',
+            first_name: staff.first_name || '',
+            last_name: staff.last_name || '',
+            rank_name: staff.rank_name || 'N/A',
+            rank_level: staff.rank_level || 999, // High number for unknown ranks
+            rank_abbr: staff.rank_abbr || '',
+            unit_name: staff.unit_name || 'N/A',
+            full_name: formatSentenceCase((staff.first_name || '') + ' ' + (staff.last_name || '')).replace(/^\s+/, '').replace(/\s+$/, '') || 'N/A',
+            surname: formatSentenceCase(staff.last_name || ''),
+            first_names: formatSentenceCase(staff.first_name || ''),
+            corps: staff.corps || 'N/A',
+            status: staff.status || 'Active',
+            attestDate: staff.attestDate || '',
+            subWef: staff.subWef || '',
+            tempWef: staff.tempWef || '',
+            // Add sorting keys for military seniority (same logic as reports_seniority.php)
+            sort_key: [
+                staff.rank_level || 999,
+                staff.subWef || '9999-12-31',
+                staff.tempWef || '9999-12-31', 
+                staff.attestDate || '9999-12-31',
+                staff.service_number || 'ZZZ999'
+            ].join('|')
+        };
+    });
+    
+    // Sort the data using military seniority logic
+    tableData.sort((a, b) => {
+        // Primary sort: Rank level (lower numbers = higher ranks)
+        if (a.rank_level !== b.rank_level) {
+            return a.rank_level - b.rank_level;
+        }
+        
+        // Secondary sort: Sub rank effective date (earlier = senior)
+        if (a.subWef !== b.subWef) {
+            return (a.subWef || '9999-12-31').localeCompare(b.subWef || '9999-12-31');
+        }
+        
+        // Tertiary sort: Temp rank effective date (earlier = senior)
+        if (a.tempWef !== b.tempWef) {
+            return (a.tempWef || '9999-12-31').localeCompare(b.tempWef || '9999-12-31');
+        }
+        
+        // Quaternary sort: Attestation date (earlier = senior)
+        if (a.attestDate !== b.attestDate) {
+            return (a.attestDate || '9999-12-31').localeCompare(b.attestDate || '9999-12-31');
+        }
+        
+        // Final sort: Service number
+        return (a.service_number || 'ZZZ999').localeCompare(b.service_number || 'ZZZ999');
+    });
+    
+    console.log('Table data sample (sorted by seniority):', tableData.slice(0, 3));
+    
+    $('#totalStaffCount').text(tableData.length);
+    
+    if ($.fn.DataTable.isDataTable('#staffSelectionTable')) {
+        $('#staffSelectionTable').DataTable().destroy();
+    }
+    
+    try {
+        staffTable = $('#staffSelectionTable').DataTable({
+            data: tableData,
+            pageLength: 25,
+            order: [], // Don't apply additional ordering, data is already sorted by seniority
+            responsive: true,
+            columns: [
+                {
+                    data: null,
+                    orderable: false,
+                    className: 'select-checkbox text-center',
+                    render: function(data, type, row) {
+                        return `<input type="checkbox" class="staff-checkbox form-check-input" value="${row.service_number}" data-staff-id="${row.id}">`;
+                    }
+                },
+                { 
+                    data: 'service_number', 
+                    title: 'Service No.',
+                    orderable: false // Maintain seniority order
+                },
+                { 
+                    data: null,
+                    title: 'Rank',
+                    orderable: false,
+                    render: function(data, type, row) {
+                        return `<span class="badge bg-primary">${row.rank_abbr || row.rank_name}</span>`;
+                    }
+                },
+                {
+                    data: null,
+                    title: 'Name',
+                    orderable: false,
+                    render: function(data, type, row) {
+                        // Helper function for proper title case
+                        function toTitleCase(str) {
+                            if (!str) return '';
+                            return str.trim().split(/\s+/).map(word => {
+                                if (word.length === 0) return '';
+                                // Handle hyphenated names and apostrophes
+                                return word.split('-').map(part => 
+                                    part.split("'").map(subpart => 
+                                        subpart.charAt(0).toUpperCase() + subpart.slice(1).toLowerCase()
+                                    ).join("'")
+                                ).join('-');
+                            }).join(' ');
+                        }
+                        
+                        const surname = toTitleCase(row.last_name || '');
+                        const firstName = toTitleCase(row.first_name || '');
+                        
+                        // Properly format name without comma
+                        let fullName = '';
+                        if (surname && firstName) {
+                            fullName = `${firstName} ${surname}`;
+                        } else if (surname) {
+                            fullName = surname;
+                        } else if (firstName) {
+                            fullName = firstName;
+                        } else {
+                            fullName = 'N/A';
+                        }
+                        
+                        return `<div class="fw-bold">${fullName}</div>`;
+                    }
+                },
+                { 
+                    data: 'unit_name', 
+                    title: 'Unit',
+                    orderable: false
+                },
+                { 
+                    data: 'corps', 
+                    title: 'Corps',
+                    orderable: false
+                },
+                { 
+                    data: 'status', 
+                    title: 'Status',
+                    orderable: false,
+                    render: function(data, type, row) {
+                        const statusClass = row.status === 'Active' ? 'bg-success' : 'bg-secondary';
+                        return `<span class="badge ${statusClass}">${row.status}</span>`;
+                    }
+                }
+            ],
+            language: {
+                emptyTable: "No staff members found",
+                info: "Showing _START_ to _END_ of _TOTAL_ staff members (ordered by military seniority)",
+                infoEmpty: "No staff members available",
+                search: "Search staff:"
+            },
+            dom: '<"row"<"col-sm-12 col-md-6"l><"col-sm-12 col-md-6"f>>rtip'
+        });
+        
+        console.log('DataTable initialized successfully with military seniority sorting');
+    } catch (error) {
+        console.error('DataTable initialization failed:', error);
+        $('#staffTableContainer').removeClass('loading');
+        
+        // Show fallback message
+        $('#staffSelectionTable tbody').html(
+            '<tr><td colspan="8" class="text-center text-danger">' +
+            'Failed to load staff data. Please refresh the page.' +
+            '</td></tr>'
+        );
+    }
+}
+
+function bindEventHandlers() {
+    // Master checkbox handler
+    $(document).on('change', '#masterCheckbox', function() {
+        const isChecked = $(this).is(':checked');
+        $('.staff-checkbox:visible').prop('checked', isChecked).trigger('change');
+    });
+    
+    // Individual checkbox handler
+    $(document).on('change', '.staff-checkbox', function() {
+        const checkbox = $(this);
+        const serviceNumber = checkbox.val();
+        const staffId = checkbox.data('staff-id');
+        const row = checkbox.closest('tr');
+        
+        if (checkbox.is(':checked')) {
+            // Add to selection
+            if (!selectedStaff.find(s => s.service_number === serviceNumber)) {
+                const staffData = allStaffData.find(s => s.service_number === serviceNumber);
+                if (staffData) {
+                    selectedStaff.push(staffData);
+                    row.addClass('selected');
+                }
+            }
+        } else {
+            // Remove from selection
+            selectedStaff = selectedStaff.filter(s => s.service_number !== serviceNumber);
+            row.removeClass('selected');
+        }
+        
+        updateSelectionDisplay();
+        updateLegacySelect();
+        enableAssignButton();
+    });
+    
+    // Select All button
+    $('#selectAllBtn').on('click', function() {
+        $('#masterCheckbox').prop('checked', true).trigger('change');
+    });
+    
+    // Deselect All button
+    $('#deselectAllBtn').on('click', function() {
+        $('#masterCheckbox').prop('checked', false).trigger('change');
+    });
+}
+
+function updateSelectionDisplay() {
+    $('#selectionCount').text(selectedStaff.length);
+    
+    // Update master checkbox state
+    const visibleCheckboxes = $('.staff-checkbox:visible');
+    const checkedBoxes = $('.staff-checkbox:visible:checked');
+    
+    if (checkedBoxes.length === 0) {
+        $('#masterCheckbox').prop('indeterminate', false).prop('checked', false);
+    } else if (checkedBoxes.length === visibleCheckboxes.length) {
+        $('#masterCheckbox').prop('indeterminate', false).prop('checked', true);
+    } else {
+        $('#masterCheckbox').prop('indeterminate', true);
+    }
+}
+
+function updateLegacySelect() {
+    // Update the hidden select element for form compatibility
+    const select = $('#selected_staff');
+    select.empty();
+    
+    selectedStaff.forEach(staff => {
+        const option = new Option(
+            `${staff.service_number} - ${staff.rank_name || ''} ${staff.first_name} ${staff.last_name}`,
+            staff.service_number,
+            true,
+            true
+        );
+        select.append(option);
+    });
+}
+
+function calculateAge(dob) {
+    if (!dob) return null;
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+    }
+    return age;
+}
 function enableAssignButton() {
-    let allFilled = $('#medal_id').val() && $('#award_date').val() && $('#auth').val() && $('#selected_staff').val().length > 0;
+    let allFilled = $('#medal_id').val() && $('#award_date').val() && $('#auth').val() && selectedStaff.length > 0;
     $('#showConfirmModal').prop('disabled', !allFilled);
 }
 $('#medal_id, #award_date, #auth').on('input', enableAssignButton);
-$('#selected_staff').on('change', enableAssignButton);
 $('#showConfirmModal').on('click', function() {
-    let selected = $('#selected_staff').select2('data') || [];
-    if (selected.length >= <?=json_encode($BULK_CONFIRMATION_THRESHOLD)?>) {
-        $('#bulkCount').text(selected.length);
+    if (selectedStaff.length >= <?=json_encode($BULK_CONFIRMATION_THRESHOLD)?>) {
+        $('#bulkCount').text(selectedStaff.length);
         var modal = new bootstrap.Modal(document.getElementById('bulkConfirmModal'));
         modal.show();
         $('#bulkConfirmSubmitBtn').off('click').on('click', function() {
-            renderConfirmSummary(selected);
+            renderConfirmSummary(selectedStaff);
             var confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'));
             confirmModal.show();
             modal.hide();
         });
         return;
     }
-    renderConfirmSummary(selected);
+    renderConfirmSummary(selectedStaff);
     var modal = new bootstrap.Modal(document.getElementById('confirmModal'));
     modal.show();
 });
 function renderConfirmSummary(selected) {
     let summary = '<ul class="list-group">';
     selected.forEach(function(staff){
-        summary += `<li class="list-group-item">${staff.service_number} - ${staff.rank_name ? staff.rank_name + ' ' : ''}${staff.last_name} ${staff.first_name} <br><strong>Medal:</strong> ${$('#medal_id option:selected').text()} <br><strong>Authority:</strong> ${$('#auth').val() || '-'}</li>`;
+        summary += `<li class="list-group-item">${staff.service_number} - ${staff.rank_name ? staff.rank_name + ' ' : ''}${staff.first_name} ${staff.last_name} <br><strong>Medal:</strong> ${$('#medal_id option:selected').text()} <br><strong>Authority:</strong> ${$('#auth').val() || '-'}</li>`;
     });
     summary += '</ul>';
     $('#confirmSummary').html(summary);

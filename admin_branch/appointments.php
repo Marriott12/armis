@@ -109,6 +109,55 @@ try {
 
 $ranks = [];
 $units = [];
+$positions = [];
+$appointmentTypes = [];
+
+// Fetch appointment types from database
+try {
+    $appointmentTypesStmt = $pdo->query("SELECT id, type_name, description, is_temporary, default_duration_months FROM appointment_type ORDER BY id");
+    $appointmentTypes = $appointmentTypesStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log("Error fetching appointment types: " . $e->getMessage());
+    $appointmentTypes = []; // Fallback to empty array
+}
+
+// Define standard military appointment positions
+$standardPositions = [
+    'Commanding Officer',
+    'Second In Command', 
+    'Operations Officer',
+    'Training Officer',
+    'Adjutant',
+    'Battalion Commander',
+    'Battalion Second In Command',
+    'Detachment Commander',
+    'Detachment Second In Command',
+    'Intelligence Officer',
+    'Logistics Officer',
+    'Regimental Medical Officer',
+    'Signals Officer',
+    'Engineer Officer',
+    'Administrative Officer',
+    'Finance Officer',
+    'Personnel Officer',
+    'Survey Officer',
+    'Transport Officer',
+    'Quartermaster',
+    'Company Commander',
+    'Platoon Commander',
+    'Section Commander',
+    'Regimental Sergeant Major',
+    'Company Sergeant Major',
+    'Platoon Sergeant',
+    'Ward Master',
+    'Drill Instructor',
+    'Weapons Instructor',
+    'Physical Training Instructor',
+    'Driver',
+    'Radio Operator',
+    'Layer',
+    'Other'
+];
 
 // Initialize session cache if not exists
 if (!isset($_SESSION['dropdown_cache'])) {
@@ -186,6 +235,7 @@ $excludedRankIds = array_filter($excludedRankIds);
 
 $errors = [];
 $success = false;
+$eligibleStaff = [];
 
 // Step 1: Select current rank
 $currentRankId = $_POST['current_rank'] ?? $_GET['current_rank'] ?? '';
@@ -194,6 +244,30 @@ if ($currentRankId) {
     $stmt = $pdo->prepare("SELECT * FROM ranks WHERE id = ? LIMIT 1");
     $stmt->execute([$currentRankId]);
     $currentRank = $stmt->fetch(PDO::FETCH_OBJ);
+    
+    // Fetch staff at the selected rank
+    if ($currentRank) {
+        try {
+            $staffStmt = $pdo->prepare("
+                SELECT s.id, s.service_number, s.first_name, s.last_name, s.rank_id, 
+                       s.attestDate, s.unit_id, s.subWef, s.tempWef, s.DOB as dateOfBirth,
+                       s.corps, s.svcStatus as status,
+                       u.name as unit_name, r.level, r.name as rank_name, r.abbreviation as rank_abbr
+                FROM staff s
+                LEFT JOIN units u ON s.unit_id = u.id
+                LEFT JOIN ranks r ON s.rank_id = r.id
+                WHERE s.rank_id = ? AND s.svcStatus = 'Active'
+                ORDER BY r.level ASC, s.subWef ASC, s.tempWef ASC, s.attestDate ASC, s.service_number ASC
+            ");
+            $staffStmt->execute([$currentRankId]);
+            $eligibleStaff = $staffStmt->fetchAll(PDO::FETCH_OBJ);
+            
+            error_log("APPOINTMENTS: Found " . count($eligibleStaff) . " staff members at rank ID " . $currentRankId);
+        } catch (Exception $e) {
+            error_log("APPOINTMENTS: Error fetching staff - " . $e->getMessage());
+            $errors[] = "Error loading staff data: " . htmlspecialchars($e->getMessage());
+        }
+    }
 }
 
 // Step 2: Handle form submission for appointments
@@ -215,6 +289,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
         $requiresApproval = isset($_POST['requires_approval']);
         $unitsSelected = $_POST['unit'] ?? [];
         $positions = $_POST['position'] ?? [];
+        $locations = $_POST['location'] ?? [];
         $comments = $_POST['comment'] ?? [];
         $createdBy = $_SESSION['user_id'] ?? 0;
     $dateCreated = date('Y-m-d H:i:s');
@@ -239,26 +314,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
         }
     }
     if (empty($appointmentTypeId)) $errors[] = "Please select an appointment type.";
-
-    // Get appointment type details to check if it's temporary
-    $isTemporary = false;
+    
+    // Validate appointment type exists in database
     if (!empty($appointmentTypeId)) {
-        try {
-            $typeStmt = $pdo->prepare("SELECT is_temporary FROM appointment_types WHERE id = ?");
-            $typeStmt->execute([$appointmentTypeId]);
-            $appointmentType = $typeStmt->fetch(PDO::FETCH_OBJ);
-            $isTemporary = $appointmentType && $appointmentType->is_temporary;
-        } catch (Exception $e) {
-            $errors[] = "Error checking appointment type: " . htmlspecialchars($e->getMessage());
-            error_log("Appointment type check error: " . $e->getMessage());
+        $typeStmt = $pdo->prepare("SELECT id, is_temporary FROM appointment_type WHERE id = ?");
+        $typeStmt->execute([$appointmentTypeId]);
+        $typeInfo = $typeStmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$typeInfo) {
+            $errors[] = "Invalid appointment type selected.";
+        } else {
+            $isTemporary = $typeInfo['is_temporary'];
         }
     }
 
-    // If it's a temporary appointment, we need an end date
-    if ($isTemporary && empty($endDate)) {
-        $errors[] = "End date is required for temporary appointments.";
-    } elseif ($isTemporary && !empty($endDate)) {
-        // Validate end date
+    // Calculate end date if not provided (3 years from appointment date for all types if not specified)
+    if (empty($endDate) && !empty($apptDate)) {
+        $endDate = date('Y-m-d', strtotime($apptDate . ' +3 years'));
+        error_log("APPOINTMENTS: Auto-calculated end date as 3 years from appointment: $endDate");
+    }
+
+    // Validate end date if provided
+    if (!empty($endDate)) {
         $endTimestamp = strtotime($endDate);
         $apptTimestamp = strtotime($apptDate);
         
@@ -266,8 +343,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
             $errors[] = "Invalid end date format.";
         } elseif ($apptTimestamp && $endTimestamp <= $apptTimestamp) {
             $errors[] = "End date must be after the appointment date.";
-        } elseif ($endTimestamp > strtotime('+5 years')) {
-            $errors[] = "End date cannot be more than 5 years in the future.";
+        } elseif ($endTimestamp > strtotime('+10 years')) {
+            $errors[] = "End date cannot be more than 10 years in the future.";
         }
     }
 
@@ -280,9 +357,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
             $errors[] = "Invalid unit selection for staff member " . htmlspecialchars($svcNo) . ".";
         }
         
-        // Validate service number format (assuming format like AR001234)
-        if (!preg_match('/^[A-Z]{2}\d{6}$/', $svcNo)) {
-            $errors[] = "Invalid service number format for " . htmlspecialchars($svcNo) . ". Expected format: AR123456";
+        // Validate service number format (allow both numeric and alphanumeric)
+        if (!preg_match('/^([A-Z]{2}\d{6}|\d{6})$/', $svcNo)) {
+            $errors[] = "Invalid service number format for " . htmlspecialchars($svcNo) . ". Expected format: AR123456 or 103003";
         }
     }
     
@@ -298,72 +375,236 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
             error_log("Database connection error in appointments: " . $e->getMessage());
         }
         
+        // Check for existing active appointments and enforce business rules
+        // Business Rule: A staff can have max 1 substantive + 1 temporary/acting appointment
+        $existingAppointments = [];
+        
+        if (empty($errors)) {
+            try {
+                // Fetch ALL active appointments for each staff member with appointment type info
+                $duplicateCheckStmt = $pdo->prepare("
+                    SELECT sa.service_number, sa.appointment_id, sa.appointment_date, 
+                           sa.end_date, u.name as unit_name, sa.id as appt_record_id,
+                           sa.appointment_type, at.type_name, at.is_temporary
+                    FROM staff_appointment sa
+                    LEFT JOIN units u ON sa.unit_id = u.id
+                    LEFT JOIN appointment_type at ON sa.appointment_type = at.id
+                    WHERE sa.service_number = ? 
+                    AND (
+                        sa.end_date IS NULL 
+                        OR sa.end_date >= CURDATE()
+                    )
+                    ORDER BY sa.appointment_date DESC
+                ");
+                
+                foreach ($selectedStaff as $svcNo) {
+                    $duplicateCheckStmt->execute([$svcNo]);
+                    $existingAppts = $duplicateCheckStmt->fetchAll(PDO::FETCH_ASSOC);
+                    
+                    if (!empty($existingAppts)) {
+                        // Store all existing appointments for this staff member
+                        $existingAppointments[$svcNo] = $existingAppts;
+                        
+                        // Check business rule: validate appointment type conflicts
+                        // Get the new appointment type being created
+                        $newTypeStmt = $pdo->prepare("SELECT is_temporary FROM appointment_type WHERE id = ?");
+                        $newTypeStmt->execute([$appointmentTypeId]);
+                        $newTypeInfo = $newTypeStmt->fetch(PDO::FETCH_ASSOC);
+                        $newIsTemporary = $newTypeInfo['is_temporary'] ?? 0;
+                        
+                        // Count existing appointment types
+                        $hasSubstantive = false;
+                        $hasTemporary = false;
+                        
+                        foreach ($existingAppts as $appt) {
+                            if ($appt['is_temporary']) {
+                                $hasTemporary = true;
+                            } else {
+                                $hasSubstantive = true;
+                            }
+                        }
+                        
+                        // Validate business rule
+                        if (!$newIsTemporary && $hasSubstantive) {
+                            $errors[] = "Staff member {$svcNo} already has an active substantive appointment. Cannot create another substantive appointment. The existing appointment will be automatically ended.";
+                        } elseif ($newIsTemporary && $hasTemporary && $hasSubstantive) {
+                            $errors[] = "Staff member {$svcNo} already has both substantive and temporary appointments. Cannot create additional temporary appointment. Existing appointments will be automatically ended.";
+                        }
+                        
+                        // Note: We don't block - we inform user that previous appointments will be auto-ended
+                        // Clear the errors as we'll handle this automatically
+                        $errors = array_filter($errors, function($error) use ($svcNo) {
+                            return strpos($error, $svcNo) === false;
+                        });
+                    }
+                }
+                
+                // Store existing appointments in session for informational display
+                if (!empty($existingAppointments)) {
+                    $_SESSION['existing_appointments'] = $existingAppointments;
+                }
+            } catch (Exception $e) {
+                $errors[] = "Error checking for existing appointments: " . htmlspecialchars($e->getMessage());
+                error_log("Duplicate check error in appointments: " . $e->getMessage());
+            }
+        }
+        
         if (empty($errors)) {
         
         // Prepare all statements outside the loop for better performance
-        $selectStaffStmt = $pdo->prepare("SELECT id, service_number FROM staff WHERE service_number = ? LIMIT 1");
-        $insertApptStmt = $pdo->prepare("INSERT INTO staff_appointment (staff_id, appointment_id, unit_id, service_number, appointment_date, comment, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        $selectStaffStmt = $pdo->prepare("SELECT id, service_number, rank_id FROM staff WHERE service_number = ? LIMIT 1");
+        $insertApptStmt = $pdo->prepare("INSERT INTO staff_appointment (
+            staff_id, 
+            appointment_id, 
+            appointment_type, 
+            rank_id,
+            unit_id, 
+            location,
+            service_number, 
+            appointment_date, 
+            start_date,
+            end_date, 
+            comment,
+            remarks,
+            created_by, 
+            created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $updateStaffStmt = $pdo->prepare("UPDATE staff SET unit_id = ? WHERE service_number = ?");
+        $endApptStmt = $pdo->prepare("UPDATE staff_appointment SET end_date = ?, comment = CONCAT(comment, ?) WHERE id = ?");
         
-        // Process each staff member in a transaction
-        foreach ($selectedStaff as $serviceNumber) {
-            try {
-                // Start transaction for each appointment
-                $pdo->beginTransaction();
-                
+        // Use SINGLE transaction for all appointments (performance optimization)
+        try {
+            $pdo->beginTransaction();
+            $appointmentsCreated = 0;
+            $appointmentsEnded = 0;
+            
+            // Process each staff member
+            foreach ($selectedStaff as $serviceNumber) {
                 $unitId = htmlspecialchars(trim($unitsSelected[$serviceNumber]));
                 $position = htmlspecialchars(trim($positions[$serviceNumber] ?? ''));
+                $location = htmlspecialchars(trim($locations[$serviceNumber] ?? ''));
                 $comment = htmlspecialchars(trim($comments[$serviceNumber] ?? ''));
                 
-                // Get staff details
+                // Get staff details including rank_id
                 $selectStaffStmt->execute([$serviceNumber]);
                 $staff = $selectStaffStmt->fetch(PDO::FETCH_OBJ);
                 $staffId = $staff ? $staff->id : null;
+                $rankId = $staff ? $staff->rank_id : null;
                 
                 if (!$staffId) {
                     throw new Exception("Staff member with service number {$serviceNumber} not found");
                 }
                 
-                // Insert appointment record (adapted for current database schema)
-                $appointmentId = 'APT' . date('Ymd') . '_' . $serviceNumber; // Generate appointment ID
-                $fullComment = "Position: " . $position . ($comment ? " | Notes: " . $comment : "");
+                // ALWAYS end previous appointments automatically (no checkbox needed)
+                // Set end date to day before new appointment starts
+                if (isset($existingAppointments[$serviceNumber])) {
+                    $existingAppts = $existingAppointments[$serviceNumber];
+                    $newEndDate = date('Y-m-d', strtotime($apptDate . ' -1 day'));
+                    $endComment = " | Ended automatically for new appointment on " . date('d M Y');
+                    
+                    // End ALL existing active appointments for this staff member
+                    foreach ($existingAppts as $existingAppt) {
+                        $endApptStmt->execute([
+                            $newEndDate,
+                            $endComment,
+                            $existingAppt['appt_record_id']
+                        ]);
+                        
+                        $appointmentsEnded++;
+                        
+                        // Enhanced audit log for ended appointment
+                        error_log(json_encode([
+                            'action' => 'appointment_ended_automatically',
+                            'timestamp' => date('Y-m-d H:i:s'),
+                            'user_id' => $createdBy,
+                            'service_number' => $serviceNumber,
+                            'old_appointment_position' => $existingAppt['appointment_id'],
+                            'old_unit' => $existingAppt['unit_name'],
+                            'old_type' => $existingAppt['type_name'],
+                            'end_date' => $newEndDate,
+                            'reason' => 'Automatic end for new appointment',
+                            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+                        ]));
+                    }
+                }
+                
+                // Insert new appointment record
+                // NOTE: appointment_id now stores the position/role
+                $appointmentPosition = $position ?: 'Not Specified';
+                $startDate = $apptDate; // Start date is same as appointment date
+                $remarks = $comment; // Additional comments go to remarks field
                 
                 $insertApptStmt->execute([
                     $staffId,
-                    $appointmentId,
-                    $unitId,
-                    $serviceNumber,
-                    $apptDate,
-                    $fullComment,
-                    $createdBy,
-                    $dateCreated
+                    $appointmentPosition,      // appointment_id = position/role
+                    $appointmentTypeId,        // appointment_type = FK to appointment_type table
+                    $rankId,                   // rank_id = staff's current rank at time of appointment
+                    $unitId,                   // unit_id
+                    $location,                 // location field
+                    $serviceNumber,            // service_number
+                    $apptDate,                 // appointment_date
+                    $startDate,                // start_date (same as appointment_date)
+                    $endDate,                  // end_date (3 years from appointment if not specified)
+                    '',                        // comment field (keeping empty, using remarks instead)
+                    $remarks,                  // remarks = user comments
+                    $createdBy,                // created_by
+                    $dateCreated               // created_at
                 ]);
                 
                 // Update staff unit for the appointment
                 $updateStaffStmt->execute([$unitId, $serviceNumber]);
                 
-                // Commit the transaction
-                $pdo->commit();
+                // Update staff appt column with the appointment position
+                $updateApptStmt = $pdo->prepare("UPDATE staff SET appt = ? WHERE service_number = ?");
+                $updateApptStmt->execute([$appointmentPosition, $serviceNumber]);
                 
-                // Log successful appointment with simplified logging
-                error_log("AUDIT: Appointment created - User: {$createdBy}, Staff: {$serviceNumber}, Unit: {$unitId}, Appointment: {$appointmentId}");
+                $appointmentsCreated++;
                 
-            } catch (Exception $e) {
-                // Rollback the transaction on error
-                $pdo->rollback();
-                
-                // Log the error for debugging
-                error_log("Appointment creation failed for staff {$serviceNumber}: " . $e->getMessage());
-                
-                // Add user-friendly error message
-                $errors[] = "Error processing appointment for staff member " . htmlspecialchars($serviceNumber) . ": " . 
-                           (strpos($e->getMessage(), 'not found') !== false ? 'Staff member not found' : 'System error occurred');
+                // Enhanced audit log for new appointment
+                error_log(json_encode([
+                    'action' => 'appointment_created',
+                    'timestamp' => $dateCreated,
+                    'user_id' => $createdBy,
+                    'staff_id' => $staffId,
+                    'service_number' => $serviceNumber,
+                    'rank_id' => $rankId,
+                    'appointment_position' => $appointmentPosition,
+                    'unit_id' => $unitId,
+                    'location' => $location,
+                    'appointment_type' => $appointmentTypeId,
+                    'appointment_date' => $apptDate,
+                    'start_date' => $startDate,
+                    'end_date' => $endDate,
+                    'remarks' => $remarks,
+                    'requires_approval' => $requiresApproval,
+                    'previous_ended' => isset($existingAppointments[$serviceNumber]),
+                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+                ]));
             }
-        }
-        
-        if (empty($errors)) {
+            
+            // Commit all changes at once
+            $pdo->commit();
             $success = true;
-            $successMessage = "Appointments " . ($requiresApproval ? "submitted for approval" : "successfully processed") . " for all selected staff.";
+            
+            // Clear session data
+            unset($_SESSION['existing_appointments']);
+            
+            // Build success message
+            $successMessage = "Successfully created {$appointmentsCreated} appointment(s)";
+            if ($appointmentsEnded > 0) {
+                $successMessage .= " and automatically ended {$appointmentsEnded} previous appointment(s)";
+            }
+            $successMessage .= ". " . ($requiresApproval ? "Appointments submitted for approval." : "");
+            
+        } catch (Exception $e) {
+            // Rollback ALL changes on any error
+            $pdo->rollback();
+            
+            error_log("Appointment batch failed: " . $e->getMessage());
+            error_log("Stack trace: " . $e->getTraceAsString());
+            
+            $errors[] = "Error processing appointments: " . 
+                       (strpos($e->getMessage(), 'not found') !== false ? 'Staff member not found' : htmlspecialchars($e->getMessage()));
         }
         } // Close inner if (empty($errors))
     } // Close if (empty($errors)) from line 214 (validation check)
@@ -373,6 +614,102 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';
 ?>
+
+<!-- DataTables CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.6/css/dataTables.bootstrap5.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-responsive-bs5@2.5.0/css/responsive.bootstrap5.min.css">
+
+<style>
+.stepper { list-style: none; padding: 0; display: flex; gap: 10px; }
+.step { padding: 4px 10px; border-radius: 12px; background: #eee; color: #333; }
+.step.active { background: #17a2b8; color: #fff; font-weight: bold; }
+
+/* DataTables Custom Styling */
+#staffSelectionTable {
+    font-size: 0.9rem;
+}
+
+#staffSelectionTable thead th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+    border-bottom: 2px solid #dee2e6;
+    padding: 12px 8px;
+}
+
+#staffSelectionTable tbody tr {
+    transition: background-color 0.2s ease;
+}
+
+#staffSelectionTable tbody tr:hover {
+    background-color: #f1f3f5;
+    cursor: pointer;
+}
+
+/* Selected row styling */
+#staffSelectionTable tbody tr.selected {
+    background-color: #cfe2ff !important;
+    border-left: 4px solid #0d6efd !important;
+}
+
+#staffSelectionTable tbody tr.selected:hover {
+    background-color: #b6d4fe !important;
+}
+
+.staff-checkbox {
+    cursor: pointer;
+    width: 18px;
+    height: 18px;
+}
+
+#masterCheckbox {
+    cursor: pointer;
+    width: 18px;
+    height: 18px;
+}
+
+/* Loading state */
+#staffTableContainer.loading {
+    position: relative;
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+#staffTableContainer.loading::after {
+    content: 'Loading staff data...';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(255, 255, 255, 0.95);
+    padding: 20px 40px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    font-weight: 600;
+    color: #0d6efd;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    #staffSelectionTable {
+        font-size: 0.8rem;
+    }
+    
+    #staffSelectionTable thead th,
+    #staffSelectionTable tbody td {
+        padding: 0.5rem 0.25rem;
+    }
+    
+    /* Hide less important columns on mobile */
+    #staffSelectionTable th:nth-child(6),
+    #staffSelectionTable td:nth-child(6),
+    #staffSelectionTable th:nth-child(7),
+    #staffSelectionTable td:nth-child(7),
+    #staffSelectionTable th:nth-child(8),
+    #staffSelectionTable td:nth-child(8) {
+        display: none;
+    }
+}
+</style>
 
 <!-- Custom styles for staff select dropdown -->
 <style>
@@ -480,7 +817,6 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <small class="text-muted">Only staff members at this rank will be available for selection.</small>
                     </div>
                     <div class="col-md-2 mb-2 d-flex align-items-end">
-                        <button type="submit" id="nextStepBtn" class="btn btn-primary w-100" <?=($currentRankId?'style="display:none;"':'')?>><i class="fa fa-arrow-right"></i> Next</button>
                         <?php if($currentRankId): ?><?php endif; ?>
                     </div>
                 </div>
@@ -492,11 +828,64 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                 <input type="hidden" name="current_rank" value="<?=htmlspecialchars($currentRankId)?>">
                 <div class="row mb-3">
-                    <div class="col-md-12 mb-2">
-                        <label class="form-label">Select Staff Members *</label>
-                        <select name="selected_staff[]" id="selected_staff" class="form-select" multiple="multiple" required style="width:100%;"></select>
+                    <div class="col-md-12">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="mb-0">
+                                <i class="fa fa-users"></i> 
+                                Select Staff Members for Appointment
+                            </h5>
+                            <div>
+                                <button type="button" class="btn btn-sm btn-success" id="selectAllBtn">
+                                    <i class="fa fa-check-double"></i> Select All
+                                </button>
+                                <button type="button" class="btn btn-sm btn-warning" id="deselectAllBtn">
+                                    <i class="fa fa-times"></i> Deselect All
+                                </button>
+                            </div>
+                        </div>
                         
-                        <small class="text-muted">Staff members at rank: <strong><?=$currentRank->name?></strong>. Use search to filter.</small>
+                        <div class="alert alert-info d-flex justify-content-between align-items-center">
+                            <div>
+                                <i class="fa fa-info-circle"></i>
+                                <strong>Rank Selected:</strong> <?= htmlspecialchars($currentRank->name ?? '') ?>
+                            </div>
+                        </div>
+                        
+                    <!-- Staff Selection Count -->
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="text-muted">
+                            <strong>Total:</strong> <span id="totalStaffCount">0</span> staff member(s)
+                        </div>
+                        <div class="text-primary">
+                            <strong>Selected:</strong> <span id="selectionCount">0</span> staff member(s)
+                        </div>
+                    </div>
+                    
+                    <!-- Staff Selection Table -->
+                    <div class="table-responsive" id="staffTableContainer">
+                        <table class="table table-hover table-sm" id="staffSelectionTable" style="width:100%">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 40px;">
+                                        <input type="checkbox" id="masterCheckbox" class="form-check-input" title="Select/Deselect All">
+                                    </th>
+                                    <th>Service No.</th>
+                                    <th>Rank</th>
+                                    <th>Name</th>
+                                    <th>Unit</th>
+                                    <th>Corps</th>
+                                    <th>Status</th>
+                                    <th style="width: 80px;">History</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- DataTables will populate this -->
+                            </tbody>
+                        </table>
+                    </div>
+                        
+                        <!-- Hidden container to store selected staff for form submission -->
+                        <div id="selectedStaffInputs"></div>
                     </div>
                 </div>
                 
@@ -506,58 +895,58 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <label class="form-label">Appointment Type *</label>
                         <select name="appointment_type" id="appointment_type" class="form-select" required>
                             <option value="">Select Appointment Type</option>
-                            <?php 
-                            try {
-                                $typesStmt = $pdo->query("SELECT * FROM appointment_types ORDER BY name");
-                                while ($type = $typesStmt->fetch(PDO::FETCH_OBJ)) {
-                                    echo '<option value="' . $type->id . '" data-is-temporary="' . $type->is_temporary . '" data-duration="' . $type->default_duration_days . '">' . 
-                                         htmlspecialchars($type->name) . '</option>';
-                                }
-                            } catch (Exception $e) {
-                                echo '<option value="">Error loading appointment types</option>';
-                            }
-                            ?>
+                            <?php foreach ($appointmentTypes as $type): ?>
+                            <option value="<?= $type['id'] ?>" 
+                                    data-is-temporary="<?= $type['is_temporary'] ?>" 
+                                    data-duration="<?= $type['default_duration_months'] ?? '' ?>">
+                                <?= htmlspecialchars($type['type_name']) ?>
+                            </option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
                     <div class="col-md-3 mb-2">
                         <label class="form-label">Appointment Date *</label>
                         <input type="date" name="appt_date" id="appt_date" class="form-control" required value="<?=htmlspecialchars($_POST['appt_date'] ?? date('Y-m-d'))?>">
                     </div>
-                    <div class="col-md-3 mb-2" id="end_date_container" style="display:none;">
+                    <div class="col-md-3 mb-2">
                         <label class="form-label">End Date</label>
                         <input type="date" name="end_date" id="end_date" class="form-control" value="<?=htmlspecialchars($_POST['end_date'] ?? '')?>">
-                        <small class="text-muted">Required for temporary appointments</small>
+                        <small class="text-muted">Default: 3 years from appointment date</small>
                     </div>
                     <div class="col-md-3 mb-2">
-                        <label class="form-label">Approval Required?</label>
-                        <div class="form-check form-switch mt-2">
-                            <input class="form-check-input" type="checkbox" id="requires_approval" name="requires_approval">
-                            <label class="form-check-label" for="requires_approval">Requires Approval</label>
-                        </div>
+                        <!-- Automatic ending - no checkbox needed -->
                     </div>
                 </div>
-                <div class="row mb-3">
-                    <div class="col-md-4 mb-2">
-                        <label class="form-label">Bulk Assign Unit</label>
-                        <select id="bulk_unit" class="form-select" style="width:100%;">
-                            <option value="">Select Unit</option>
-                            <?php foreach ($units as $u): ?>
-                                <option value="<?=htmlspecialchars($u->unitID)?>"><?=htmlspecialchars($u->unitName)?></option>
-                            <?php endforeach; ?>
-                        </select>
-                        <button type="button" id="apply_bulk_unit" class="btn btn-sm btn-outline-primary mt-2"><i class="fa fa-check"></i> Apply to All</button>
-                    </div>
-                    <div class="col-md-4 mb-2">
-                        <label class="form-label">Bulk Position</label>
-                        <input type="text" id="bulk_position" class="form-control" placeholder="e.g. Platoon Commander">
-                        <button type="button" id="apply_bulk_position" class="btn btn-sm btn-outline-primary mt-2"><i class="fa fa-check"></i> Apply to All</button>
-                    </div>
-                    <div class="col-md-4 mb-2">
-                        <label class="form-label">Bulk Comment</label>
-                        <input type="text" id="bulk_comment" class="form-control" placeholder="Apply comment to all">
-                        <button type="button" id="apply_bulk_comment" class="btn btn-sm btn-outline-primary mt-2"><i class="fa fa-check"></i> Apply to All</button>
-                    </div>
+                
+                <?php if (!empty($_SESSION['existing_appointments'])): ?>
+                <div class="alert alert-info mb-3">
+                    <h6 class="alert-heading"><i class="fas fa-info-circle"></i> Active Appointments Will Be Automatically Ended</h6>
+                    <p class="mb-2">The following staff members have existing active appointments that will be automatically ended one day before the new appointment date:</p>
+                    <ul class="mb-2">
+                    <?php foreach ($_SESSION['existing_appointments'] as $svcNo => $appts): ?>
+                        <?php 
+                        // Handle both single appointment (legacy) and multiple appointments (new)
+                        $appointmentList = isset($appts['service_number']) ? [$appts] : $appts;
+                        foreach ($appointmentList as $appt): 
+                        ?>
+                        <li>
+                            <strong><?= htmlspecialchars($svcNo) ?></strong>: 
+                            <?= htmlspecialchars($appt['appointment_id'] ?? 'Unknown Position') ?> 
+                            at <?= htmlspecialchars($appt['unit_name'] ?? 'Unknown Unit') ?>
+                            <span class="badge bg-secondary"><?= htmlspecialchars($appt['type_name'] ?? 'Unknown Type') ?></span>
+                            <?php if ($appt['end_date']): ?>
+                                (current end date: <?= date('d M Y', strtotime($appt['end_date'])) ?>)
+                            <?php else: ?>
+                                (permanent)
+                            <?php endif; ?>
+                        </li>
+                        <?php endforeach; ?>
+                    <?php endforeach; ?>
+                    </ul>
+                    <p class="mb-0"><i class="fas fa-check-circle text-success"></i> <strong>Automatic Action:</strong> Creating this new appointment will automatically end the above appointment(s) and set their end date to one day before the new appointment starts.</p>
                 </div>
+                <?php endif; ?>
+                
                 <div class="text-end">
                     <button type="submit" id="submitBtn" name="appoint_staff" class="btn btn-primary px-5 py-2"><i class="fa fa-user-plus"></i> Appoint</button>
                 </div>
@@ -575,8 +964,28 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/datatables.net@1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/datatables.net-responsive@2.5.0/js/dataTables.responsive.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/datatables.net-responsive-bs5@2.5.0/js/responsive.bootstrap5.min.js"></script>
 <script>
 const unitsData = <?=json_encode($units, JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
+const eligibleStaff = <?=json_encode($eligibleStaff ?? [], JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
+
+// Define missing formatStaffResult function
+function formatStaffResult(staff) {
+    if (!staff.id) {
+        return staff.text;
+    }
+    return $(
+        '<div class="d-flex align-items-center">' +
+            '<div class="flex-grow-1">' +
+                '<div class="fw-bold">' + staff.service_number + ' - ' + staff.last_name + ' ' + staff.first_name + '</div>' +
+                '<small class="text-muted">' + (staff.unit_name || 'No Unit') + '</small>' +
+            '</div>' +
+        '</div>'
+    );
+}
 
 function renderStaffPanels(selected) {
     const panel = $('#staffDetailsPanel');
@@ -584,21 +993,19 @@ function renderStaffPanels(selected) {
     if (!selected || selected.length === 0) return;
     
     selected.forEach(svcNo => {
-        // Get staff name from the selected option
-        const selectedOption = $('#selected_staff option[value="' + svcNo + '"]');
-        const staffText = selectedOption.text() || svcNo;
-        
-        // Extract name from the text if possible
-        let staffName = svcNo;
-        const nameMatch = staffText.match(/\d+\s*-\s*(.*?)(?:\s*\(|$)/);
-        if (nameMatch && nameMatch[1]) {
-            staffName = nameMatch[1].trim();
-        }
+        // Get staff name from the eligible staff data
+        const staffMember = eligibleStaff.find(s => s.service_number === svcNo);
+        const staffName = staffMember ? `${staffMember.last_name} ${staffMember.first_name}` : svcNo;
         
         let unitOptions = '<option value="">Select Unit</option>';
         unitsData.forEach(u => {
             unitOptions += `<option value="${u.unitID}">${u.unitName}</option>`;
         });
+        
+        let positionOptions = '<option value="">Select Position</option>';
+        <?php foreach ($standardPositions as $pos): ?>
+        positionOptions += '<option value="<?= htmlspecialchars($pos) ?>"><?= htmlspecialchars($pos) ?></option>';
+        <?php endforeach; ?>
         
         panel.append(`
             <div class="card mb-3 staff-detail-card" data-svcno="${svcNo}">
@@ -610,16 +1017,22 @@ function renderStaffPanels(selected) {
                 </div>
                 <div class="card-body">
                     <div class="row align-items-center">
-                        <div class="col-md-4 mb-2">
+                        <div class="col-md-3 mb-2">
                             <label class="form-label mb-1">Unit *</label>
                             <select name="unit[${svcNo}]" class="form-select unit-select" style="width: 100%;" required>${unitOptions}</select>
                         </div>
-                        <div class="col-md-4 mb-2">
-                            <label class="form-label mb-1">Position</label>
-                            <input type="text" name="position[${svcNo}]" class="form-control position-input" 
-                                   placeholder="e.g. Platoon Commander" maxlength="100">
+                        <div class="col-md-3 mb-2">
+                            <label class="form-label mb-1">Position/Role *</label>
+                            <select name="position[${svcNo}]" class="form-select position-select" style="width: 100%;" required>
+                                ${positionOptions}
+                            </select>
                         </div>
-                        <div class="col-md-4 mb-2">
+                        <div class="col-md-3 mb-2">
+                            <label class="form-label mb-1">Location</label>
+                            <input type="text" name="location[${svcNo}]" class="form-control location-input" 
+                                   maxlength="200" placeholder="e.g., Camp Ayanganna">
+                        </div>
+                        <div class="col-md-3 mb-2">
                             <label class="form-label mb-1">Comments</label>
                             <input type="text" name="comment[${svcNo}]" class="form-control comment-input" 
                                    maxlength="255" placeholder="Additional comments">
@@ -630,65 +1043,17 @@ function renderStaffPanels(selected) {
         `);
     });
     $('.unit-select').select2({ placeholder: "Select unit", allowClear: true, width: 'resolve' });
+    $('.position-select').select2({ placeholder: "Select position", allowClear: true, width: 'resolve', tags: true });
+
+    // Update hidden inputs for form submission
+    $('#selectedStaffInputs').empty();
+    selected.forEach(svcNo => {
+        $('#selectedStaffInputs').append(`<input type="hidden" name="selected_staff[]" value="${svcNo}">`);
+    });
 }
 
-// Format staff display in dropdown results
-function formatStaffResult(staff) {
-    if (!staff.id || staff.loading) {
-        return staff.text;
-    }
-    
-    // Enhanced formatting for staff display with proper name display
-    const serviceNumber = staff.service_number || staff.id;
-    const lastName = staff.last_name || '';
-    const firstName = staff.first_name || '';
-    const unitName = staff.unit_name || 'No unit assigned';
-    const rankName = staff.rank_name || '';
-    
-    return $(`
-        <div class="d-flex align-items-center p-1">
-            <div class="staff-badge bg-light text-primary px-2 py-1 rounded me-2 border fw-bold">
-                ${serviceNumber}
-            </div>
-            <div class="staff-info flex-grow-1">
-                <div class="staff-name fw-bold text-dark">${lastName}, ${firstName}</div>
-                <div class="staff-details small text-muted">
-                    ${rankName ? rankName + ' • ' : ''}${unitName}
-                </div>
-            </div>
-        </div>
-    `);
-}
-
-// Format selected staff in the input box
-function formatStaffSelection(staff) {
-    if (!staff.id) {
-        return staff.text;
-    }
-    
-    // For selected items, show service number and name clearly
-    const serviceNumber = staff.service_number || staff.id;
-    let displayName;
-    
-    if (staff.last_name && staff.first_name) {
-        // If we have structured name data
-        displayName = staff.last_name + ', ' + staff.first_name;
-    } else if (staff.text) {
-        // Extract name from text if in standard format (SN - Last, First)
-        const match = staff.text.match(/\d+\s*-\s*(.*?)(?:\s*\(|$)/);
-        if (match && match[1]) {
-            displayName = match[1].trim();
-        } else {
-            // Use full text as fallback, removing service number
-            displayName = staff.text.replace(/^\d+\s*-\s*/, '').replace(/\s*\(.*\)$/, '');
-        }
-    } else {
-        // Fallback
-        displayName = "Staff #" + serviceNumber;
-    }
-    
-    return serviceNumber + ' - ' + displayName;
-}
+// Format staff display in dropdown results - REMOVED (using DataTables now)
+// Format selected staff in the input box - REMOVED (using DataTables now)
 
 $(function() {
     // Helper function to get current rank ID consistently
@@ -701,6 +1066,281 @@ $(function() {
         }
         <?php endif; ?>
         return rankId;
+    }
+    
+    // Initialize DataTables for staff selection
+    let staffTable;
+    console.log('Eligible Staff Data:', eligibleStaff);
+    console.log('Current Rank ID:', '<?= $currentRankId ?>');
+    <?php if ($currentRankId && !empty($eligibleStaff)): ?>
+    $(document).ready(function() {
+        console.log('Document ready, checking DataTables availability...');
+        
+        if (typeof $.fn.DataTable === 'undefined') {
+            console.error('DataTables is not loaded!');
+            $('#staffSelectionTable tbody').html('<tr><td colspan="7" class="text-center text-danger">DataTables library not loaded. Please refresh the page.</td></tr>');
+            return;
+        }
+        
+        console.log('Initializing DataTables with', eligibleStaff.length, 'staff members');
+        console.log('Staff data sample:', eligibleStaff.slice(0, 2)); // Show first 2 records
+        
+        try {
+            staffTable = $('#staffSelectionTable').DataTable({
+                data: eligibleStaff,
+                pageLength: 25,
+                order: [[1, 'asc']], // Sort by service number
+                responsive: true,
+                columns: [
+                    {
+                        data: null,
+                        orderable: false,
+                        className: 'select-checkbox text-center',
+                        render: function(data, type, row) {
+                            console.log('Rendering checkbox for:', row.service_number);
+                            return `<input type="checkbox" class="staff-checkbox form-check-input" value="${row.service_number}" data-staff-id="${row.id}">`;
+                        }
+                    },
+                    { 
+                        data: 'service_number', 
+                        title: 'Service No.',
+                        orderable: true
+                    },
+                    { 
+                        data: null,
+                        title: 'Rank',
+                        orderable: true,
+                        render: function(data, type, row) {
+                            return `<span class="badge bg-primary">${row.rank_abbr || row.rank_name || 'N/A'}</span>`;
+                        }
+                    },
+                    {
+                        data: null,
+                        title: 'Name',
+                        orderable: true,
+                        render: function(data, type, row) {
+                            // Helper function for proper title case
+                            function toTitleCase(str) {
+                                if (!str) return '';
+                                return str.trim().split(/\s+/).map(word => {
+                                    if (word.length === 0) return '';
+                                    // Handle hyphenated names and apostrophes
+                                    return word.split('-').map(part => 
+                                        part.split("'").map(subpart => 
+                                            subpart.charAt(0).toUpperCase() + subpart.slice(1).toLowerCase()
+                                        ).join("'")
+                                    ).join('-');
+                                }).join(' ');
+                            }
+                            
+                            const surname = toTitleCase(row.last_name || '');
+                            const firstName = toTitleCase(row.first_name || '');
+                            
+                            // Properly format name without comma
+                            let fullName = '';
+                            if (surname && firstName) {
+                                fullName = `${firstName} ${surname}`;
+                            } else if (surname) {
+                                fullName = surname;
+                            } else if (firstName) {
+                                fullName = firstName;
+                            } else {
+                                fullName = 'N/A';
+                            }
+                            
+                            return `<div class="fw-bold">${fullName}</div>`;
+                        }
+                    },
+                    { 
+                        data: 'unit_name', 
+                        title: 'Unit',
+                        orderable: true,
+                        defaultContent: 'N/A'
+                    },
+                    { 
+                        data: 'corps', 
+                        title: 'Corps',
+                        orderable: true,
+                        defaultContent: 'N/A'
+                    },
+                    { 
+                        data: null,
+                        title: 'Status',
+                        orderable: true,
+                        render: function(data, type, row) {
+                            const status = row.status || 'Active';
+                            const statusClass = status === 'Active' ? 'bg-success' : 'bg-secondary';
+                            return `<span class="badge ${statusClass}">${status}</span>`;
+                        }
+                    },
+                    {
+                        data: null,
+                        title: 'History',
+                        orderable: false,
+                        className: 'text-center',
+                        render: function(data, type, row) {
+                            return `<button type="button" class="btn btn-sm btn-outline-info view-history-btn" 
+                                    data-svcno="${row.service_number}" 
+                                    title="View Appointment History">
+                                    <i class="fas fa-history"></i>
+                                    </button>`;
+                        }
+                    }
+                ],
+                language: {
+                    emptyTable: "No staff members found at this rank",
+                    info: "Showing _START_ to _END_ of _TOTAL_ staff members",
+                    infoEmpty: "No staff members available",
+                    search: "Search staff:"
+                },
+                dom: '<"row"<"col-sm-12 col-md-6"l><"col-sm-12 col-md-6"f>>rtip',
+                drawCallback: function(settings) {
+                    console.log('DataTables draw complete. Rows:', this.api().rows().count());
+                }
+            });
+            
+            console.log('DataTables initialized successfully');
+        } catch(error) {
+            console.error('DataTables initialization failed:', error);
+            
+            // Fallback: Show data in basic table format
+            console.log('Attempting fallback table rendering...');
+            let tableHTML = '';
+            eligibleStaff.forEach(function(staff) {
+                const age = staff.dateOfBirth ? Math.floor((new Date() - new Date(staff.dateOfBirth)) / (365.25 * 24 * 60 * 60 * 1000)) : 'N/A';
+                const yearsService = staff.attestDate ? Math.floor((new Date() - new Date(staff.attestDate)) / (365.25 * 24 * 60 * 60 * 1000)) : 'N/A';
+                const attestDate = staff.attestDate ? new Date(staff.attestDate).toLocaleDateString('en-GB') : 'N/A';
+                
+                tableHTML += `
+                    <tr>
+                        <td class="text-center">
+                            <input type="checkbox" class="staff-checkbox form-check-input" value="${staff.service_number}" data-staff-id="${staff.id}">
+                        </td>
+                        <td>${staff.service_number}</td>
+                        <td><a href="#" class="staff-name-link" data-service-number="${staff.service_number}">${staff.first_name} ${staff.last_name}</a></td>
+                        <td>${staff.unit_name || 'No Unit Assigned'}</td>
+                        <td>${age} years</td>
+                        <td>${yearsService} years</td>
+                        <td>${attestDate}</td>
+                    </tr>
+                `;
+            });
+            $('#staffSelectionTable tbody').html(tableHTML);
+        }
+        
+        // Update staff count
+        $('#totalStaffCount').text(eligibleStaff.length);
+    });
+    <?php else: ?>
+    $(document).ready(function() {
+        console.log('No staff found or no rank selected');
+        // Initialize empty DataTable
+        staffTable = $('#staffSelectionTable').DataTable({
+            data: [],
+            pageLength: 25,
+            order: [[1, 'asc']],
+            responsive: true,
+            columns: [
+                { data: null, orderable: false, className: 'select-checkbox text-center', defaultContent: '' },
+                { data: null, title: 'Service No.', defaultContent: '' },
+                { data: null, title: 'Rank', defaultContent: '' },
+                { data: null, title: 'Name', defaultContent: '' },
+                { data: null, title: 'Unit', defaultContent: '' },
+                { data: null, title: 'Corps', defaultContent: '' },
+                { data: null, title: 'Status', defaultContent: '' }
+            ],
+            language: {
+                emptyTable: "<?php echo $currentRankId ? 'No staff members found at this rank' : 'Please select a rank to view staff members'; ?>",
+                info: "Showing _START_ to _END_ of _TOTAL_ staff members",
+                infoEmpty: "No staff members available",
+                search: "Search staff:"
+            },
+            dom: '<"row"<"col-sm-12 col-md-6"l><"col-sm-12 col-md-6"f>>rtip',
+            responsive: true
+        });
+        $('#totalStaffCount').text('0');
+    });
+    <?php endif; ?>
+    
+    // Auto-reload when rank changes
+    $('#current_rank').on('change', function() {
+        const selectedRank = $(this).val();
+        if (selectedRank) {
+            // Add loading indicator
+            $('#staffSelectionTable tbody').html('<tr><td colspan="7" class="text-center"><div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading...</span></div> Loading staff...</td></tr>');
+            
+            // Submit form to reload with selected rank
+            const form = $('<form method="GET" action=""></form>');
+            form.append($('<input type="hidden" name="current_rank" value="' + selectedRank + '">'));
+            $('body').append(form);
+            form.submit();
+        } else {
+            // Clear table if no rank selected
+            if (staffTable) {
+                staffTable.clear().draw();
+            }
+            $('#totalStaffCount').text('0');
+        }
+    });
+
+    // Handle checkbox selection
+    $(document).on('change', '.staff-checkbox', function() {
+        const row = $(this).closest('tr');
+        if ($(this).is(':checked')) {
+            row.addClass('selected');
+        } else {
+            row.removeClass('selected');
+        }
+        updateSelectionCount();
+        updateStaffPanels();
+    });
+    
+    // Handle row click
+    $(document).on('click', '#staffSelectionTable tbody tr', function(e) {
+        if (!$(e.target).is('input[type="checkbox"], a')) {
+            const checkbox = $(this).find('.staff-checkbox');
+            checkbox.prop('checked', !checkbox.prop('checked')).trigger('change');
+        }
+    });
+    
+    // Master checkbox functionality
+    $(document).on('change', '#masterCheckbox', function() {
+        const isChecked = $(this).is(':checked');
+        $('.staff-checkbox').prop('checked', isChecked).trigger('change');
+    });
+    
+    // Select/Deselect all buttons
+    $('#selectAllBtn').on('click', function() {
+        $('#masterCheckbox').prop('checked', true).trigger('change');
+    });
+    
+    $('#deselectAllBtn').on('click', function() {
+        $('#masterCheckbox').prop('checked', false).trigger('change');
+    });
+    
+    // Update selection count
+    function updateSelectionCount() {
+        const selectedCount = $('.staff-checkbox:checked').length;
+        $('#selectionCount').text(selectedCount);
+        
+        // Update master checkbox state
+        const totalCount = $('.staff-checkbox').length;
+        if (selectedCount === 0) {
+            $('#masterCheckbox').prop('indeterminate', false).prop('checked', false);
+        } else if (selectedCount === totalCount) {
+            $('#masterCheckbox').prop('indeterminate', false).prop('checked', true);
+        } else {
+            $('#masterCheckbox').prop('indeterminate', true);
+        }
+    }
+    
+    // Update staff panels based on selection
+    function updateStaffPanels() {
+        const selected = [];
+        $('.staff-checkbox:checked').each(function() {
+            selected.push($(this).val());
+        });
+        renderStaffPanels(selected);
     }
     
     // Select2 for staff multi-select with AJAX search
@@ -740,7 +1380,7 @@ $(function() {
                             console.error('Missing service_number in item:', item);
                             return;
                         }
-                        var fullName = (item.last_name || '') + ', ' + (item.first_name || '');
+                        var fullName = (item.first_name || '') + ' ' + (item.last_name || '');
                         var serviceNumber = item.service_number;
                         var unitInfo = item.unit_name ? ' (' + item.unit_name + ')' : '';
                         results.push({
@@ -838,7 +1478,7 @@ $(function() {
                         }
                         
                         // Prepare properly formatted option with staff data
-                        const displayText = serviceNumber + ' - ' + (staff.last_name || '') + ', ' + (staff.first_name || '') + 
+                        const displayText = serviceNumber + ' - ' + (staff.first_name || '') + ' ' + (staff.last_name || '') + 
                                           (staff.unit_name ? ' (' + staff.unit_name + ')' : '');
                         
                         // Check if already exists
@@ -953,16 +1593,16 @@ $(function() {
 
     // Bulk position assignment with validation
     $('#apply_bulk_position').on('click', function() {
-        let position = $('#bulk_position').val().trim();
+        let position = $('#bulk_position').val();
         if (!position) {
-            alert('Please enter a position first.');
+            alert('Please select a position first.');
             return;
         }
         
         showLoading(this, 'Applying...');
         
         setTimeout(() => {
-            $('.staff-detail-card .position-input').val(position);
+            $('.staff-detail-card .position-select').val(position).trigger('change');
             hideLoading($('#apply_bulk_position'), '<i class="fa fa-check"></i> Apply to All');
             
             // Show success feedback
@@ -1026,18 +1666,48 @@ $(function() {
         });
     });
 
-    // Bulk position assignment
-    $('#apply_bulk_position').on('click', function() {
-        let position = $('#bulk_position').val();
-        if (!position) return;
-        $('.staff-detail-card .position-input').val(position);
-    });
-
     // Bulk comment assignment
     $('#apply_bulk_comment').on('click', function() {
         let comment = $('#bulk_comment').val();
         if (!comment) return;
         $('.staff-detail-card .comment-input').val(comment);
+    });
+
+    // View appointment history
+    $(document).on('click', '.view-history-btn', function() {
+        const serviceNumber = $(this).data('svcno');
+        console.log('Loading history for:', serviceNumber);
+        
+        // Show modal with loading state
+        const modal = new bootstrap.Modal(document.getElementById('appointmentHistoryModal'));
+        $('#appointmentHistoryContent').html(`
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Loading appointment history...</p>
+            </div>
+        `);
+        modal.show();
+        
+        // Load history via AJAX
+        $.ajax({
+            url: 'ajax_get_appointment_history.php',
+            method: 'POST',
+            data: { service_number: serviceNumber },
+            success: function(response) {
+                $('#appointmentHistoryContent').html(response);
+            },
+            error: function(xhr, status, error) {
+                console.error('Error loading history:', error);
+                $('#appointmentHistoryContent').html(`
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> 
+                        Error loading appointment history. Please try again.
+                    </div>
+                `);
+            }
+        });
     });
 
     // Form validation before submission
@@ -1050,11 +1720,13 @@ $(function() {
         $('.invalid-feedback').remove();
         
         // Validate staff selection
-        const selectedStaff = $('#selected_staff').val();
-        if (!selectedStaff || selectedStaff.length === 0) {
+        const selectedStaff = $('.staff-checkbox:checked');
+        if (selectedStaff.length === 0) {
             isValid = false;
             errors.push('Please select at least one staff member.');
-            $('#selected_staff').next('.select2-container').addClass('is-invalid');
+            $('#staffTableContainer').addClass('border border-danger');
+        } else {
+            $('#staffTableContainer').removeClass('border border-danger');
         }
         
         // Validate appointment type
@@ -1084,16 +1756,13 @@ $(function() {
             }
         }
         
-        // Validate end date for temporary appointments
+        // Validate end date if provided (optional for temporary appointments)
         const selectedOption = $('#appointment_type').find(':selected');
         const isTemporary = selectedOption.data('is-temporary') == 1;
         const endDate = $('#end_date').val();
         
-        if (isTemporary && !endDate) {
-            isValid = false;
-            errors.push('End date is required for temporary appointments.');
-            $('#end_date').addClass('is-invalid');
-        } else if (isTemporary && endDate && apptDate) {
+        // Only validate if end date is provided
+        if (endDate && apptDate) {
             const apptDateTime = new Date(apptDate);
             const endDateTime = new Date(endDate);
             
@@ -1103,6 +1772,7 @@ $(function() {
                 $('#end_date').addClass('is-invalid');
             }
         }
+        // Note: End date is optional but recommended for temporary appointments
         
         // Validate unit selection for each staff member
         let missingUnits = [];
@@ -1184,43 +1854,25 @@ $(function() {
     
     // Handle appointment type changes
     $('#appointment_type').on('change', function() {
-        const selectedOption = $(this).find(':selected');
-        const isTemporary = selectedOption.data('is-temporary') == 1;
+        // Always show end_date container since all appointments get 3-year default
+        $('#end_date_container').show();
         
-        if (isTemporary) {
-            $('#end_date_container').show();
-            
-            // Calculate default end date if there's a default duration
-            const defaultDuration = selectedOption.data('duration');
-            if (defaultDuration) {
-                const startDate = $('#appt_date').val();
-                if (startDate) {
-                    const endDate = new Date(startDate);
-                    endDate.setDate(endDate.getDate() + parseInt(defaultDuration));
-                    $('#end_date').val(endDate.toISOString().split('T')[0]);
-                }
-            }
-        } else {
-            $('#end_date_container').hide();
-            $('#end_date').val('');
+        // Calculate default end date (3 years from appointment date)
+        const startDate = $('#appt_date').val();
+        if (startDate && !$('#end_date').val()) {
+            const endDate = new Date(startDate);
+            endDate.setFullYear(endDate.getFullYear() + 3); // 3 years default
+            $('#end_date').val(endDate.toISOString().split('T')[0]);
         }
     });
     
-    // Update end date when appointment date changes
+    // Update end date when appointment date changes (3 years default)
     $('#appt_date').on('change', function() {
-        const selectedOption = $('#appointment_type').find(':selected');
-        const isTemporary = selectedOption.data('is-temporary') == 1;
-        
-        if (isTemporary) {
-            const defaultDuration = selectedOption.data('duration');
-            if (defaultDuration) {
-                const startDate = $(this).val();
-                if (startDate) {
-                    const endDate = new Date(startDate);
-                    endDate.setDate(endDate.getDate() + parseInt(defaultDuration));
-                    $('#end_date').val(endDate.toISOString().split('T')[0]);
-                }
-            }
+        const startDate = $(this).val();
+        if (startDate && !$('#end_date').val()) {
+            const endDate = new Date(startDate);
+            endDate.setFullYear(endDate.getFullYear() + 3); // 3 years default
+            $('#end_date').val(endDate.toISOString().split('T')[0]);
         }
     });
     
@@ -1266,7 +1918,7 @@ $(function() {
                     data.forEach(function(staff) {
                         // Use consistent data structure - search_staff.php returns service_number as id
                         const staffId = staff.service_number || staff.id;
-                        const staffText = staff.text || (staffId + ' - ' + (staff.last_name || '') + ', ' + (staff.first_name || ''));
+                        const staffText = staff.text || (staffId + ' - ' + (staff.first_name || '') + ' ' + (staff.last_name || ''));
                         const option = new Option(staffText, staffId, true, true);
                         $('#selected_staff').append(option);
                     });
@@ -1287,6 +1939,30 @@ $(function() {
     });
 });
 </script>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Appointment History Modal -->
+<div class="modal fade" id="appointmentHistoryModal" tabindex="-1" aria-labelledby="appointmentHistoryModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title" id="appointmentHistoryModalLabel">
+                    <i class="fas fa-history"></i> Appointment History
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="appointmentHistoryContent">
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>

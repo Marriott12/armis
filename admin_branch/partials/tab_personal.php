@@ -87,6 +87,14 @@ if (!isset($_SESSION['csrf_token'])) {
               <input type="text" name="fname" id="fname" class="form-control form-control-sm" required maxlength="100" aria-label="First Name" value="<?=old('fname')?>">
             </div>
             <div class="col-md-4 mb-2">
+              <label class="form-label form-label-sm" for="nrc">NRC Number *</label>
+              <input type="text" name="nrc" id="nrc" class="form-control form-control-sm <?= hasError('nrc') ? 'is-invalid' : '' ?>" required maxlength="11" aria-label="NRC Number" value="<?=old('nrc')?>" placeholder="123456/78/1" pattern="[0-9]{6}/[0-9]{2}/1" data-validate="true">
+              <?php if (hasError('nrc')): ?>
+                <div class="invalid-feedback"><?= getError('nrc') ?></div>
+              <?php endif; ?>
+              <small class="form-text text-muted">Format: 123456/78/1</small>
+            </div>
+            <div class="col-md-4 mb-2">
               <label class="form-label form-label-sm" for="email">Email Address *</label>
               <input type="email" name="email" id="email" class="form-control form-control-sm <?= hasError('email') ? 'is-invalid' : '' ?>" required maxlength="100" aria-label="Email Address" value="<?=old('email')?>" data-validate="true">
               <?php if (hasError('email')): ?>
@@ -114,7 +122,7 @@ if (!isset($_SESSION['csrf_token'])) {
             </div>
             <div class="col-md-4 mb-2">
               <label class="form-label form-label-sm" for="blood_group">Blood Group *</label>
-              <select name="blood_group" id="blood_group" class="form-select form-select-sm" required>
+              <select name="blood_group" id="blood_group" class="form-select form-select-sm <?= hasError('blood_group') ? 'is-invalid' : '' ?>" required data-validate="true">
                 <option value="">Select</option>
                 <option <?=old('blood_group')=='A+'?'selected':''?>>A+</option>
                 <option <?=old('blood_group')=='A-'?'selected':''?>>A-</option>
@@ -125,6 +133,9 @@ if (!isset($_SESSION['csrf_token'])) {
                 <option <?=old('blood_group')=='O+'?'selected':''?>>O+</option>
                 <option <?=old('blood_group')=='O-'?'selected':''?>>O-</option>
               </select>
+              <?php if (hasError('blood_group')): ?>
+                <div class="invalid-feedback"><?= getError('blood_group') ?></div>
+              <?php endif; ?>
             </div>
         <div class="col-md-4 mb-2">
             <label class="form-label form-label-sm" for="province">Province</label>

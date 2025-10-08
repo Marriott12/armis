@@ -1755,6 +1755,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="alert alert-success alert-dismissible fade show" role="alert">
                     <i class="fa fa-check-circle"></i> 
                     <strong>Success!</strong> Staff member information has been updated successfully.
+                    <div class="mt-2">
+                        <a href="view_staff.php?id=<?= $staff->id ?? 0 ?>" class="btn btn-sm btn-primary">
+                            <i class="fa fa-user"></i> View Profile
+                        </a>
+                        <a href="edit_staff.php" class="btn btn-sm btn-secondary">
+                            <i class="fa fa-search"></i> Edit Another Staff
+                        </a>
+                    </div>
                     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
             <?php endif; ?>
@@ -2745,7 +2753,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <input type="email" class="form-control <?= isset($validationErrors['email']) ? 'is-invalid' : '' ?>" name="email" id="email"
                                value="<?= htmlspecialchars($staff->email ?? '') ?>"
                                placeholder="example@mail.com" maxlength="100">
-                        <small class="form-text text-muted">Official email address</small>
+                        <small class="form-text text-muted">Official email address (leave empty if not available)</small>
                         <div class="invalid-feedback" id="email-error"><?= $validationErrors['email'] ?? '' ?></div>
                     </div>
                     <!-- Address -->
@@ -4112,56 +4120,71 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Function to validate dynamic fields before form submission
     function validateDynamicFields() {
+        console.log('🔍 Validating dynamic fields...');
         let isValid = true;
         const errors = [];
 
         // Validate operations
         const operations = document.querySelectorAll('#operationsList .operation-item');
+        console.log(`📋 Validating ${operations.length} operations...`);
         operations.forEach((op, index) => {
             const nameField = op.querySelector('input[name*="[operation_name]"]');
             if (nameField && !nameField.value.trim()) {
                 nameField.classList.add('is-invalid');
                 errors.push(`Operation #${index + 1}: Name is required`);
                 isValid = false;
+            } else if (nameField) {
+                nameField.classList.remove('is-invalid');
             }
         });
 
         // Validate deployments
         const deployments = document.querySelectorAll('#deploymentsList .deployment-item');
+        console.log(`🌍 Validating ${deployments.length} deployments...`);
         deployments.forEach((dep, index) => {
             const nameField = dep.querySelector('input[name*="[deployment_name]"]');
             if (nameField && !nameField.value.trim()) {
                 nameField.classList.add('is-invalid');
                 errors.push(`Deployment #${index + 1}: Name is required`);
                 isValid = false;
+            } else if (nameField) {
+                nameField.classList.remove('is-invalid');
             }
         });
 
         // Validate education
         const education = document.querySelectorAll('#educationList .education-item');
+        console.log(`🎓 Validating ${education.length} education records...`);
         education.forEach((edu, index) => {
             const institutionField = edu.querySelector('input[name*="[institution]"]');
             if (institutionField && !institutionField.value.trim()) {
                 institutionField.classList.add('is-invalid');
                 errors.push(`Education #${index + 1}: Institution is required`);
                 isValid = false;
+            } else if (institutionField) {
+                institutionField.classList.remove('is-invalid');
             }
         });
 
         // Validate skills
         const skills = document.querySelectorAll('#skillsList .skill-item');
+        console.log(`🎯 Validating ${skills.length} skills/courses...`);
         skills.forEach((skill, index) => {
             const nameField = skill.querySelector('input[name*="[course_name]"]');
             if (nameField && !nameField.value.trim()) {
                 nameField.classList.add('is-invalid');
                 errors.push(`Skill/Course #${index + 1}: Name is required`);
                 isValid = false;
+            } else if (nameField) {
+                nameField.classList.remove('is-invalid');
             }
         });
 
         if (!isValid) {
             console.error('❌ Dynamic field validation errors:', errors);
             alert('Please fix the following errors in the dynamic fields:\n\n' + errors.join('\n'));
+        } else {
+            console.log('✅ All dynamic fields are valid');
         }
 
         return isValid;
@@ -4208,21 +4231,69 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 5000);
     });
 
+    // Handle optional contact fields - clear if invalid
+    const contactFields = ['email', 'tel', 'nokTel'];
+    contactFields.forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            field.addEventListener('blur', function() {
+                // If field is filled but invalid, show warning
+                if (this.value.trim() && !this.checkValidity()) {
+                    const fieldType = this.type === 'email' ? 'email address' : 'phone number';
+                    console.warn(`⚠️ Invalid ${fieldType} format detected:`, this.value);
+                    const confirmClear = confirm(`The ${fieldType} appears to be incomplete or invalid.\n\nCurrent value: ${this.value}\n\nWould you like to clear it? (Click Cancel to edit it)`);
+                    if (confirmClear) {
+                        this.value = '';
+                        this.classList.remove('is-invalid');
+                        console.log(`✅ ${fieldType} field cleared`);
+                    }
+                }
+            });
+        }
+    });
+
     // Form validation
     const editForm = document.getElementById('editStaffForm');
     if (editForm) {
         editForm.addEventListener('submit', function(e) {
+            console.log('🔍 Form submission initiated...');
+            
+            // Remove HTML5 validation constraints for optional fields to prevent blocking
+            // Let PHP handle validation and data cleaning
+            const optionalContactFields = ['email', 'tel', 'nokTel'];
+            optionalContactFields.forEach(fieldId => {
+                const field = document.getElementById(fieldId);
+                if (field && field.value.trim() && !field.checkValidity()) {
+                    const fieldType = field.type === 'email' ? 'email' : 'phone';
+                    console.warn(`⚠️ Invalid ${fieldType} format detected (${fieldId}), removing validation constraint to allow submission`);
+                    // Remove the type constraint temporarily to bypass HTML5 validation
+                    field.setAttribute('data-original-type', field.type);
+                    field.type = 'text';
+                }
+            });
+            
             // Check if we have a valid staff member selected
             const staffId = document.querySelector('input[name="staff_id"]');
             if (!staffId || !staffId.value) {
                 e.preventDefault();
+                console.error('❌ No staff member selected');
                 alert('Error: No staff member selected. Please select a staff member first.');
                 return false;
             }
+            console.log('✅ Staff ID found:', staffId.value);
             
-            if (!validateForm() || !validateDynamicFields()) {
+            // Validate basic form fields
+            const formValidationResult = validateForm();
+            console.log('📝 Basic form validation:', formValidationResult ? '✅ Passed' : '❌ Failed');
+            
+            // Validate dynamic fields
+            const dynamicValidationResult = validateDynamicFields();
+            console.log('📋 Dynamic fields validation:', dynamicValidationResult ? '✅ Passed' : '❌ Failed');
+            
+            if (!formValidationResult || !dynamicValidationResult) {
                 e.preventDefault();
-                alert('Please fix the validation errors before submitting');
+                console.error('❌ Validation failed, form submission prevented');
+                alert('Please fix the validation errors before submitting. Check the console for details.');
                 window.scrollTo(0, 0);
                 return false;
             }
@@ -4232,6 +4303,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const depCount = document.querySelectorAll('#deploymentsList .deployment-item').length;
             const eduCount = document.querySelectorAll('#educationList .education-item').length;
             const skillCount = document.querySelectorAll('#skillsList .skill-item').length;
+            
+            console.log('📊 Item counts:', { operations: opCount, deployments: depCount, education: eduCount, skills: skillCount });
             
             const summary = `You are about to update this staff member with:
 • ${opCount} operation(s)
@@ -4243,8 +4316,12 @@ Are you sure you want to proceed?`;
             
             if (!confirm(summary)) {
                 e.preventDefault();
+                console.log('⚠️ User canceled submission');
                 return false;
             }
+            
+            console.log('✅ All validations passed, submitting form...');
+            // Form will submit naturally
         });
     }
     
@@ -4258,23 +4335,34 @@ Are you sure you want to proceed?`;
     
     // Validate form function
     function validateForm(showResults = false) {
-        console.log('Validating form...');
+        console.log('🔍 Validating form...');
         let isValid = true;
         let validationReport = [];
+        let emptyFields = [];
         
         // Basic validation for required fields
         const requiredFields = document.querySelectorAll('[required]');
+        console.log(`📝 Found ${requiredFields.length} required fields to validate`);
+        
         requiredFields.forEach(field => {
             if (!field.value.trim()) {
                 isValid = false;
                 field.classList.add('is-invalid');
-                validationReport.push(`Required field "${field.name}" is empty`);
+                const fieldName = field.name || field.id || 'Unknown field';
+                emptyFields.push(fieldName);
+                validationReport.push(`Required field "${fieldName}" is empty`);
                 const feedbackEl = document.getElementById(`${field.id}-error`);
                 if (feedbackEl) feedbackEl.textContent = 'This field is required';
             } else {
                 field.classList.remove('is-invalid');
             }
         });
+        
+        if (emptyFields.length > 0) {
+            console.error('❌ Empty required fields:', emptyFields);
+        } else {
+            console.log('✅ All required fields are filled');
+        }
         
         
         // Check operations

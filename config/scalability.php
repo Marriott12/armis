@@ -96,7 +96,7 @@ class ScalabilityConfig {
         header('X-XSS-Protection: 1; mode=block');
         header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
         header('Referrer-Policy: strict-origin-when-cross-origin');
-        header('Content-Security-Policy: default-src \'self\'; script-src \'self\' \'unsafe-inline\' cdn.jsdelivr.net cdnjs.cloudflare.com; style-src \'self\' \'unsafe-inline\' cdn.jsdelivr.net cdnjs.cloudflare.com; img-src \'self\' data:; font-src \'self\' cdnjs.cloudflare.com;');
+        header('Content-Security-Policy: default-src \'self\'; script-src \'self\' \'unsafe-inline\' cdn.jsdelivr.net cdnjs.cloudflare.com; style-src \'self\' \'unsafe-inline\' cdn.jsdelivr.net cdnjs.cloudflare.com; img-src \'self\' data:; font-src \'self\' cdnjs.cloudflare.com; connect-src \'self\' cdn.jsdelivr.net cdnjs.cloudflare.com;');
     }
     
     // Database indices for performance (SQL commands)

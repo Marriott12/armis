@@ -39,16 +39,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_FILES['csv_file'])) {
         }
 
         // Additional server-side validations
-    // NRC field removed
+        $nrc = $_POST['nrc'] ?? '';
         $email = $_POST['email'] ?? '';
         $phone = $_POST['phone'] ?? '';
         $dob = $_POST['dob'] ?? '';
         // NOK and ALT NOK fields
-    // NOK NRC field removed
-        $nok_phone = $_POST['nok_phone'] ?? '';
+        $nok_phone = $_POST['nok_tel'] ?? '';
         $nok_email = $_POST['nok_email'] ?? '';
-    // ALT NOK NRC field removed
-        $altnok_phone = $_POST['altnok_phone'] ?? '';
+        $altnok_phone = $_POST['alt_nok_tel'] ?? '';
         $altnok_email = $_POST['altnok_email'] ?? '';
 
     // Required fields validation with proper error messages
@@ -59,7 +57,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_FILES['csv_file'])) {
             'DOB' => 'Date of Birth',
             'svcNo' => 'Service Number',
             'category' => 'Category',
-            'rankID' => 'Rank'
+            'rankID' => 'Rank',
+            'nrc' => 'NRC',
+            'blood_group' => 'Blood Group'
         ];
         
         foreach ($required_fields as $field => $label) {
@@ -67,28 +67,78 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_FILES['csv_file'])) {
                 $form_errors[$field] = $label . ' is required.';
             }
         }
-    // NRC validation removed
+        // NRC validation (xxxxxx/xx/1 format)
+        if ($nrc && !preg_match('/^\d{6}\/\d{2}\/1$/', $nrc)) {
+            $form_errors['nrc'] = 'Invalid NRC format. Use format: 123456/78/1';
+        }
         // Email format
         if ($email && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $form_errors['email'] = 'Invalid email address.';
         }
-        // Phone format (digits, 8-15 chars)
-        if ($phone && !preg_match('/^\+?\d{8,15}$/', $phone)) {
-            $form_errors['phone'] = 'Invalid phone number.';
+        
+        // Zambian phone format (+260 + 9 digits) - Enhanced validation
+        if ($phone) {
+            // Remove all non-digits first to normalize input
+            $phone_digits = preg_replace('/[^0-9]/', '', $phone);
+            
+            // Check if it starts with country code
+            if (substr($phone_digits, 0, 3) === '260' && strlen($phone_digits) === 12) {
+                // Has country code (260XXXXXXXXX) - add + prefix
+                $phone = '+' . $phone_digits;
+                $_POST['phone'] = $phone;
+            } elseif (strlen($phone_digits) === 9 && in_array($phone_digits[0], ['9', '7', '5'])) {
+                // Local format (9 digits starting with 9, 7, or 5) - add +260 prefix
+                $phone = '+260' . $phone_digits;
+                $_POST['phone'] = $phone;
+            } else {
+                // Invalid format
+                $form_errors['phone'] = 'Invalid phone number. Must be 9 digits starting with 9, 7, or 5 (e.g., 976123456) or include country code +260.';
+            }
         }
+        
     // NOK NRC validation removed
-        // NOK phone format
-        if ($nok_phone && !preg_match('/^\+?\d{8,15}$/', $nok_phone)) {
-            $form_errors['nok_phone'] = 'Invalid phone number for Next of Kin.';
+        // NOK phone format (Zambian: +260 + 9 digits) - Enhanced validation
+        if ($nok_phone) {
+            // Remove all non-digits first to normalize input
+            $nok_phone_digits = preg_replace('/[^0-9]/', '', $nok_phone);
+            
+            // Check if it starts with country code
+            if (substr($nok_phone_digits, 0, 3) === '260' && strlen($nok_phone_digits) === 12) {
+                // Has country code (260XXXXXXXXX) - add + prefix
+                $nok_phone = '+' . $nok_phone_digits;
+                $_POST['nok_tel'] = $nok_phone;
+            } elseif (strlen($nok_phone_digits) === 9 && in_array($nok_phone_digits[0], ['9', '7', '5'])) {
+                // Local format (9 digits starting with 9, 7, or 5) - add +260 prefix
+                $nok_phone = '+260' . $nok_phone_digits;
+                $_POST['nok_tel'] = $nok_phone;
+            } else {
+                // Invalid format
+                $form_errors['nok_tel'] = 'Invalid phone number for Next of Kin. Must be 9 digits starting with 9, 7, or 5 or include country code +260.';
+            }
         }
         // NOK email format
         if ($nok_email && !filter_var($nok_email, FILTER_VALIDATE_EMAIL)) {
             $form_errors['nok_email'] = 'Invalid email address for Next of Kin.';
         }
     // ALT NOK NRC validation removed
-        // ALT NOK phone format
-        if ($altnok_phone && !preg_match('/^\+?\d{8,15}$/', $altnok_phone)) {
-            $form_errors['altnok_phone'] = 'Invalid phone number for Alternate Next of Kin.';
+        // ALT NOK phone format (Zambian: +260 + 9 digits) - Enhanced validation
+        if ($altnok_phone) {
+            // Remove all non-digits first to normalize input
+            $altnok_phone_digits = preg_replace('/[^0-9]/', '', $altnok_phone);
+            
+            // Check if it starts with country code
+            if (substr($altnok_phone_digits, 0, 3) === '260' && strlen($altnok_phone_digits) === 12) {
+                // Has country code (260XXXXXXXXX) - add + prefix
+                $altnok_phone = '+' . $altnok_phone_digits;
+                $_POST['alt_nok_tel'] = $altnok_phone;
+            } elseif (strlen($altnok_phone_digits) === 9 && in_array($altnok_phone_digits[0], ['9', '7', '5'])) {
+                // Local format (9 digits starting with 9, 7, or 5) - add +260 prefix
+                $altnok_phone = '+260' . $altnok_phone_digits;
+                $_POST['alt_nok_tel'] = $altnok_phone;
+            } else {
+                // Invalid format
+                $form_errors['alt_nok_tel'] = 'Invalid phone number for Alternate Next of Kin. Must be 9 digits starting with 9, 7, or 5 or include country code +260.';
+            }
         }
         // ALT NOK email format
         if ($altnok_email && !filter_var($altnok_email, FILTER_VALIDATE_EMAIL)) {
@@ -214,6 +264,7 @@ if (isset($_GET['success']) && $_GET['success'] == '1') {
         $username = $_SESSION['username'];
         $staff_name = $_SESSION['staff_name'] ?? '';
         $staff_email = $_SESSION['staff_email'] ?? '';
+        $created_staff_id = $_SESSION['created_staff_id'] ?? 0; // Get staff ID for view profile button
         $display_credentials = true;
         
         // Clear sensitive data from session
@@ -221,6 +272,7 @@ if (isset($_GET['success']) && $_GET['success'] == '1') {
         unset($_SESSION['username']);
         unset($_SESSION['staff_name']);
         unset($_SESSION['staff_email']);
+        unset($_SESSION['created_staff_id']);
     }
 }
 
@@ -352,49 +404,82 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             <hr class="my-3">
                             <div class="row">
                                 <div class="col-12">
-                                    <h6 class="mb-3"><i class="fas fa-key text-primary"></i> Temporary Login Credentials</h6>
+                                    <div class="d-flex justify-content-between align-items-center mb-3">
+                                        <h6 class="mb-0">
+                                            <i class="fas fa-key text-primary"></i> 
+                                            <strong>Temporary Login Credentials</strong>
+                                        </h6>
+                                        <button class="btn btn-sm btn-primary" onclick="copyAllCredentials('<?= htmlspecialchars($username) ?>', '<?= htmlspecialchars($temp_password) ?>', '<?= htmlspecialchars($staff_name) ?>')">
+                                            <i class="fas fa-copy me-1"></i> Copy All
+                                        </button>
+                                    </div>
                                     <?php if (!empty($staff_name)): ?>
-                                    <p class="mb-2"><strong>Staff Member:</strong> <?= htmlspecialchars($staff_name) ?></p>
+                                    <p class="mb-2"><strong>Staff Member:</strong> <span class="text-primary"><?= htmlspecialchars($staff_name) ?></span></p>
                                     <?php endif; ?>
                                     <?php if (!empty($staff_email)): ?>
-                                    <p class="mb-2"><strong>Email:</strong> <?= htmlspecialchars($staff_email) ?></p>
+                                    <p class="mb-2"><strong>Email:</strong> <span class="text-primary"><?= htmlspecialchars($staff_email) ?></span></p>
                                     <?php endif; ?>
                                 </div>
                             </div>
-                            <div class="row mt-2">
-                                <div class="col-md-6">
-                                    <div class="bg-light p-3 rounded">
-                                        <strong>Username:</strong><br>
-                                        <code class="fs-6"><?= htmlspecialchars($username) ?></code>
-                                        <button class="btn btn-sm btn-outline-secondary ms-2" onclick="copyToClipboard('<?= htmlspecialchars($username) ?>')">
-                                            <i class="fas fa-copy"></i>
-                                        </button>
+                            <div class="row mt-3">
+                                <div class="col-md-6 mb-3 mb-md-0">
+                                    <div class="border border-primary rounded p-3 h-100" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <strong class="text-primary">
+                                                <i class="fas fa-user me-1"></i> Username
+                                            </strong>
+                                            <button class="btn btn-sm btn-outline-primary" onclick="copyToClipboard('<?= htmlspecialchars($username) ?>')" title="Copy username">
+                                                <i class="fas fa-copy"></i>
+                                            </button>
+                                        </div>
+                                        <code class="fs-5 text-dark d-block p-2 bg-white rounded border" style="word-break: break-all;">
+                                            <?= htmlspecialchars($username) ?>
+                                        </code>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
-                                    <div class="bg-light p-3 rounded">
-                                        <strong>Temporary Password:</strong><br>
-                                        <code class="fs-6"><?= htmlspecialchars($temp_password) ?></code>
-                                        <button class="btn btn-sm btn-outline-secondary ms-2" onclick="copyToClipboard('<?= htmlspecialchars($temp_password) ?>')">
-                                            <i class="fas fa-copy"></i>
-                                        </button>
+                                    <div class="border border-success rounded p-3 h-100" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <strong class="text-success">
+                                                <i class="fas fa-lock me-1"></i> Temporary Password
+                                            </strong>
+                                            <button class="btn btn-sm btn-outline-success" onclick="copyToClipboard('<?= htmlspecialchars($temp_password) ?>')" title="Copy password">
+                                                <i class="fas fa-copy"></i>
+                                            </button>
+                                        </div>
+                                        <code class="fs-5 text-dark d-block p-2 bg-white rounded border" style="word-break: break-all;">
+                                            <?= htmlspecialchars($temp_password) ?>
+                                        </code>
                                     </div>
                                 </div>
                             </div>
-                            <div class="alert alert-warning mt-3 mb-0">
+                            <div class="alert alert-warning mt-3 mb-0 border-warning">
                                 <div class="d-flex align-items-start">
-                                    <i class="fas fa-exclamation-triangle me-2 mt-1"></i>
+                                    <i class="fas fa-exclamation-triangle me-2 mt-1 fs-5"></i>
                                     <div>
-                                        <strong>Important Security Notice:</strong>
-                                        <ul class="mb-0 mt-1">
-                                            <li>The user must change this password on first login</li>
-                                            <li>These credentials will be sent to the user's email address</li>
-                                            <li>Store these credentials securely until the user logs in</li>
+                                        <strong class="d-block mb-2">Important Security Notice:</strong>
+                                        <ul class="mb-0 ps-3">
+                                            <li class="mb-1"><strong>First Login:</strong> User must change this password on first login</li>
+                                            <li class="mb-1"><strong>Email Delivery:</strong> Credentials will be sent to user's email (<?= htmlspecialchars($staff_email) ?>)</li>
+                                            <li class="mb-1"><strong>Secure Storage:</strong> Copy and store these credentials securely until user logs in</li>
+                                            <li><strong>One-Time Display:</strong> These credentials will not be shown again after closing this alert</li>
                                         </ul>
                                     </div>
                                 </div>
                             </div>
                             <?php endif; ?>
+                            
+                            <!-- Action Buttons -->
+                            <div class="mt-3 d-flex gap-2">
+                                <?php if (isset($created_staff_id) && $created_staff_id > 0): ?>
+                                <a href="view_staff.php?id=<?= $created_staff_id ?>" class="btn btn-primary btn-sm">
+                                    <i class="fa fa-user"></i> View Profile
+                                </a>
+                                <?php endif; ?>
+                                <a href="create_staff.php" class="btn btn-secondary btn-sm">
+                                    <i class="fa fa-user-plus"></i> Create Another Staff
+                                </a>
+                            </div>
                             
                             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                         </div>
@@ -749,9 +834,26 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                 <!-- Copy to Clipboard Functionality -->
                 <script>
                 function copyToClipboard(text) {
+                    // Try modern clipboard API first
+                    if (navigator.clipboard && window.isSecureContext) {
+                        navigator.clipboard.writeText(text).then(function() {
+                            showCopySuccess();
+                        }).catch(function(err) {
+                            console.error('Clipboard API failed, using fallback: ', err);
+                            copyToClipboardFallback(text);
+                        });
+                    } else {
+                        // Fallback for older browsers or non-HTTPS
+                        copyToClipboardFallback(text);
+                    }
+                }
+                
+                function copyToClipboardFallback(text) {
                     // Create a temporary textarea element
                     const textarea = document.createElement('textarea');
                     textarea.value = text;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
                     document.body.appendChild(textarea);
                     
                     // Select and copy the text
@@ -761,16 +863,69 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     try {
                         const successful = document.execCommand('copy');
                         if (successful) {
-                            // Show success feedback
-                            // Notifications disabled
-                            // showCopySuccess();
+                            showCopySuccess();
                         }
                     } catch (err) {
                         console.error('Failed to copy text: ', err);
+                        alert('Failed to copy to clipboard. Please copy manually.');
                     }
                     
                     // Remove the temporary element
                     document.body.removeChild(textarea);
+                }
+                
+                function showCopySuccess(message = 'Text copied to clipboard successfully.') {
+                    // Create a temporary toast notification
+                    const toast = document.createElement('div');
+                    toast.className = 'position-fixed bottom-0 end-0 p-3';
+                    toast.style.zIndex = '11';
+                    toast.innerHTML = `
+                        <div class="toast show" role="alert">
+                            <div class="toast-header bg-success text-white">
+                                <i class="fas fa-check-circle me-2"></i>
+                                <strong class="me-auto">Copied!</strong>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+                            </div>
+                            <div class="toast-body">
+                                ${message}
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(toast);
+                    
+                    // Auto-remove after 3 seconds
+                    setTimeout(() => {
+                        toast.remove();
+                    }, 3000);
+                }
+                
+                function copyAllCredentials(username, password, staffName) {
+                    const credentials = `ARMIS Login Credentials
+=========================
+
+Staff Member: ${staffName}
+Username: ${username}
+Temporary Password: ${password}
+
+IMPORTANT:
+- User must change password on first login
+- Keep these credentials secure
+- Credentials sent to user's email
+
+Generated: ${new Date().toLocaleString()}
+`;
+                    
+                    // Try modern clipboard API first
+                    if (navigator.clipboard && window.isSecureContext) {
+                        navigator.clipboard.writeText(credentials).then(function() {
+                            showCopySuccess('All credentials copied to clipboard!');
+                        }).catch(function(err) {
+                            console.error('Clipboard API failed: ', err);
+                            copyToClipboardFallback(credentials);
+                        });
+                    } else {
+                        copyToClipboardFallback(credentials);
+                    }
                 }
 
                 function showCopySuccess() {

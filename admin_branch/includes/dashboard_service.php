@@ -331,6 +331,343 @@ class DashboardService {
     }
 
     /**
+     * Get detailed personnel list by category
+     * @param string $category - Category filter: 'military-officers', 'military-ncos', 'civilian-current', 'civilian-new'
+     * @param string|null $gender - Optional gender filter: 'male' or 'female'
+     * @return array List of personnel records
+     */
+    public function getPersonnelByCategory($category, $gender = null) {
+        try {
+            $query = "";
+            $params = [];
+            
+            switch ($category) {
+                case 'military-officers':
+                    // Officers (excluding recruits/cadets)
+                    $query = "
+                        SELECT 
+                            s.id,
+                            s.service_number,
+                            CONCAT(s.first_name, ' ', s.last_name) as name,
+                            r.abbreviation as `rank`,
+                            s.gender,
+                            s.svcStatus as status,
+                            s.attestDate as joined_date,
+                            u.code as unit
+                        FROM staff s
+                        INNER JOIN ranks r ON s.rank_id = r.id
+                        LEFT JOIN units u ON s.unit_id = u.id
+                        WHERE s.svcStatus != 'Discharged'
+                        AND r.category = 'Officer'
+                    ";
+                    if ($gender) {
+                        $query .= " AND s.gender = :gender";
+                        $params['gender'] = $gender;
+                    }
+                    $query .= " ORDER BY 
+                        r.level ASC,
+                        s.subWef ASC,
+                        s.tempWef ASC,
+                        s.attestDate ASC,
+                        s.service_number ASC";
+                    break;
+                    
+                case 'military-ncos':
+                    // NCOs (excluding recruits)
+                    $query = "
+                        SELECT 
+                            s.id,
+                            s.service_number,
+                            CONCAT(s.first_name, ' ', s.last_name) as name,
+                            r.abbreviation as `rank`,
+                            s.gender,
+                            s.svcStatus as status,
+                            s.attestDate as joined_date,
+                            u.code as unit
+                        FROM staff s
+                        INNER JOIN ranks r ON s.rank_id = r.id
+                        LEFT JOIN units u ON s.unit_id = u.id
+                        WHERE s.service_number != ''
+                        AND s.svcStatus != 'Discharged'
+                        AND r.category = 'NCO'
+                    ";
+                    if ($gender) {
+                        $query .= " AND s.gender = :gender";
+                        $params['gender'] = $gender;
+                    }
+                    $query .= " ORDER BY 
+                        r.level ASC,
+                        s.subWef ASC,
+                        s.tempWef ASC,
+                        s.attestDate ASC,
+                        s.service_number ASC";
+                    break;
+                    
+                case 'civilian-current':
+                    // Current civilian staff
+                    $query = "
+                        SELECT 
+                            s.id,
+                            s.service_number,
+                            CONCAT(s.first_name, ' ', s.last_name) as name,
+                            s.gender,
+                            s.svcStatus as status,
+                            s.attestDate as joined_date,
+                            u.code as unit
+                        FROM staff s
+                        LEFT JOIN units u ON s.unit_id = u.id
+                        WHERE s.category = 'CE'
+                        AND s.svcStatus = 'Active'
+                    ";
+                    if ($gender) {
+                        $query .= " AND s.gender = :gender";
+                        $params['gender'] = $gender;
+                    }
+                    $query .= " ORDER BY s.service_number ASC";
+                    break;
+                    
+                case 'civilian-new':
+                    // New civilian hires (within last year)
+                    $query = "
+                        SELECT 
+                            s.id,
+                            s.service_number,
+                            CONCAT(s.first_name, ' ', s.last_name) as name,
+                            s.gender,
+                            s.svcStatus as status,
+                            s.attestDate as joined_date,
+                            u.code as unit
+                        FROM staff s
+                        LEFT JOIN units u ON s.unit_id = u.id
+                        WHERE s.category = 'CE'
+                        AND s.svcStatus = 'Active'
+                        AND s.attestDate >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
+                    ";
+                    if ($gender) {
+                        $query .= " AND s.gender = :gender";
+                        $params['gender'] = $gender;
+                    }
+                    $query .= " ORDER BY s.service_number ASC";
+                    break;
+                    
+                default:
+                    return ['error' => 'Invalid category'];
+            }
+            
+            $stmt = $this->db->prepare($query);
+            $stmt->execute($params);
+            $personnel = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Debug logging
+            error_log("getPersonnelByCategory - Category: $category, Gender: " . ($gender ?? 'null'));
+            error_log("getPersonnelByCategory - Query: " . $query);
+            error_log("getPersonnelByCategory - Params: " . json_encode($params));
+            error_log("getPersonnelByCategory - Results count: " . count($personnel));
+            
+            return [
+                'category' => $category,
+                'gender' => $gender,
+                'count' => count($personnel),
+                'personnel' => $personnel
+            ];
+            
+        } catch (PDOException $e) {
+            error_log("Get Personnel By Category Error: " . $e->getMessage());
+            error_log("Get Personnel By Category Query: " . ($query ?? 'Query not set'));
+            return [
+                'error' => 'Database error',
+                'message' => $e->getMessage(),
+                'personnel' => []
+            ];
+        }
+    }
+
+    /**
+     * Get Enhanced Personnel Stats filtered by enlistment period
+     * @param string $startDate Start date (Y-m-d format)
+     * @param string $endDate End date (Y-m-d format)
+     * @return array Personnel statistics filtered by date range
+     */
+    public function getEnhancedPersonnelStatsByPeriod($startDate, $endDate) {
+        try {
+            $stats = [
+                'military' => [
+                    'total' => 0,
+                    'active' => 0,
+                    'officers' => 0,
+                    'ncos' => 0,
+                    'recruits' => 0,
+                    'enlisted' => 0,
+                    'warrant' => 0,
+                    'by_gender' => ['male' => 0, 'female' => 0],
+                    'officers_by_gender' => ['male' => 0, 'female' => 0],
+                    'ncos_by_gender' => ['male' => 0, 'female' => 0],
+                    'recruit_officers' => 0,
+                    'recruit_ncos' => 0,
+                    'recruit_officers_by_gender' => ['male' => 0, 'female' => 0],
+                    'recruit_ncos_by_gender' => ['male' => 0, 'female' => 0]
+                ],
+                'civilian' => [
+                    'total' => 0,
+                    'active' => 0,
+                    'new_1_month' => 0,
+                    'new_3_months' => 0,
+                    'new_1_year' => 0,
+                    'by_gender' => ['male' => 0, 'female' => 0],
+                    'current_by_gender' => ['male' => 0, 'female' => 0],
+                    'new_by_gender' => ['male' => 0, 'female' => 0],
+                    'by_status' => []
+                ],
+                'retirees' => 0,
+                'totals' => [
+                    'all_personnel' => 0,
+                    'active_military' => 0,
+                    'active_civilian' => 0
+                ]
+            ];
+
+            // Military Personnel filtered by attestDate (enlistment date)
+            $militaryQuery = "
+                SELECT 
+                    r.category,
+                    r.name as rank_name,
+                    r.abbreviation,
+                    s.svcStatus,
+                    s.gender,
+                    COUNT(*) as count
+                FROM staff s
+                INNER JOIN ranks r ON s.rank_id = r.id
+                WHERE s.service_number IS NOT NULL 
+                AND s.svcStatus != 'Discharged'
+                AND r.category IN ('Officer', 'NCO')
+                AND s.attestDate BETWEEN :start_date AND :end_date
+                GROUP BY r.category, r.name, r.abbreviation, s.svcStatus, s.gender
+            ";
+            
+            $stmt = $this->db->prepare($militaryQuery);
+            $stmt->execute([
+                'start_date' => $startDate,
+                'end_date' => $endDate
+            ]);
+            $militaryResults = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            foreach ($militaryResults as $row) {
+                $category = trim($row['category']);
+                $rankName = strtolower(trim($row['rank_name']));
+                $abbreviation = strtolower(trim($row['abbreviation']));
+                $status = strtolower(trim($row['svcStatus']));
+                $gender = strtolower(trim($row['gender']));
+                $count = (int)$row['count'];
+                
+                $stats['military']['total'] += $count;
+                
+                if ($status === 'active') {
+                    $stats['military']['active'] += $count;
+                }
+                
+                // Gender breakdown
+                if ($gender === 'male' || $gender === 'female') {
+                    $stats['military']['by_gender'][$gender] += $count;
+                }
+                
+                // Check if this is a recruit/training rank
+                $isRecruit = ($abbreviation === 'o/cdt' || $abbreviation === 'rct' || 
+                             strpos($rankName, 'cadet') !== false || 
+                             strpos($rankName, 'recruit') !== false);
+                
+                // Categorize by rank type
+                if ($category === 'Officer') {
+                    if ($isRecruit) {
+                        $stats['military']['recruit_officers'] += $count;
+                        if ($gender === 'male' || $gender === 'female') {
+                            $stats['military']['recruit_officers_by_gender'][$gender] += $count;
+                        }
+                    } else {
+                        $stats['military']['officers'] += $count;
+                        if ($gender === 'male' || $gender === 'female') {
+                            $stats['military']['officers_by_gender'][$gender] += $count;
+                        }
+                    }
+                } elseif ($category === 'NCO') {
+                    if ($isRecruit) {
+                        $stats['military']['recruit_ncos'] += $count;
+                        if ($gender === 'male' || $gender === 'female') {
+                            $stats['military']['recruit_ncos_by_gender'][$gender] += $count;
+                        }
+                    } else {
+                        $stats['military']['ncos'] += $count;
+                        if ($gender === 'male' || $gender === 'female') {
+                            $stats['military']['ncos_by_gender'][$gender] += $count;
+                        }
+                    }
+                }
+            }
+
+            // Civilian Personnel filtered by attestDate
+            $civilianQuery = "
+                SELECT 
+                    svcStatus,
+                    gender,
+                    COUNT(*) as count
+                FROM staff s
+                WHERE s.category = 'CE'
+                AND s.service_number IS NOT NULL
+                AND s.attestDate BETWEEN :start_date AND :end_date
+                GROUP BY svcStatus, gender
+            ";
+            
+            $stmt = $this->db->prepare($civilianQuery);
+            $stmt->execute([
+                'start_date' => $startDate,
+                'end_date' => $endDate
+            ]);
+            $civilianResults = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            foreach ($civilianResults as $row) {
+                $status = strtolower(trim($row['svcStatus']));
+                $gender = strtolower(trim($row['gender']));
+                $count = (int)$row['count'];
+                
+                $stats['civilian']['total'] += $count;
+                
+                if ($status === 'active') {
+                    $stats['civilian']['active'] += $count;
+                }
+                
+                if ($gender === 'male' || $gender === 'female') {
+                    $stats['civilian']['by_gender'][$gender] += $count;
+                }
+            }
+
+            // Retirees filtered by retirement date
+            $retireesQuery = "
+                SELECT COUNT(*) as count
+                FROM staff s
+                WHERE s.svcStatus = 'Retired'
+                AND s.attestDate BETWEEN :start_date AND :end_date
+            ";
+            
+            $stmt = $this->db->prepare($retireesQuery);
+            $stmt->execute([
+                'start_date' => $startDate,
+                'end_date' => $endDate
+            ]);
+            $stats['retirees'] = (int)$stmt->fetchColumn();
+
+            // Calculate totals
+            $stats['totals']['all_personnel'] = $stats['military']['total'] + $stats['civilian']['total'];
+            $stats['totals']['active_military'] = $stats['military']['active'];
+            $stats['totals']['active_civilian'] = $stats['civilian']['active'];
+
+            return $stats;
+            
+        } catch (PDOException $e) {
+            error_log("Get Personnel Stats By Period Error: " . $e->getMessage());
+            throw new Exception("Failed to retrieve personnel statistics: " . $e->getMessage());
+        }
+    }
+
+    /**
      * Get KPI (Key Performance Indicator) data
      */
     public function getKPIData() {

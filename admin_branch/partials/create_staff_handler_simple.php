@@ -48,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'category' => 'Category',
             'rankID' => 'Rank',
             'gender' => 'Gender',
+            'blood_group' => 'Blood Group',
             'province' => 'Province',
             'district' => 'District',
             'religion' => 'Religion',
@@ -133,9 +134,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'createdBy' => $_SESSION['userID'] ?? 1,
                     'is_first_login' => 1 // Flag to require password change on first login
                 ];
-                // Add prefix if provided
+                
+                // Add optional fields if provided
                 if (!empty($_POST['prefix'])) {
                     $insertData['prefix'] = trim($_POST['prefix']);
+                }
+                if (!empty($_POST['blood_group'])) {
+                    $insertData['bloodGp'] = trim($_POST['blood_group']); // Database column is 'bloodGp'
+                }
+                if (!empty($_POST['height'])) {
+                    $insertData['height'] = trim($_POST['height']);
+                }
+                if (!empty($_POST['maritalStatus'])) {
+                    $insertData['maritalStatus'] = trim($_POST['maritalStatus']);
                 }
                 // Remove any fields not present in the form
                 
@@ -181,21 +192,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $rankStmt->close();
                     }
                     
-                    // Send welcome email with credentials
+                    // Send welcome email with credentials (with development/production awareness)
                     try {
                         $mailer = new ARMISMailer();
                         $emailResult = $mailer->sendWelcomeEmail($staffData, $tempPassword);
                         
+                        // Determine appropriate success message based on environment and email result
                         if ($emailResult['success']) {
-                            $_SESSION['success_message'] = "Staff member successfully created! Login credentials have been sent to their email address.";
-                            error_log("Welcome email sent successfully to: " . $staffData['email']);
+                            $mode = $emailResult['mode'] ?? 'unknown';
+                            
+                            if ($mode === 'development') {
+                                // Development mode: Credentials shown on screen
+                                $_SESSION['success_message'] = "✅ Staff member successfully created! (Development Mode: Email logged, credentials displayed below)";
+                                error_log("DEVELOPMENT: Welcome email logged for: " . $staffData['email']);
+                            } elseif (isset($emailResult['sent']) && $emailResult['sent'] === true) {
+                                // Production mode: Email sent successfully
+                                $_SESSION['success_message'] = "✅ Staff member successfully created! Login credentials have been sent to " . $staffData['email'];
+                                error_log("PRODUCTION: Welcome email sent successfully to: " . $staffData['email']);
+                            } else {
+                                // Production mode: Email logged but not sent (mail server issue)
+                                $_SESSION['success_message'] = "✅ Staff member successfully created! Note: Email credentials are displayed below (mail server may need configuration)";
+                                error_log("PRODUCTION: Welcome email logged but not sent to: " . $staffData['email']);
+                            }
                         } else {
-                            $_SESSION['success_message'] = "Staff member created successfully, but failed to send email: " . $emailResult['message'];
-                            error_log("Failed to send welcome email: " . $emailResult['message']);
+                            // Fallback: Staff created but email had issues
+                            $_SESSION['success_message'] = "✅ Staff member successfully created! Login credentials are displayed below.";
+                            error_log("Email notification skipped: " . ($emailResult['message'] ?? 'Unknown reason'));
                         }
                     } catch (Exception $emailError) {
-                        $_SESSION['success_message'] = "Staff member created successfully, but email sending failed: " . $emailError->getMessage();
-                        error_log("Email sending error: " . $emailError->getMessage());
+                        // Exception caught: Staff still created successfully
+                        $_SESSION['success_message'] = "✅ Staff member successfully created! Login credentials are displayed below.";
+                        error_log("Email exception (non-critical): " . $emailError->getMessage());
                     }
                     
                     // Store temporary credentials in session for display
@@ -203,6 +230,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['username'] = $username;
                     $_SESSION['staff_name'] = trim($_POST['fname']) . ' ' . trim($_POST['lname']);
                     $_SESSION['staff_email'] = trim($_POST['email']);
+                    $_SESSION['created_staff_id'] = $staffId; // Store staff ID for view profile button
                     
                     // Log the activity
                     error_log("New staff created - ID: $staffId, Username: $username, Email: " . $insertData['email']);
