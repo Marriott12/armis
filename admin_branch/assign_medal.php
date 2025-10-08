@@ -101,7 +101,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $medalId = trim($_POST['medal_id'] ?? '');
         $awardDate = trim($_POST['award_date'] ?? '');
         $selectedStaff = $_POST['selected_staff'] ?? [];
-        $auth = trim($_POST['auth'] ?? '');
         $remark = trim($_POST['remark'] ?? '');
         $gazetteReference = trim($_POST['gazette_reference'] ?? '');
         $barNumber = trim($_POST['bar_number'] ?? '');
@@ -280,11 +279,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="mb-3">
                     <label for="award_date" class="form-label" aria-label="Award Date">Award Date <span class="text-danger">*</span></label>
                     <input type="date" class="form-control" id="award_date" name="award_date" required aria-required="true" min="1900-01-01" max="<?=date('Y-m-d')?>" value="<?=htmlspecialchars($_POST['award_date'] ?? date('Y-m-d'))?>">
-                </div>
-                <div class="mb-3">
-                    <label for="auth" class="form-label" aria-label="Authority">Authority</label>
-                    <input type="text" class="form-control" id="auth" name="auth" aria-required="false" value="<?=htmlspecialchars($_POST['auth'] ?? '')?>" placeholder="Optional - for reference only">
-                    <small class="form-text text-muted">This field is not saved to the database.</small>
                 </div>
                 <div class="mb-3">
                     <label for="selected_staff" class="form-label" aria-label="Select Staff Members">Select Staff Members <span class="text-danger">*</span></label>
@@ -1205,10 +1199,10 @@ function calculateAge(dob) {
     return age;
 }
 function enableAssignButton() {
-    let allFilled = $('#medal_id').val() && $('#award_date').val() && $('#auth').val() && selectedStaff.length > 0;
+    let allFilled = $('#medal_id').val() && $('#award_date').val() && selectedStaff.length > 0;
     $('#showConfirmModal').prop('disabled', !allFilled);
 }
-$('#medal_id, #award_date, #auth').on('input', enableAssignButton);
+$('#medal_id, #award_date').on('input', enableAssignButton);
 $('#showConfirmModal').on('click', function() {
     if (selectedStaff.length >= <?=json_encode($BULK_CONFIRMATION_THRESHOLD)?>) {
         $('#bulkCount').text(selectedStaff.length);
@@ -1229,7 +1223,7 @@ $('#showConfirmModal').on('click', function() {
 function renderConfirmSummary(selected) {
     let summary = '<ul class="list-group">';
     selected.forEach(function(staff){
-        summary += `<li class="list-group-item">${staff.service_number} - ${staff.rank_name ? staff.rank_name + ' ' : ''}${staff.first_name} ${staff.last_name} <br><strong>Medal:</strong> ${$('#medal_id option:selected').text()} <br><strong>Authority:</strong> ${$('#auth').val() || '-'}</li>`;
+        summary += `<li class="list-group-item">${staff.service_number} - ${staff.rank_name ? staff.rank_name + ' ' : ''}${staff.first_name} ${staff.last_name} <br><strong>Medal:</strong> ${$('#medal_id option:selected').text()}</li>`;
     });
     summary += '</ul>';
     $('#confirmSummary').html(summary);
