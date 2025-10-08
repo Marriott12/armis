@@ -9,6 +9,9 @@ require_once __DIR__ . '/includes/auth.php';
 // Include RBAC system
 require_once dirname(__DIR__) . '/shared/rbac.php';
 
+// Include permissions
+require_once dirname(__DIR__) . '/shared/permissions.php';
+
 // Require authentication and admin privileges
 requireAuth();
 
@@ -103,39 +106,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $gazetteReference = trim($_POST['gazette_reference'] ?? '');
         $barNumber = trim($_POST['bar_number'] ?? '');
 
-        if (!in_array($_SESSION['role'] ?? '', ['admin', 'branch-admin', 'hr'])) {
+        // Permission check - allow admin_branch access
+        if (!hasPermission(PERM_ASSIGN_MEDALS)) {
             $errors[] = "You do not have permission to assign medals.";
         }
+        
         if (!ctype_digit($medalId)) $errors[] = "Invalid medal selected.";
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $awardDate)) $errors[] = "Invalid award date.";
         if (empty($selectedStaff) || !is_array($selectedStaff)) $errors[] = "Please select at least one staff member.";
-        foreach ($selectedStaff as $sid) {
-            if (!ctype_digit($sid)) $errors[] = "Invalid staff selection.";
-        }
         if ($auth === '') $errors[] = "Please enter the authority.";
         if (count($selectedStaff) !== count(array_unique($selectedStaff))) {
             $errors[] = "Duplicate staff selected.";
         }
 
         $staffInfoList = [];
-        foreach ($selectedStaff as $staffId) {
-            $stmt = $pdo->prepare("SELECT service_number FROM staff WHERE id = ?");
-            $stmt->execute([$staffId]);
+        foreach ($selectedStaff as $staffIdOrServiceNumber) {
+            // Handle both staff ID (numeric) and service number (may be alphanumeric)
+            $staffIdOrServiceNumber = trim($staffIdOrServiceNumber);
+            
+            // Try to find staff by ID first, then by service number
+            if (ctype_digit($staffIdOrServiceNumber)) {
+                // It's a numeric ID
+                $stmt = $pdo->prepare("SELECT id, service_number, CONCAT(first_name, ' ', last_name) as full_name FROM staff WHERE id = ?");
+                $stmt->execute([$staffIdOrServiceNumber]);
+            } else {
+                // It's a service number
+                $stmt = $pdo->prepare("SELECT id, service_number, CONCAT(first_name, ' ', last_name) as full_name FROM staff WHERE service_number = ?");
+                $stmt->execute([$staffIdOrServiceNumber]);
+            }
+            
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$row || empty($row['service_number'])) {
-                $errors[] = "Staff member with ID $staffId not found or missing service number.";
+                $errors[] = "Staff member {$staffIdOrServiceNumber} not found.";
                 continue;
             }
+            
+            $staffId = $row['id'];
             $service_number = $row['service_number'];
+            $full_name = $row['full_name'];
+            
+            // Check for duplicate medal assignment
             $stmt2 = $pdo->prepare("SELECT COUNT(*) FROM staff_medals WHERE staff_id = ? AND medal_id = ?");
             $stmt2->execute([$staffId, $medalId]);
             $alreadyAwarded = $stmt2->fetchColumn();
             if ($alreadyAwarded > 0) {
-                $errors[] = "Staff member {$service_number} has already been awarded this medal.";
+                $errors[] = "Staff member {$full_name} ({$service_number}) has already been awarded this medal.";
+                continue;
             }
+            
             $staffInfoList[] = [
                 'staff_id' => $staffId,
                 'service_number' => $service_number,
+                'full_name' => $full_name
             ];
         }
 
@@ -160,7 +182,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]);
                 }
                 $pdo->commit();
-                $success = "Medal assigned successfully.";
+                
+                // Get medal name for success message
+                $medalStmt = $pdo->prepare("SELECT name FROM medals WHERE id = ?");
+                $medalStmt->execute([$medalId]);
+                $medalName = $medalStmt->fetchColumn();
+                
+                $count = count($staffInfoList);
+                $success = "Successfully assigned <strong>{$medalName}</strong> to {$count} staff member" . ($count > 1 ? 's' : '') . ".";
+                
                 $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
                 $csrfToken = $_SESSION['csrf_token'];
                 $_POST = [];
