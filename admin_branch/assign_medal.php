@@ -114,7 +114,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!ctype_digit($medalId)) $errors[] = "Invalid medal selected.";
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $awardDate)) $errors[] = "Invalid award date.";
         if (empty($selectedStaff) || !is_array($selectedStaff)) $errors[] = "Please select at least one staff member.";
-        if ($auth === '') $errors[] = "Please enter the authority.";
         if (count($selectedStaff) !== count(array_unique($selectedStaff))) {
             $errors[] = "Duplicate staff selected.";
         }
@@ -182,7 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (empty($errors)) {
             try {
                 $pdo->beginTransaction();
-                $stmt = $pdo->prepare("INSERT INTO staff_medals (staff_id, service_number, medal_id, award_date, citation, gazette_reference, bar_number, created_by, created_at, authority) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt = $pdo->prepare("INSERT INTO staff_medals (staff_id, service_number, medal_id, award_date, citation, gazette_reference, bar_number, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 $createdBy = $_SESSION['username'] ?? 'admin';
                 $now = date('Y-m-d H:i:s');
                 foreach ($staffInfoList as $info) {
@@ -195,8 +194,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $gazetteReference,
                         $barNumber,
                         $createdBy,
-                        $now,
-                        $auth
+                        $now
                     ]);
                 }
                 $pdo->commit();
@@ -284,8 +282,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <input type="date" class="form-control" id="award_date" name="award_date" required aria-required="true" min="1900-01-01" max="<?=date('Y-m-d')?>" value="<?=htmlspecialchars($_POST['award_date'] ?? date('Y-m-d'))?>">
                 </div>
                 <div class="mb-3">
-                    <label for="auth" class="form-label" aria-label="Authority">Authority <span class="text-danger">*</span></label>
-                    <input type="text" class="form-control" id="auth" name="auth" required aria-required="true" value="<?=htmlspecialchars($_POST['auth'] ?? '')?>">
+                    <label for="auth" class="form-label" aria-label="Authority">Authority</label>
+                    <input type="text" class="form-control" id="auth" name="auth" aria-required="false" value="<?=htmlspecialchars($_POST['auth'] ?? '')?>" placeholder="Optional - for reference only">
+                    <small class="form-text text-muted">This field is not saved to the database.</small>
                 </div>
                 <div class="mb-3">
                     <label for="selected_staff" class="form-label" aria-label="Select Staff Members">Select Staff Members <span class="text-danger">*</span></label>
