@@ -288,6 +288,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </table>
                     </div>
                     
+                    <!-- Selected Staff Profile Cards (Matching appointments.php style) -->
+                    <div id="selectedStaffCards" class="mt-4" style="display: none;">
+                        <h6 class="border-bottom pb-2 mb-3">
+                            <i class="fas fa-check-circle text-success"></i> Selected Staff Members
+                            <span class="badge bg-primary" id="selectedCardCount">0</span>
+                        </h6>
+                        <div id="selectedStaffList" class="row g-3">
+                            <!-- Profile cards will be populated here -->
+                        </div>
+                    </div>
+                    
                     <!-- Hidden container to store selected staff for form submission -->
                     <div id="selectedStaffInputs"></div>
                     
@@ -611,6 +622,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         gap: 10px;
     }
 }
+
+/* Staff Profile Cards (Matching appointments.php) */
+.staff-profile-card {
+    transition: all 0.2s ease;
+    border: 1px solid #dee2e6;
+}
+
+.staff-profile-card:hover {
+    box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+}
+
+.staff-profile-card .card-body {
+    padding: 1rem;
+}
+
+.staff-avatar-circle {
+    width: 48px;
+    height: 48px;
+    background-color: #0d6efd;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.staff-profile-card .staff-name {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #212529;
+    margin-bottom: 0.25rem;
+}
+
+.staff-profile-card .staff-info {
+    font-size: 0.875rem;
+    color: #6c757d;
+    margin-bottom: 0.25rem;
+}
+
+.staff-profile-card .staff-info i {
+    width: 16px;
+    text-align: center;
+    margin-right: 4px;
+}
+
+.staff-profile-card .btn-remove {
+    transition: all 0.2s ease;
+}
+
+.staff-profile-card .btn-remove:hover {
+    transform: scale(1.1);
+}
+
 .select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__choice {
     background-color: #0d6efd;
     border-color: #0d6efd;
@@ -925,6 +991,7 @@ function bindEventHandlers() {
 
 function updateSelectionDisplay() {
     $('#selectionCount').text(selectedStaff.length);
+    $('#selectedCardCount').text(selectedStaff.length);
     
     // Update master checkbox state
     const visibleCheckboxes = $('.staff-checkbox:visible');
@@ -937,6 +1004,106 @@ function updateSelectionDisplay() {
     } else {
         $('#masterCheckbox').prop('indeterminate', true);
     }
+    
+    // Render staff profile cards (matching appointments.php style)
+    renderStaffProfileCards();
+}
+
+// Render staff profile cards (matching appointments.php)
+function renderStaffProfileCards() {
+    const container = $('#selectedStaffList');
+    const cardsSection = $('#selectedStaffCards');
+    
+    if (selectedStaff.length === 0) {
+        cardsSection.hide();
+        container.empty();
+        
+        // Clear hidden inputs
+        $('#selectedStaffInputs').empty();
+        return;
+    }
+    
+    cardsSection.show();
+    container.empty();
+    
+    // Helper function for proper title case
+    function toTitleCase(str) {
+        if (!str) return '';
+        return str.trim().split(/\s+/).map(word => {
+            if (word.length === 0) return '';
+            return word.split('-').map(part => 
+                part.split("'").map(subpart => 
+                    subpart.charAt(0).toUpperCase() + subpart.slice(1).toLowerCase()
+                ).join("'")
+            ).join('-');
+        }).join(' ');
+    }
+    
+    selectedStaff.forEach((staff, index) => {
+        const firstName = toTitleCase(staff.first_name || '');
+        const lastName = toTitleCase(staff.last_name || '');
+        const fullName = firstName && lastName ? `${firstName} ${lastName}` : (firstName || lastName || 'N/A');
+        
+        const card = `
+            <div class="col-md-6 col-lg-4">
+                <div class="card staff-profile-card border-primary" data-service-number="${staff.service_number}">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start">
+                            <div class="staff-avatar-circle me-3">
+                                <i class="fas fa-user fa-lg"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <h6 class="staff-name mb-0">${fullName}</h6>
+                                        <div class="staff-info">
+                                            <i class="fas fa-id-card"></i>
+                                            ${staff.service_number || 'N/A'}
+                                        </div>
+                                        <div class="staff-info">
+                                            <i class="fas fa-star"></i>
+                                            ${staff.rank_abbr || staff.rank_name || 'N/A'} | 
+                                            <i class="fas fa-building"></i>
+                                            ${staff.unit_name || 'N/A'}
+                                        </div>
+                                        ${staff.corps ? `<div class="staff-info"><i class="fas fa-shield-alt"></i> ${staff.corps}</div>` : ''}
+                                    </div>
+                                    <button type="button" class="btn btn-sm btn-outline-danger btn-remove remove-staff-btn" 
+                                            data-service-number="${staff.service_number}" 
+                                            title="Remove from selection">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        container.append(card);
+    });
+    
+    // Update hidden inputs for form submission
+    updateHiddenInputs();
+    
+    // Bind remove button handlers
+    $('.remove-staff-btn').off('click').on('click', function() {
+        const serviceNumber = $(this).data('service-number');
+        
+        // Uncheck the checkbox in the table
+        $(`.staff-checkbox[value="${serviceNumber}"]`).prop('checked', false).trigger('change');
+    });
+}
+
+// Update hidden inputs for form submission
+function updateHiddenInputs() {
+    const inputsContainer = $('#selectedStaffInputs');
+    inputsContainer.empty();
+    
+    selectedStaff.forEach(staff => {
+        inputsContainer.append(`<input type="hidden" name="selected_staff[]" value="${staff.staff_id || staff.id}">`);
+    });
 }
 
 function updateLegacySelect() {
