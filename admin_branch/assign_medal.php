@@ -28,7 +28,7 @@ $sidebarLinks = [
     ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create_staff'],
     ['title' => 'Edit Staff', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'user-edit', 'page' => 'edit_staff'],
     ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/appointments.php', 'icon' => 'briefcase', 'page' => 'appointments'],
-    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medals.php', 'icon' => 'medal', 'page' => 'medals'],
+    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medal.php', 'icon' => 'medal', 'page' => 'medals'],
     [
         'title' => 'Reports',
         'icon' => 'chart-bar',
@@ -244,8 +244,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <?php include dirname(__DIR__) . '/shared/sidebar.php'; ?>
 <div class="content-wrapper with-sidebar">
     <div class="container-fluid p-4">
-        <div class="mb-3">
+        <div class="mb-3 d-flex justify-content-between align-items-center">
             <a href="medals.php" class="btn btn-outline-secondary"><i class="fa fa-arrow-left"></i> Back to Medals List</a>
+            <a href="create_medal.php" class="btn btn-success"><i class="fa fa-plus"></i> Add New Medal</a>
         </div>
         <div class="card shadow-sm">
         <div class="card-header bg-info text-white">
