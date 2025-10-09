@@ -28,7 +28,7 @@ $sidebarLinks = [
     ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create_staff'],
     ['title' => 'Edit Staff', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'user-edit', 'page' => 'edit_staff'],
     ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/appointments.php', 'icon' => 'briefcase', 'page' => 'appointments'],
-    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/medals.php', 'icon' => 'medal', 'page' => 'medals'],
+    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medals.php', 'icon' => 'medal', 'page' => 'medals'],
     [
         'title' => 'Reports',
         'icon' => 'chart-bar',
@@ -183,19 +183,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt = $pdo->prepare("INSERT INTO staff_medals (staff_id, service_number, medal_id, award_date, citation, gazette_reference, bar_number, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 $createdBy = $_SESSION['username'] ?? 'admin';
                 $now = date('Y-m-d H:i:s');
+                
+                $successCount = 0;
+                $duplicateStaff = [];
+                
                 foreach ($staffInfoList as $info) {
-                    $stmt->execute([
-                        $info['staff_id'],
-                        $info['service_number'],
-                        $medalId,
-                        $awardDate,
-                        $remark,
-                        $gazetteReference,
-                        $barNumber,
-                        $createdBy,
-                        $now
-                    ]);
+                    try {
+                        $stmt->execute([
+                            $info['staff_id'],
+                            $info['service_number'],
+                            $medalId,
+                            $awardDate,
+                            $remark,
+                            $gazetteReference,
+                            $barNumber,
+                            $createdBy,
+                            $now
+                        ]);
+                        $successCount++;
+                    } catch (PDOException $e) {
+                        // Check for duplicate entry error
+                        if ($e->getCode() == 23000 && strpos($e->getMessage(), 'Duplicate entry') !== false) {
+                            $duplicateStaff[] = $info['full_name'] . " (" . $info['service_number'] . ")";
+                        } else {
+                            throw $e; // Re-throw if it's not a duplicate error
+                        }
+                    }
                 }
+                
                 $pdo->commit();
                 
                 // Get medal name for success message
@@ -203,8 +218,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $medalStmt->execute([$medalId]);
                 $medalName = $medalStmt->fetchColumn();
                 
-                $count = count($staffInfoList);
-                $success = "Successfully assigned <strong>{$medalName}</strong> to {$count} staff member" . ($count > 1 ? 's' : '') . ".";
+                // Build success/warning messages
+                if ($successCount > 0) {
+                    $success = "Successfully assigned <strong>{$medalName}</strong> to {$successCount} staff member" . ($successCount > 1 ? 's' : '') . ".";
+                }
+                
+                if (!empty($duplicateStaff)) {
+                    $duplicateList = implode(', ', $duplicateStaff);
+                    $errors[] = "The following staff members have already been awarded this medal: <strong>{$duplicateList}</strong>";
+                }
                 
                 $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
                 $csrfToken = $_SESSION['csrf_token'];
