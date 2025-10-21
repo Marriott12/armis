@@ -295,10 +295,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     </tbody>
                 </table>
                 <div class="d-flex justify-content-start align-items-center gap-2 mb-2">
-                    <button type="button" id="exportCSVBtn" class="btn btn-outline-success btn-sm"><i class="fa fa-file-csv"></i> Export CSV</button>
+                    <button type="submit" name="action" value="export" class="btn btn-outline-success btn-sm"><i class="fa fa-file-csv"></i> Export Selected</button>
                     <button type="button" id="exportExcelBtn" class="btn btn-outline-success btn-sm"><i class="fa fa-file-excel"></i> Excel</button>
                     <button type="button" id="exportPDFBtn" class="btn btn-outline-danger btn-sm"><i class="fa fa-file-pdf"></i> PDF</button>
-                    <button type="button" class="btn btn-outline-info btn-sm print-btn"><i class="fa fa-print"></i> Print</button>
                     <button type="submit" name="action" value="delete" class="btn btn-outline-danger btn-sm" onclick="return confirm('Are you sure you want to delete selected records?');"><i class="fa fa-trash"></i> Delete Selected</button>
                 </div>
                 </form>

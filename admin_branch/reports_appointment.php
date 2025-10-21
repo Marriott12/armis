@@ -9,7 +9,7 @@ require_once dirname(__DIR__) . '/shared/database_connection.php';
 // Require authentication
 requireAuth();
 
-$pageTitle = "Appointment Report as at " . date('d-M-Y');
+$pageTitle = "Personnel Report by Appointment as at " . date('d-M-Y');
 $moduleName = "Admin Branch";
 $moduleIcon = "users-cog";
 $currentPage = "reports";

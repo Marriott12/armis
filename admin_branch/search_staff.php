@@ -55,8 +55,8 @@ try {
     $rankId = $_GET['rank_id'] ?? '';
     $limit = (int)($_GET['limit'] ?? 50);
     
-    // Validate limit
-    if ($limit > 100) $limit = 100;
+    // Validate limit (allow higher limits for bulk operations like medal assignment)
+    if ($limit > 2000) $limit = 2000;  // Maximum 2000 for safety
     if ($limit < 1) $limit = 50;
     
     // Build base SQL query with rank level for proper seniority sorting
@@ -79,6 +79,7 @@ try {
                 r.name as rank_name,
                 r.level as rank_level,
                 r.abbreviation as rank_abbr,
+                r.category as rank_category,
                 u.name as unit_name,
                 s.corps,
                 s.svcStatus,
@@ -92,6 +93,14 @@ try {
             WHERE s.svcStatus = 'Active'";
     
     $params = [];
+    
+    // Add medal exclusion filter if specified
+    if (!empty($_GET['exclude_medal_id'])) {
+        $sql .= " AND s.id NOT IN (
+            SELECT staff_id FROM staff_medals WHERE medal_id = :medal_id
+        )";
+        $params[':medal_id'] = $_GET['exclude_medal_id'];
+    }
     
     // Add rank filter if specified
     if (!empty($rankId)) {
@@ -146,6 +155,7 @@ try {
             'rank_name' => $row['rank_name'],
             'rank_level' => $row['rank_level'],
             'rank_abbr' => $row['rank_abbr'],
+            'rank_category' => $row['rank_category'],
             'unit_name' => $row['unit_name'],
             'corps' => $row['corps'],
             'status' => $row['svcStatus'],

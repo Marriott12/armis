@@ -15,10 +15,61 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $profileManager = new UserProfileManager($_SESSION['user_id']);
+$pdo = getDbConnection();
+
+// Load all user data comprehensively
 $personalInfo = $profileManager->getUserProfile();
 $contactInfo = $profileManager->getContactInfo();
 $familyMembers = $profileManager->getFamilyMembers();
 $addresses = $profileManager->getAddresses();
+$educationRecords = $profileManager->getEducationRecords();
+$languageRecords = $profileManager->getLanguageRecords();
+$trainingRecords = $profileManager->getTrainingRecords();
+$skills = $profileManager->getSkills();
+$awards = $profileManager->getAwards();
+$deployments = $profileManager->getDeployments();
+$medals = $profileManager->getMedals();
+$promotions = $profileManager->getPromotionHistory();
+$serviceHistory = $profileManager->getServiceHistory();
+$medicalInfo = $profileManager->getMedicalInfo(true);
+$recentActivity = $profileManager->getRecentActivity(10);
+
+// Get rank and unit information
+$rankName = 'N/A';
+$unitName = 'N/A';
+$serviceNumber = $personalInfo->service_number ?? 'N/A';
+$attestDate = $personalInfo->attestDate ?? null;
+$serviceYears = 'N/A';
+
+if (isset($personalInfo->rank_id) && $personalInfo->rank_id) {
+    try {
+        $stmt = $pdo->prepare("SELECT rank, abbreviation FROM ranks WHERE id = ?");
+        $stmt->execute([$personalInfo->rank_id]);
+        $rankData = $stmt->fetch(PDO::FETCH_OBJ);
+        if ($rankData) {
+            $rankName = $rankData->rank ?? $rankData->abbreviation ?? 'N/A';
+        }
+    } catch (Exception $e) {
+        error_log("Rank query error: " . $e->getMessage());
+    }
+}
+
+if (isset($personalInfo->unit_id) && $personalInfo->unit_id) {
+    try {
+        $stmt = $pdo->prepare("SELECT name, code FROM units WHERE id = ?");
+        $stmt->execute([$personalInfo->unit_id]);
+        $unitData = $stmt->fetch(PDO::FETCH_OBJ);
+        if ($unitData) {
+            $unitName = $unitData->name ?? $unitData->code ?? 'N/A';
+        }
+    } catch (Exception $e) {
+        error_log("Unit query error: " . $e->getMessage());
+    }
+}
+
+if ($attestDate) {
+    $serviceYears = floor((time() - strtotime($attestDate)) / (365.25 * 24 * 3600));
+}
 
 // Get user statistics
 function getUserStats($pdo, $userId) {
@@ -108,17 +159,18 @@ $currentPage = "analytics";
 // Include shared header
 require_once dirname(__DIR__) . '/shared/header.php';
 
+// Load shared navigation
+require_once dirname(__DIR__) . '/shared/user_navigation.php';
+
 // Sidebar links for this section
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/users/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'My Profile', 'url' => '/Armis2/users/index.php', 'icon' => 'user', 'page' => 'profile'],
-    ['title' => 'Analytics', 'url' => '/Armis2/users/analytics_dashboard.php', 'icon' => 'chart-line', 'page' => 'analytics'],
-    ['title' => 'Settings', 'url' => '/Armis2/users/settings.php', 'icon' => 'cogs', 'page' => 'settings']
-];
+$sidebarLinks = $userNavigationItems;
 
 // Include shared sidebar
 require_once dirname(__DIR__) . '/shared/sidebar.php';
 ?>
+
+<!-- Users Module Standard CSS -->
+<link rel="stylesheet" href="/Armis2/assets/css/users-module-standard.css">
 
 <!-- Custom CSS specific to analytics dashboard -->
 <style>
@@ -349,9 +401,9 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                     <div class="stat-icon text-primary">
                         <i class="fas fa-clock"></i>
                     </div>
-                    <h3><?php echo isset($userStats['recent_activities']) ? $userStats['recent_activities'] : 'N/A'; ?></h3>
+                    <h3><?php echo is_array($recentActivity) ? count($recentActivity) : 0; ?></h3>
                     <p class="text-muted mb-0">Recent Activities</p>
-                    <small class="text-muted">Last 30 days</small>
+                    <small class="text-muted">Last 10 activities</small>
                 </div>
             </div>
             
@@ -360,7 +412,7 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                     <div class="stat-icon text-warning">
                         <i class="fas fa-graduation-cap"></i>
                     </div>
-                    <h3><?php echo isset($userStats['training_records']) ? $userStats['training_records'] : 'N/A'; ?></h3>
+                    <h3><?php echo is_array($trainingRecords) ? count($trainingRecords) : 0; ?></h3>
                     <p class="text-muted mb-0">Training Records</p>
                     <small class="text-muted">Completed courses</small>
                 </div>
@@ -369,11 +421,58 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
             <div class="col-lg-3 col-md-6">
                 <div class="stat-card text-center">
                     <div class="stat-icon text-info">
-                        <i class="fas fa-tools"></i>
+                        <i class="fas fa-book-open"></i>
                     </div>
-                    <h3><?php echo isset($userStats['equipment_issued']) ? $userStats['equipment_issued'] : 'N/A'; ?></h3>
-                    <p class="text-muted mb-0">Equipment Issued</p>
-                    <small class="text-muted">Currently assigned</small>
+                    <h3><?php echo is_array($educationRecords) ? count($educationRecords) : 0; ?></h3>
+                    <p class="text-muted mb-0">Education Records</p>
+                    <small class="text-muted">Academic qualifications</small>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Second Row of Statistics -->
+        <div class="row mt-3">
+            <div class="col-lg-3 col-md-6">
+                <div class="stat-card text-center">
+                    <div class="stat-icon text-danger">
+                        <i class="fas fa-medal"></i>
+                    </div>
+                    <h3><?php echo is_array($medals) ? count($medals) : 0; ?></h3>
+                    <p class="text-muted mb-0">Medals Earned</p>
+                    <small class="text-muted">Honors & decorations</small>
+                </div>
+            </div>
+            
+            <div class="col-lg-3 col-md-6">
+                <div class="stat-card text-center">
+                    <div class="stat-icon text-secondary">
+                        <i class="fas fa-award"></i>
+                    </div>
+                    <h3><?php echo is_array($awards) ? count($awards) : 0; ?></h3>
+                    <p class="text-muted mb-0">Awards Received</p>
+                    <small class="text-muted">Commendations</small>
+                </div>
+            </div>
+            
+            <div class="col-lg-3 col-md-6">
+                <div class="stat-card text-center">
+                    <div class="stat-icon" style="color: #6f42c1;">
+                        <i class="fas fa-globe-africa"></i>
+                    </div>
+                    <h3><?php echo is_array($deployments) ? count($deployments) : 0; ?></h3>
+                    <p class="text-muted mb-0">Deployments</p>
+                    <small class="text-muted">Mission history</small>
+                </div>
+            </div>
+            
+            <div class="col-lg-3 col-md-6">
+                <div class="stat-card text-center">
+                    <div class="stat-icon" style="color: #fd7e14;">
+                        <i class="fas fa-language"></i>
+                    </div>
+                    <h3><?php echo is_array($languageRecords) ? count($languageRecords) : 0; ?></h3>
+                    <p class="text-muted mb-0">Languages</p>
+                    <small class="text-muted">Language skills</small>
                 </div>
             </div>
         </div>
@@ -406,6 +505,21 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                 </button>
                             </li>
                             <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="military-tab" data-bs-toggle="tab" data-bs-target="#military" type="button">
+                                    <i class="fas fa-shield-alt me-2"></i>Military Service
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="education-tab" data-bs-toggle="tab" data-bs-target="#education" type="button">
+                                    <i class="fas fa-graduation-cap me-2"></i>Education & Training
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="service-records-tab" data-bs-toggle="tab" data-bs-target="#service-records" type="button">
+                                    <i class="fas fa-medal me-2"></i>Service Records
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
                                 <button class="nav-link" id="contact-tab" data-bs-toggle="tab" data-bs-target="#contact" type="button">
                                     <i class="fas fa-address-book me-2"></i>Contact Information
                                 </button>
@@ -418,6 +532,11 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                             <li class="nav-item" role="presentation">
                                 <button class="nav-link" id="family-tab" data-bs-toggle="tab" data-bs-target="#family" type="button">
                                     <i class="fas fa-users me-2"></i>Family Members
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="medical-tab" data-bs-toggle="tab" data-bs-target="#medical" type="button">
+                                    <i class="fas fa-heartbeat me-2"></i>Medical & NOK
                                 </button>
                             </li>
                         </ul>
@@ -464,6 +583,342 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                             </tr>
                                         </table>
                                     </div>
+                                </div>
+                            </div>
+
+                            <!-- Military Service Tab -->
+                            <div class="tab-pane fade" id="military" role="tabpanel">
+                                <div class="row mt-3">
+                                    <div class="col-md-6">
+                                        <h5 class="section-title">Military Service Information</h5>
+                                        <table class="table table-borderless">
+                                            <tr>
+                                                <td><strong>Service Number:</strong></td>
+                                                <td><?php echo htmlspecialchars($serviceNumber); ?></td>
+                                            </tr>
+                                            <tr>
+                                                <td><strong>Current Rank:</strong></td>
+                                                <td><?php echo htmlspecialchars($rankName); ?></td>
+                                            </tr>
+                                            <tr>
+                                                <td><strong>Current Unit:</strong></td>
+                                                <td><?php echo htmlspecialchars($unitName); ?></td>
+                                            </tr>
+                                            <tr>
+                                                <td><strong>Attestation Date:</strong></td>
+                                                <td><?php echo $attestDate ? date('d M Y', strtotime($attestDate)) : 'N/A'; ?></td>
+                                            </tr>
+                                            <tr>
+                                                <td><strong>Years of Service:</strong></td>
+                                                <td><?php echo $serviceYears !== 'N/A' ? $serviceYears . ' years' : 'N/A'; ?></td>
+                                            </tr>
+                                        </table>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h5 class="section-title">Promotions Summary</h5>
+                                        <?php if (!empty($promotions)): ?>
+                                            <table class="table table-borderless">
+                                                <tr>
+                                                    <td><strong>Total Promotions:</strong></td>
+                                                    <td><?php echo count($promotions); ?></td>
+                                                </tr>
+                                                <tr>
+                                                    <td><strong>Latest Promotion:</strong></td>
+                                                    <td>
+                                                        <?php 
+                                                        $latestPromotion = is_array($promotions) ? end($promotions) : null;
+                                                        if ($latestPromotion && isset($latestPromotion->promotion_date)) {
+                                                            echo date('d M Y', strtotime($latestPromotion->promotion_date));
+                                                        } else {
+                                                            echo 'N/A';
+                                                        }
+                                                        ?>
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                            <h6 class="mt-3">Promotion History</h6>
+                                            <div class="table-responsive">
+                                                <table class="table table-sm table-striped">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Date</th>
+                                                            <th>From Rank</th>
+                                                            <th>To Rank</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        <?php foreach ($promotions as $promotion): ?>
+                                                            <tr>
+                                                                <td><?php echo isset($promotion->promotion_date) ? date('d M Y', strtotime($promotion->promotion_date)) : 'N/A'; ?></td>
+                                                                <td><?php echo htmlspecialchars($promotion->from_rank ?? 'N/A'); ?></td>
+                                                                <td><?php echo htmlspecialchars($promotion->to_rank ?? 'N/A'); ?></td>
+                                                            </tr>
+                                                        <?php endforeach; ?>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        <?php else: ?>
+                                            <p class="text-muted">No promotion history recorded</p>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Education & Training Tab -->
+                            <div class="tab-pane fade" id="education" role="tabpanel">
+                                <div class="mt-3">
+                                    <!-- Education Records -->
+                                    <h5 class="section-title">Education Records</h5>
+                                    <?php if (!empty($educationRecords)): ?>
+                                        <div class="table-responsive">
+                                            <table class="table table-striped">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Institution</th>
+                                                        <th>Qualification</th>
+                                                        <th>Field of Study</th>
+                                                        <th>Period</th>
+                                                        <th>Grade</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <?php foreach ($educationRecords as $edu): ?>
+                                                        <tr>
+                                                            <td><?php echo htmlspecialchars($edu->institution ?? 'N/A'); ?></td>
+                                                            <td><?php echo htmlspecialchars($edu->qualification ?? 'N/A'); ?></td>
+                                                            <td><?php echo htmlspecialchars($edu->field_of_study ?? 'N/A'); ?></td>
+                                                            <td>
+                                                                <?php 
+                                                                if (isset($edu->start_date) && isset($edu->end_date)) {
+                                                                    echo date('Y', strtotime($edu->start_date)) . ' - ' . date('Y', strtotime($edu->end_date));
+                                                                } else {
+                                                                    echo 'N/A';
+                                                                }
+                                                                ?>
+                                                            </td>
+                                                            <td><?php echo htmlspecialchars($edu->grade ?? 'N/A'); ?></td>
+                                                        </tr>
+                                                    <?php endforeach; ?>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    <?php else: ?>
+                                        <p class="text-muted">No education records found</p>
+                                    <?php endif; ?>
+
+                                    <!-- Training Records -->
+                                    <h5 class="section-title mt-4">Training Courses</h5>
+                                    <?php if (!empty($trainingRecords)): ?>
+                                        <div class="table-responsive">
+                                            <table class="table table-striped">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Course Name</th>
+                                                        <th>Institution</th>
+                                                        <th>Start Date</th>
+                                                        <th>End Date</th>
+                                                        <th>Status</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <?php foreach ($trainingRecords as $training): ?>
+                                                        <tr>
+                                                            <td><?php echo htmlspecialchars($training->course_name ?? 'N/A'); ?></td>
+                                                            <td><?php echo htmlspecialchars($training->institution ?? 'N/A'); ?></td>
+                                                            <td><?php echo isset($training->start_date) ? date('d M Y', strtotime($training->start_date)) : 'N/A'; ?></td>
+                                                            <td><?php echo isset($training->end_date) ? date('d M Y', strtotime($training->end_date)) : 'N/A'; ?></td>
+                                                            <td>
+                                                                <?php if (isset($training->status)): ?>
+                                                                    <span class="badge bg-<?php echo $training->status == 'completed' ? 'success' : ($training->status == 'in_progress' ? 'warning' : 'secondary'); ?>">
+                                                                        <?php echo ucfirst(str_replace('_', ' ', $training->status)); ?>
+                                                                    </span>
+                                                                <?php else: ?>
+                                                                    N/A
+                                                                <?php endif; ?>
+                                                            </td>
+                                                        </tr>
+                                                    <?php endforeach; ?>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    <?php else: ?>
+                                        <p class="text-muted">No training records found</p>
+                                    <?php endif; ?>
+
+                                    <!-- Language Skills -->
+                                    <h5 class="section-title mt-4">Language Skills</h5>
+                                    <?php if (!empty($languageRecords)): ?>
+                                        <div class="row">
+                                            <?php foreach ($languageRecords as $lang): ?>
+                                                <div class="col-md-4 mb-3">
+                                                    <div class="card">
+                                                        <div class="card-body text-center">
+                                                            <h6 class="card-title"><?php echo htmlspecialchars($lang->language ?? 'Unknown'); ?></h6>
+                                                            <?php 
+                                                            $proficiency = $lang->proficiency ?? 'unknown';
+                                                            $badgeClass = 'secondary';
+                                                            if (in_array(strtolower($proficiency), ['native', 'fluent'])) {
+                                                                $badgeClass = 'success';
+                                                            } elseif (strtolower($proficiency) == 'advanced') {
+                                                                $badgeClass = 'primary';
+                                                            } elseif (strtolower($proficiency) == 'intermediate') {
+                                                                $badgeClass = 'warning';
+                                                            } elseif (strtolower($proficiency) == 'basic') {
+                                                                $badgeClass = 'secondary';
+                                                            }
+                                                            ?>
+                                                            <span class="badge bg-<?php echo $badgeClass; ?>">
+                                                                <?php echo ucfirst($proficiency); ?>
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else: ?>
+                                        <p class="text-muted">No language skills recorded</p>
+                                    <?php endif; ?>
+
+                                    <!-- Skills -->
+                                    <h5 class="section-title mt-4">Professional Skills</h5>
+                                    <?php if (!empty($skills)): ?>
+                                        <div class="row">
+                                            <?php foreach ($skills as $skill): ?>
+                                                <div class="col-md-3 mb-2">
+                                                    <span class="badge bg-info p-2 w-100">
+                                                        <?php echo htmlspecialchars($skill->skill_name ?? 'Unknown'); ?>
+                                                    </span>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else: ?>
+                                        <p class="text-muted">No skills recorded</p>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+
+                            <!-- Service Records Tab -->
+                            <div class="tab-pane fade" id="service-records" role="tabpanel">
+                                <div class="mt-3">
+                                    <!-- Awards -->
+                                    <h5 class="section-title">Awards & Commendations</h5>
+                                    <?php if (!empty($awards)): ?>
+                                        <div class="row">
+                                            <?php foreach ($awards as $award): ?>
+                                                <div class="col-md-6 mb-3">
+                                                    <div class="card">
+                                                        <div class="card-body">
+                                                            <h6 class="card-title">
+                                                                <i class="fas fa-award text-warning me-2"></i>
+                                                                <?php echo htmlspecialchars($award->award_name ?? 'Unknown Award'); ?>
+                                                            </h6>
+                                                            <p class="card-text">
+                                                                <strong>Date Awarded:</strong> <?php echo isset($award->date_awarded) ? date('d M Y', strtotime($award->date_awarded)) : 'N/A'; ?><br>
+                                                                <?php if (isset($award->citation) && $award->citation): ?>
+                                                                    <strong>Citation:</strong> <?php echo htmlspecialchars($award->citation); ?>
+                                                                <?php endif; ?>
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else: ?>
+                                        <p class="text-muted">No awards recorded</p>
+                                    <?php endif; ?>
+
+                                    <!-- Medals -->
+                                    <h5 class="section-title mt-4">Medals & Honors</h5>
+                                    <?php if (!empty($medals)): ?>
+                                        <div class="row">
+                                            <?php foreach ($medals as $medal): ?>
+                                                <div class="col-md-6 mb-3">
+                                                    <div class="card">
+                                                        <div class="card-body">
+                                                            <h6 class="card-title">
+                                                                <i class="fas fa-medal text-danger me-2"></i>
+                                                                <?php echo htmlspecialchars($medal->medal_name ?? 'Unknown Medal'); ?>
+                                                            </h6>
+                                                            <p class="card-text">
+                                                                <strong>Date Awarded:</strong> <?php echo isset($medal->date_awarded) ? date('d M Y', strtotime($medal->date_awarded)) : 'N/A'; ?><br>
+                                                                <?php if (isset($medal->citation) && $medal->citation): ?>
+                                                                    <strong>Citation:</strong> <?php echo htmlspecialchars($medal->citation); ?>
+                                                                <?php endif; ?>
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else: ?>
+                                        <p class="text-muted">No medals recorded</p>
+                                    <?php endif; ?>
+
+                                    <!-- Deployments -->
+                                    <h5 class="section-title mt-4">Deployment History</h5>
+                                    <?php if (!empty($deployments)): ?>
+                                        <div class="table-responsive">
+                                            <table class="table table-striped">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Location</th>
+                                                        <th>Mission</th>
+                                                        <th>Start Date</th>
+                                                        <th>End Date</th>
+                                                        <th>Duration</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <?php foreach ($deployments as $deployment): ?>
+                                                        <tr>
+                                                            <td><?php echo htmlspecialchars($deployment->location ?? 'N/A'); ?></td>
+                                                            <td><?php echo htmlspecialchars($deployment->mission_name ?? 'N/A'); ?></td>
+                                                            <td><?php echo isset($deployment->start_date) ? date('d M Y', strtotime($deployment->start_date)) : 'N/A'; ?></td>
+                                                            <td><?php echo isset($deployment->end_date) ? date('d M Y', strtotime($deployment->end_date)) : 'Ongoing'; ?></td>
+                                                            <td>
+                                                                <?php 
+                                                                if (isset($deployment->start_date)) {
+                                                                    $endDate = isset($deployment->end_date) ? strtotime($deployment->end_date) : time();
+                                                                    $startDate = strtotime($deployment->start_date);
+                                                                    $days = floor(($endDate - $startDate) / (24 * 3600));
+                                                                    echo $days . ' days';
+                                                                } else {
+                                                                    echo 'N/A';
+                                                                }
+                                                                ?>
+                                                            </td>
+                                                        </tr>
+                                                    <?php endforeach; ?>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    <?php else: ?>
+                                        <p class="text-muted">No deployment history recorded</p>
+                                    <?php endif; ?>
+
+                                    <!-- Service History -->
+                                    <h5 class="section-title mt-4">Service Timeline</h5>
+                                    <?php if (!empty($serviceHistory)): ?>
+                                        <div class="timeline">
+                                            <?php foreach ($serviceHistory as $history): ?>
+                                                <div class="card mb-2">
+                                                    <div class="card-body">
+                                                        <h6 class="card-title">
+                                                            <?php echo htmlspecialchars($history->event_type ?? 'Event'); ?>
+                                                        </h6>
+                                                        <p class="card-text">
+                                                            <strong>Date:</strong> <?php echo isset($history->event_date) ? date('d M Y', strtotime($history->event_date)) : 'N/A'; ?><br>
+                                                            <?php if (isset($history->description) && $history->description): ?>
+                                                                <strong>Description:</strong> <?php echo htmlspecialchars($history->description); ?>
+                                                            <?php endif; ?>
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else: ?>
+                                        <p class="text-muted">No service history recorded</p>
+                                    <?php endif; ?>
                                 </div>
                             </div>
 
@@ -572,6 +1027,149 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                     <?php endif; ?>
                                 </div>
                             </div>
+
+                            <!-- Medical & NOK Tab -->
+                            <div class="tab-pane fade" id="medical" role="tabpanel">
+                                <div class="row mt-3">
+                                    <div class="col-md-6">
+                                        <h5 class="section-title">Medical Information</h5>
+                                        <?php if (!empty($medicalInfo)): ?>
+                                            <table class="table table-borderless">
+                                                <tr>
+                                                    <td><strong>Medical Category:</strong></td>
+                                                    <td>
+                                                        <?php 
+                                                        $medCategory = $medicalInfo->medical_category ?? 'N/A';
+                                                        echo htmlspecialchars($medCategory);
+                                                        ?>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td><strong>Fitness Status:</strong></td>
+                                                    <td>
+                                                        <?php 
+                                                        $fitnessStatus = $medicalInfo->fitness_status ?? 'N/A';
+                                                        $badgeClass = 'secondary';
+                                                        if (strtolower($fitnessStatus) == 'fit') {
+                                                            $badgeClass = 'success';
+                                                        } elseif (strtolower($fitnessStatus) == 'unfit') {
+                                                            $badgeClass = 'danger';
+                                                        } elseif (strtolower($fitnessStatus) == 'limited') {
+                                                            $badgeClass = 'warning';
+                                                        }
+                                                        ?>
+                                                        <span class="badge bg-<?php echo $badgeClass; ?>">
+                                                            <?php echo htmlspecialchars($fitnessStatus); ?>
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                                <?php if (isset($medicalInfo->last_medical_exam)): ?>
+                                                    <tr>
+                                                        <td><strong>Last Medical Exam:</strong></td>
+                                                        <td><?php echo date('d M Y', strtotime($medicalInfo->last_medical_exam)); ?></td>
+                                                    </tr>
+                                                <?php endif; ?>
+                                                <?php if (isset($medicalInfo->next_exam_due)): ?>
+                                                    <tr>
+                                                        <td><strong>Next Exam Due:</strong></td>
+                                                        <td><?php echo date('d M Y', strtotime($medicalInfo->next_exam_due)); ?></td>
+                                                    </tr>
+                                                <?php endif; ?>
+                                                <?php if (isset($medicalInfo->blood_group)): ?>
+                                                    <tr>
+                                                        <td><strong>Blood Group:</strong></td>
+                                                        <td><?php echo htmlspecialchars($medicalInfo->blood_group); ?></td>
+                                                    </tr>
+                                                <?php endif; ?>
+                                            </table>
+                                        <?php else: ?>
+                                            <p class="text-muted">No medical information recorded</p>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h5 class="section-title">Next of Kin Information</h5>
+                                        <?php 
+                                        // Try to get NOK from familyMembers if nokInfo is empty
+                                        $nokData = null;
+                                        if (!empty($familyMembers)) {
+                                            foreach ($familyMembers as $member) {
+                                                if (isset($member->is_next_of_kin) && $member->is_next_of_kin) {
+                                                    $nokData = $member;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        
+                                        if ($nokData): ?>
+                                            <table class="table table-borderless">
+                                                <tr>
+                                                    <td><strong>Name:</strong></td>
+                                                    <td><?php echo htmlspecialchars(($nokData->first_name ?? '') . ' ' . ($nokData->last_name ?? '')); ?></td>
+                                                </tr>
+                                                <tr>
+                                                    <td><strong>Relationship:</strong></td>
+                                                    <td><?php echo htmlspecialchars($nokData->relationship ?? 'N/A'); ?></td>
+                                                </tr>
+                                                <?php if (isset($nokData->phone)): ?>
+                                                    <tr>
+                                                        <td><strong>Phone:</strong></td>
+                                                        <td><?php echo htmlspecialchars($nokData->phone); ?></td>
+                                                    </tr>
+                                                <?php endif; ?>
+                                                <?php if (isset($nokData->email)): ?>
+                                                    <tr>
+                                                        <td><strong>Email:</strong></td>
+                                                        <td><?php echo htmlspecialchars($nokData->email); ?></td>
+                                                    </tr>
+                                                <?php endif; ?>
+                                                <?php if (isset($nokData->address)): ?>
+                                                    <tr>
+                                                        <td><strong>Address:</strong></td>
+                                                        <td><?php echo htmlspecialchars($nokData->address); ?></td>
+                                                    </tr>
+                                                <?php endif; ?>
+                                            </table>
+                                        <?php else: ?>
+                                            <p class="text-muted">No next of kin information recorded</p>
+                                        <?php endif; ?>
+
+                                        <h6 class="mt-4">Emergency Contact</h6>
+                                        <?php 
+                                        $emergencyContact = null;
+                                        if (!empty($contactInfo)) {
+                                            foreach ($contactInfo as $contact) {
+                                                if (isset($contact->contact_type) && strtolower($contact->contact_type) == 'emergency') {
+                                                    $emergencyContact = $contact;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        
+                                        if ($emergencyContact): ?>
+                                            <table class="table table-borderless">
+                                                <?php if (isset($emergencyContact->contact_name)): ?>
+                                                    <tr>
+                                                        <td><strong>Name:</strong></td>
+                                                        <td><?php echo htmlspecialchars($emergencyContact->contact_name); ?></td>
+                                                    </tr>
+                                                <?php endif; ?>
+                                                <tr>
+                                                    <td><strong>Contact:</strong></td>
+                                                    <td><?php echo htmlspecialchars($emergencyContact->contact_value ?? 'N/A'); ?></td>
+                                                </tr>
+                                                <?php if (isset($emergencyContact->relationship)): ?>
+                                                    <tr>
+                                                        <td><strong>Relationship:</strong></td>
+                                                        <td><?php echo htmlspecialchars($emergencyContact->relationship); ?></td>
+                                                    </tr>
+                                                <?php endif; ?>
+                                            </table>
+                                        <?php else: ?>
+                                            <p class="text-muted">No emergency contact recorded</p>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     
@@ -582,6 +1180,21 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                 <li class="nav-item" role="presentation">
                                     <button class="nav-link active py-3" id="vertical-personal-tab" data-bs-toggle="tab" data-bs-target="#vertical-personal" type="button">
                                         <i class="fas fa-user me-2"></i>Personal Details
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link py-3" id="vertical-military-tab" data-bs-toggle="tab" data-bs-target="#vertical-military" type="button">
+                                        <i class="fas fa-shield-alt me-2"></i>Military Service
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link py-3" id="vertical-education-tab" data-bs-toggle="tab" data-bs-target="#vertical-education" type="button">
+                                        <i class="fas fa-graduation-cap me-2"></i>Education & Training
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link py-3" id="vertical-service-records-tab" data-bs-toggle="tab" data-bs-target="#vertical-service-records" type="button">
+                                        <i class="fas fa-medal me-2"></i>Service Records
                                     </button>
                                 </li>
                                 <li class="nav-item" role="presentation">
@@ -597,6 +1210,11 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                 <li class="nav-item" role="presentation">
                                     <button class="nav-link py-3" id="vertical-family-tab" data-bs-toggle="tab" data-bs-target="#vertical-family" type="button">
                                         <i class="fas fa-users me-2"></i>Family Members
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link py-3" id="vertical-medical-tab" data-bs-toggle="tab" data-bs-target="#vertical-medical" type="button">
+                                        <i class="fas fa-heartbeat me-2"></i>Medical & NOK
                                     </button>
                                 </li>
                             </ul>

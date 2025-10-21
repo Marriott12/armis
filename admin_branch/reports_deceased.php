@@ -1,19 +1,23 @@
 <?php
+// Define module constants
 define('ARMIS_ADMIN_BRANCH', true);
+define('ARMIS_DEVELOPMENT', false);
+
 require_once __DIR__ . '/includes/auth.php';
 require_once dirname(__DIR__) . '/shared/database_connection.php';
 requireAuth();
 
 $pageTitle = "Deceased Report as at " . date('d-M-Y');
-$currentPage = "reports";
 $moduleName = "Admin Branch";
 $moduleIcon = "users-cog";
+$currentPage = "deceased";
 
 $sidebarLinks = [
     ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
     ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'],
     ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create'],
     ['title' => 'Promotions', 'url' => '/Armis2/admin_branch/promote_staff.php', 'icon' => 'arrow-up', 'page' => 'promotions'],
+    ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/appointments.php', 'icon' => 'user-tie', 'page' => 'appointments'],
     ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medal.php', 'icon' => 'medal', 'page' => 'medals'],
     [
         'title' => 'Reports',
@@ -39,44 +43,100 @@ $sidebarLinks = [
 
 $pdo = getDbConnection();
 
-function getDeceasedOptions($pdo, $unit, $rank, $cat, $appt) {
-    $apptSql = "SELECT DISTINCT appt FROM staff WHERE appt IS NOT NULL AND appt <> '' AND svcStatus = 'Deceased'";
-    $unitSql = "SELECT DISTINCT u.id, u.name FROM units u JOIN staff s ON s.unit_id = u.id WHERE s.svcStatus = 'Deceased'";
+// Helper for dynamic filter options (for deceased staff)
+function getDeceasedOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory) {
+    // Only filter for dropdowns, not for the main query
     $rankSql = "SELECT DISTINCT r.id, r.name FROM ranks r JOIN staff s ON s.rank_id = r.id WHERE s.svcStatus = 'Deceased'";
+    $unitSql = "SELECT DISTINCT u.id, u.name FROM units u JOIN staff s ON s.unit_id = u.id WHERE s.svcStatus = 'Deceased'";
     $catSql  = "SELECT DISTINCT s.category FROM staff s WHERE s.category IS NOT NULL AND s.category <> '' AND s.svcStatus = 'Deceased'";
-    return [
-        $pdo->query($apptSql)->fetchAll(PDO::FETCH_COLUMN),
-        fetchAll($unitSql . " ORDER BY u.name ASC"),
-        fetchAll($rankSql . " ORDER BY r.name ASC"),
-        fetchAll($catSql . " ORDER BY s.category ASC")
-    ];
+
+    $ranks = fetchAll($rankSql . " ORDER BY r.name ASC");
+    $units = fetchAll($unitSql . " ORDER BY u.name ASC");
+    $categories = fetchAll($catSql . " ORDER BY s.category ASC");
+
+    return [$ranks, $units, $categories];
 }
-$filter_appt = $_GET['appointment'] ?? '';
-$filter_unit = $_GET['unitID'] ?? '';
+
 $filter_rank = $_GET['rankID'] ?? '';
+$filter_unit = $_GET['unitID'] ?? '';
 $filter_category = $_GET['category'] ?? '';
 $search = trim($_GET['search'] ?? '');
-
-list($appts, $units, $ranks, $categories) = getDeceasedOptions($pdo, $filter_unit, $filter_rank, $filter_category, $filter_appt);
-
 $params = [];
-$sql = "SELECT s.*, r.name as rankName, u.name as unitName FROM staff s
+
+list($ranks, $units, $categories) = getDeceasedOptions($pdo, $filter_rank, $filter_unit, $filter_category);
+
+$per_page = intval($_GET['per_page'] ?? 25);
+$page = max(1, intval($_GET['page'] ?? 1));
+$offset = ($page - 1) * $per_page;
+
+$sortable_columns = [
+    'service_number' => 's.service_number',
+    'rank' => 'r.level',
+    'surname' => 's.last_name',
+    'first_name' => 's.first_name',
+    'unit' => 'u.name',
+    'category' => 's.category',
+    'DOB' => 's.DOB',
+    'attestDate' => 's.attestDate',
+    'dod' => 's.dod'
+];
+$sort_col = $_GET['sort_col'] ?? '';
+$sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
+
+
+// Always fetch all deceased staff, only filter if user selects a filter
+$sql = "SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, r.level as rankIndex, u.name as unitName, u.code as unitCode
+        FROM staff s
         LEFT JOIN ranks r ON s.rank_id = r.id
         LEFT JOIN units u ON s.unit_id = u.id
         WHERE s.svcStatus = 'Deceased'";
-if ($filter_appt !== '')      { $sql .= " AND s.appt = ?"; $params[] = $filter_appt; }
-if ($filter_unit !== '')      { $sql .= " AND s.unit_id = ?"; $params[] = $filter_unit; }
-if ($filter_rank !== '')      { $sql .= " AND s.rank_id = ?"; $params[] = $filter_rank; }
-if ($filter_category !== '')  { $sql .= " AND s.category = ?"; $params[] = $filter_category; }
-if ($search !== '') {
-    $sql .= " AND (s.appt LIKE ? OR s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR u.name LIKE ? OR s.category LIKE ?)";
-    for ($i = 0; $i < 7; $i++) $params[] = "%$search%";
+$count_sql = "SELECT COUNT(*) FROM staff s
+        LEFT JOIN ranks r ON s.rank_id = r.id
+        LEFT JOIN units u ON s.unit_id = u.id
+        WHERE s.svcStatus = 'Deceased'";
+
+$params = [];
+$count_params = [];
+if ($filter_rank !== '') {
+    $sql .= " AND s.rank_id = ?";
+    $count_sql .= " AND s.rank_id = ?";
+    $params[] = $filter_rank;
+    $count_params[] = $filter_rank;
 }
-$sql .= " ORDER BY r.level ASC, s.last_name ASC, s.first_name ASC";
-$per_page = intval($_GET['per_page'] ?? 25);
-$page = max(1, intval($_GET['page'] ?? 1)); $offset = ($page - 1) * $per_page;
+if ($filter_unit !== '') {
+    $sql .= " AND s.unit_id = ?";
+    $count_sql .= " AND s.unit_id = ?";
+    $params[] = $filter_unit;
+    $count_params[] = $filter_unit;
+}
+if ($filter_category !== '') {
+    $sql .= " AND s.category = ?";
+    $count_sql .= " AND s.category = ?";
+    $params[] = $filter_category;
+    $count_params[] = $filter_category;
+}
+if ($search !== '') {
+    $sql .= " AND (s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR u.name LIKE ? OR s.category LIKE ? OR s.DOB LIKE ? OR s.attestDate LIKE ? OR s.dod LIKE ?)";
+    $count_sql .= " AND (s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR u.name LIKE ? OR s.category LIKE ? OR s.DOB LIKE ? OR s.attestDate LIKE ? OR s.dod LIKE ?)";
+    for ($i = 0; $i < 9; $i++) {
+        $params[] = "%$search%";
+        $count_params[] = "%$search%";
+    }
+}
+
+if ($sort_col && array_key_exists($sort_col, $sortable_columns)) {
+    $sql .= " ORDER BY " . $sortable_columns[$sort_col] . " $sort_dir";
+} else {
+    $sql .= " ORDER BY r.level ASC, s.last_name ASC, s.first_name ASC";
+}
+
 $sql .= " LIMIT $per_page OFFSET $offset";
+
 $staff = fetchAll($sql, $params);
+$stmt = $pdo->prepare($count_sql);
+$stmt->execute($count_params);
+$total_staff = $stmt->fetchColumn();
+$total_pages = ceil($total_staff / $per_page);
 
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';
@@ -112,31 +172,23 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             </div>
             <form class="row g-3 mb-4" method="get" action="">
                 <div class="col-md-2">
-                    <select name="appointment" id="apptFilter" class="form-select">
-                        <option value="">All Appointments</option>
-                        <?php foreach ($appts as $a): ?>
-                            <option value="<?= htmlspecialchars($a) ?>" <?= ($filter_appt == $a) ? 'selected':''?>><?= htmlspecialchars($a) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <select name="rankID" id="rankFilter" class="form-select">
+                    <select name="rankID" id="rankFilter" class="form-select" aria-label="Filter by rank">
                         <option value="">All Ranks</option>
                         <?php foreach ($ranks as $r): ?>
-                            <option value="<?= $r->id ?>" <?= ($filter_rank == $r->id) ? 'selected':''?>><?= htmlspecialchars($r->name) ?></option>
+                            <option value="<?= $r->id ?>" <?= ($filter_rank == $r->id) ? 'selected' : '' ?>><?= htmlspecialchars($r->name) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <select name="unitID" id="unitFilter" class="form-select">
+                    <select name="unitID" id="unitFilter" class="form-select" aria-label="Filter by unit">
                         <option value="">All Units</option>
                         <?php foreach ($units as $u): ?>
-                            <option value="<?= $u->id ?>" <?= ($filter_unit == $u->id) ? 'selected':''?>><?= htmlspecialchars($u->name) ?></option>
+                            <option value="<?= $u->id ?>" <?= ($filter_unit == $u->id) ? 'selected' : '' ?>><?= htmlspecialchars($u->name) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <select name="category" id="categoryFilter" class="form-select">
+                    <select name="category" id="categoryFilter" class="form-select" aria-label="Filter by category">
                         <option value="">All Categories</option>
                         <?php foreach ($categories as $cat): ?>
                             <option value="<?= htmlspecialchars($cat->category) ?>" <?= ($filter_category == $cat->category) ? 'selected' : '' ?>><?= htmlspecialchars($cat->category) ?></option>
@@ -144,75 +196,120 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     </select>
                 </div>
                 <div class="col-md-3">
-                    <input type="text" id="deceasedSearch" name="search" class="form-control" placeholder="Quick Search..." value="<?=htmlspecialchars($search)?>">
+                    <input type="text" id="deceasedSearch" name="search" class="form-control" placeholder="Quick Search..." aria-label="Quick search" value="<?=htmlspecialchars($search)?>">
                 </div>
                 <div class="col-md-1">
-                    <select name="per_page" class="form-select">
-                        <?php foreach ([10,25,50,100] as $pp): ?>
-                        <option value="<?= $pp ?>" <?= ($per_page == $pp) ? 'selected' : '' ?>><?= $pp ?></option>
+                    <select name="per_page" class="form-select" title="Records per page">
+                        <?php foreach ([10, 25, 50, 100] as $pp): ?>
+                            <option value="<?= $pp ?>" <?= ($per_page == $pp) ? 'selected' : '' ?>><?= $pp ?></option>
                         <?php endforeach; ?>
                     </select>
+                </div>
+                <div class="col-md-2 d-grid">
+                    <button type="submit" class="btn btn-primary"><i class="fa fa-search"></i> Filter</button>
                 </div>
             </form>
             <div class="mb-2">
                 <strong>Show/Hide Columns:</strong>
-                <?php $columns = [
-                    'appt'=>'Appointment','rank'=>'Rank','service_number'=>'Service No','surname'=>'Surname','first_name'=>'First Name(s)',
-                    'unit'=>'Unit','category'=>'Category','DOB'=>'Date of Birth','attestDate'=>'Date of Enlistment','dod'=>'Date of Death'
+                <?php
+                $columns = [
+                    'service_number' => 'Service No',
+                    'rank' => 'Rank',
+                    'surname' => 'Surname',
+                    'first_name' => 'First Name(s)',
+                    'unit' => 'Unit',
+                    'category' => 'Category',
+                    'DOB' => 'Date of Birth',
+                    'attestDate' => 'Date of Enlistment',
+                    'dod' => 'Date of Death'
                 ];
-                foreach ($columns as $key=>$label): ?>
-                <label class="me-3"><input type="checkbox" class="toggle-col" data-col="<?= $key ?>" checked> <?= $label ?></label>
+                foreach ($columns as $key => $label):
+                ?>
+                    <label class="me-3">
+                        <input type="checkbox" class="toggle-col" data-col="<?= $key ?>" checked> <?= $label ?>
+                    </label>
                 <?php endforeach; ?>
             </div>
             <div class="table-responsive print-friendly">
+                <form id="batchForm" method="post" action="/Armis2/admin_branch/batch_action.php">
                 <table class="table table-bordered table-hover align-middle" id="deceasedTable">
                     <thead class="table-light">
                         <tr>
-                            <th>#</th>
+                            <th><input type="checkbox" id="selectAllRows" aria-label="Select all"></th>
                             <?php foreach ($columns as $key => $label): ?>
-                                <th class="col-<?= $key ?>"><?= $label ?></th>
+                                <th class="col-<?= $key ?>">
+                                    <a href="?<?= http_build_query(array_merge($_GET, ['sort_col' => $key, 'sort_dir' => ($sort_col==$key && $sort_dir=='ASC')?'desc':'asc', 'page'=>1])) ?>"
+                                       class="text-decoration-none text-dark"
+                                       aria-label="Sort by <?= $label ?>">
+                                        <?= $label ?>
+                                        <?php if ($sort_col == $key): ?>
+                                            <i class="fa fa-sort-<?= strtolower($sort_dir)=='asc' ? 'up' : 'down' ?>"></i>
+                                        <?php else: ?>
+                                            <i class="fa fa-sort text-muted"></i>
+                                        <?php endif; ?>
+                                    </a>
+                                </th>
                             <?php endforeach; ?>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if (!$staff): ?>
-                            <tr><td colspan="<?= count($columns)+1 ?>" class="text-center text-muted">No staff found.</td></tr>
-                        <?php else: $i=1; foreach($staff as $s): ?>
-                            <tr ondblclick="alert('Audit/History details coming soon.')">
-                                <td><?= $i++ ?></td>
-                                <td class="col-appt"><?= htmlspecialchars($s->appt ?? '') ?></td>
-                                <td class="col-rank"><?= htmlspecialchars($s->rankName ?? '') ?></td>
+                        <?php if (count($staff) == 0): ?>
+                            <tr><td colspan="<?= count($columns)+2 ?>" class="text-center text-muted">No staff found.</td></tr>
+                        <?php else: $i=1; foreach ($staff as $s): ?>
+                            <tr>
+                                <td>
+                                    <input type="checkbox" name="selected_ids[]" value="<?= htmlspecialchars($s->id) ?>" class="rowCheckbox">
+                                </td>
                                 <td class="col-service_number"><?= htmlspecialchars($s->service_number ?? '') ?></td>
+                                <td class="col-rank"><?= htmlspecialchars($s->rankAbbr ?? $s->rankName ?? '') ?></td>
                                 <td class="col-surname"><?= htmlspecialchars($s->last_name ?? '') ?></td>
                                 <td class="col-first_name"><?= htmlspecialchars($s->first_name ?? '') ?></td>
-                                <td class="col-unit"><?= htmlspecialchars($s->unitName ?? '') ?></td>
+                                <td class="col-unit"><?= htmlspecialchars($s->unitCode ?? $s->unitName ?? '') ?></td>
                                 <td class="col-category"><?= htmlspecialchars($s->category ?? '') ?></td>
                                 <td class="col-DOB"><?= htmlspecialchars($s->DOB ?? '') ?></td>
                                 <td class="col-attestDate"><?= htmlspecialchars($s->attestDate ?? '') ?></td>
                                 <td class="col-dod"><?= htmlspecialchars($s->dod ?? '') ?></td>
+                                <td>
+                                    <?php if (!empty($s->id)): ?>
+                                        <a href="/Armis2/admin_branch/view_staff.php?id=<?= urlencode($s->id) ?>" class="btn btn-outline-primary btn-sm" target="_blank" aria-label="View staff">View</a>
+                                    <?php else: ?>
+                                        <span class="text-muted">N/A</span>
+                                    <?php endif; ?>
+                                    <a href="/Armis2/admin_branch/edit_staff.php?svcNo=<?= urlencode($s->service_number) ?>" class="btn btn-outline-secondary btn-sm ms-1" aria-label="Edit staff">Edit</a>
+                                </td>
                             </tr>
                         <?php endforeach; endif; ?>
                     </tbody>
                 </table>
-                <div class="text-end mt-2">
-                    <button onclick="window.print()" class="btn btn-outline-secondary btn-sm print-btn"><i class="fa fa-print"></i> Print Report</button>
-                    <button id="exportCSVBtn" class="btn btn-outline-success btn-sm ms-2"><i class="fa fa-file-csv"></i> Export CSV</button>
-                    <button id="exportExcelBtn" class="btn btn-outline-success btn-sm"><i class="fa fa-file-excel"></i> Excel</button>
-                    <button id="exportPDFBtn" class="btn btn-outline-danger btn-sm"><i class="fa fa-file-pdf"></i> PDF</button>
+                <div class="d-flex justify-content-start align-items-center gap-2 mb-2">
+                    <button type="submit" name="action" value="export" class="btn btn-outline-success btn-sm"><i class="fa fa-file-csv"></i> Export Selected</button>
+                    <button type="button" id="exportExcelBtn" class="btn btn-outline-success btn-sm"><i class="fa fa-file-excel"></i> Excel</button>
+                    <button type="button" id="exportPDFBtn" class="btn btn-outline-danger btn-sm"><i class="fa fa-file-pdf"></i> PDF</button>
+                    <button type="submit" name="action" value="delete" class="btn btn-outline-danger btn-sm" onclick="return confirm('Are you sure you want to delete selected records?');"><i class="fa fa-trash"></i> Delete Selected</button>
                 </div>
+                </form>
             </div>
             <div class="d-flex justify-content-center my-3">
                 <nav aria-label="Deceased pagination">
                     <ul class="pagination pagination-sm">
-                        <?php
-                        $max_links=7;
-                        $start=max(1,$page-intval($max_links/2));
-                        $end=$start+$max_links-1;
-                        for ($p=$start;$p<=$end;$p++): ?>
-                        <li class="page-item<?= ($p==$page)?' active':''?>">
-                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET,['page'=>$p])) ?>"><?= $p ?></a>
+                        <li class="page-item<?= ($page <= 1) ? ' disabled' : '' ?>">
+                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page-1])) ?>" aria-label="Previous">&laquo;</a>
                         </li>
+                        <?php
+                        $max_links = 7;
+                        $start = max(1, $page - intval($max_links/2));
+                        $end = min($total_pages, $start + $max_links - 1);
+                        if ($end - $start + 1 < $max_links) $start = max(1, $end - $max_links + 1);
+                        for ($p = $start; $p <= $end; $p++):
+                        ?>
+                            <li class="page-item<?= ($p == $page) ? ' active' : '' ?>">
+                                <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $p])) ?>"><?= $p ?></a>
+                            </li>
                         <?php endfor; ?>
+                        <li class="page-item<?= ($page >= $total_pages) ? ' disabled' : '' ?>">
+                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page+1])) ?>" aria-label="Next">&raquo;</a>
+                        </li>
                     </ul>
                 </nav>
             </div>
@@ -244,33 +341,20 @@ document.querySelectorAll('.toggle-col').forEach(function(box) {
         cell.style.display = box.checked ? '' : 'none';
     });
 });
-document.getElementById('exportCSVBtn').addEventListener('click', function() {
-    let table = document.getElementById('deceasedTable');
-    let rows = Array.from(table.rows);
-    let visibleCols = [];
-    rows[0].querySelectorAll('th').forEach(function(th, idx) {
-        if (th.offsetParent !== null) visibleCols.push(idx);
+
+document.getElementById('selectAllRows').addEventListener('change', function() {
+    var checked = this.checked;
+    document.querySelectorAll('.rowCheckbox').forEach(function(cb) {
+        cb.checked = checked;
     });
-    let csv = rows.map(row => {
-        let cells = Array.from(row.children);
-        return visibleCols.map(i => {
-            let text = cells[i] ? cells[i].innerText.replace(/"/g, '""') : '';
-            return '"' + text + '"';
-        }).join(',');
-    }).join('\n');
-    let blob = new Blob([csv], {type:'text/csv'});
-    let link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'deceased_report.csv';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
 });
+
 document.getElementById('exportExcelBtn').addEventListener('click', function() {
     let table = document.getElementById('deceasedTable');
     let wb = XLSX.utils.table_to_book(table, {sheet:"Deceased"});
     XLSX.writeFile(wb, 'deceased_report.xlsx');
 });
+
 document.getElementById('exportPDFBtn').addEventListener('click', function(){
     let table = document.getElementById('deceasedTable');
     let rows = Array.from(table.rows).map(row => Array.from(row.cells).map(cell => cell.innerText));
@@ -283,14 +367,15 @@ document.getElementById('exportPDFBtn').addEventListener('click', function(){
     });
     doc.save("deceased_report.pdf");
 });
-document.querySelector('.print-btn').addEventListener('click', function(){
-    window.print();
-});
-['apptFilter','unitFilter','rankFilter','categoryFilter'].forEach(function(id){
+
+// Dynamic dropdown filtering
+['rankFilter','unitFilter','categoryFilter'].forEach(function(id){
     document.getElementById(id).addEventListener('change', function(){
         document.forms[0].submit();
     });
 });
+
+// Dynamic searchbar: client-side instant filter
 document.getElementById('deceasedSearch').addEventListener('input', function() {
     const query = this.value.toLowerCase();
     document.querySelectorAll('#deceasedTable tbody tr').forEach(function(row) {

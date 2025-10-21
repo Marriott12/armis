@@ -15,15 +15,13 @@ $moduleName = "User Profile";
 $moduleIcon = "graduation-cap";
 $currentPage = "training";
 
-$sidebarLinks = [
-    ['title' => 'My Profile', 'url' => '/Armis2/users/index.php', 'icon' => 'user', 'page' => 'profile'],
-    ['title' => 'Personal Info', 'url' => '/Armis2/users/personal.php', 'icon' => 'id-card', 'page' => 'personal'],
-    ['title' => 'Service Record', 'url' => '/Armis2/users/service.php', 'icon' => 'medal', 'page' => 'service'],
-    ['title' => 'Training History', 'url' => '/Armis2/users/training.php', 'icon' => 'graduation-cap', 'page' => 'training'],
-    ['title' => 'Family Members', 'url' => '/Armis2/users/family.php', 'icon' => 'users', 'page' => 'family'],
-    ['title' => 'Download CV', 'url' => '/Armis2/users/cv_download.php', 'icon' => 'download', 'page' => 'cv_download'],
-    ['title' => 'Account Settings', 'url' => '/Armis2/users/settings.php', 'icon' => 'cogs', 'page' => 'settings']
-];
+// Load shared navigation
+require_once dirname(__DIR__) . '/shared/user_navigation.php';
+$sidebarLinks = $userNavigationItems;
+
+// Load components
+require_once dirname(__DIR__) . '/shared/components/stat_card.php';
+require_once dirname(__DIR__) . '/shared/components/empty_state.php';
 
 // Load user profile data
 require_once __DIR__ . '/profile_manager.php';
@@ -229,29 +227,29 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                             <i class="fas fa-graduation-cap fa-2x text-success"></i>
                                                         </div>
                                                         <div class="flex-grow-1 ms-3">
-                                                            <h6 class="mb-1"><?= htmlspecialchars($education->qualification ?? $education->level) ?></h6>
+                                                            <h6 class="mb-1"><?= htmlspecialchars($education['qualification'] ?? $education['level'] ?? '') ?></h6>
                                                             <p class="text-muted mb-1">
-                                                                <strong><?= htmlspecialchars($education->institution) ?></strong>
+                                                                <strong><?= htmlspecialchars($education['institution'] ?? '') ?></strong>
                                                             </p>
                                                             <p class="text-muted mb-1">
                                                                 <span class="badge bg-info">
-                                                                    <?= htmlspecialchars($education->level) ?>
+                                                                    <?= htmlspecialchars($education['level'] ?? '') ?>
                                                                 </span>
                                                             </p>
                                                             <p class="text-muted mb-0">
                                                                 <small>
-                                                                    <?php if ($education->year_started && $education->year_completed): ?>
-                                                                        <?= $education->year_started ?> - <?= $education->year_completed ?>
-                                                                    <?php elseif ($education->year_completed): ?>
-                                                                        Completed: <?= $education->year_completed ?>
+                                                                    <?php if (!empty($education['year_started']) && !empty($education['year_completed'])): ?>
+                                                                        <?= htmlspecialchars($education['year_started']) ?> - <?= htmlspecialchars($education['year_completed']) ?>
+                                                                    <?php elseif (!empty($education['year_completed'])): ?>
+                                                                        Completed: <?= htmlspecialchars($education['year_completed']) ?>
                                                                     <?php else: ?>
                                                                         Year not specified
                                                                     <?php endif; ?>
                                                                 </small>
                                                             </p>
-                                                            <?php if ($education->field_of_study): ?>
+                                                            <?php if (!empty($education['field_of_study'])): ?>
                                                                 <p class="text-muted mb-0">
-                                                                    <small><?= htmlspecialchars($education->field_of_study) ?></small>
+                                                                    <small><?= htmlspecialchars($education['field_of_study']) ?></small>
                                                                 </p>
                                                             <?php endif; ?>
                                                         </div>

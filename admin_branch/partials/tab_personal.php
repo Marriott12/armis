@@ -83,7 +83,7 @@ if (!isset($_SESSION['csrf_token'])) {
               <input type="text" name="lname" id="lname" class="form-control form-control-sm" required maxlength="100" aria-label="Surname" value="<?=old('lname')?>">
             </div>
             <div class="col-md-4 mb-2">
-              <label class="form-label form-label-sm" for="fname">First Name *</label>
+              <label class="form-label form-label-sm" for="fname">Forename(s) Name *</label>
               <input type="text" name="fname" id="fname" class="form-control form-control-sm" required maxlength="100" aria-label="First Name" value="<?=old('fname')?>">
             </div>
             <div class="col-md-4 mb-2">

@@ -11,49 +11,49 @@ define('ARMIS_ROLES', [
     'admin' => [
         'name' => 'Administrator',
         'level' => 100,
-        'modules' => ['admin', 'admin_branch', 'command', 'operations', 'training', 'finance', 'ordinance', 'users'],
+        'modules' => ['dashboard', 'admin', 'admin_branch', 'command', 'operations', 'training', 'finance', 'ordinance', 'users'],
         'description' => 'Full system access'
     ],
     'command' => [
         'name' => 'Command Officer',
         'level' => 80,
-        'modules' => ['command', 'operations', 'training', 'users'],
+        'modules' => ['dashboard', 'command', 'operations', 'training', 'users'],
         'description' => 'Command and operational oversight'
     ],
     'training' => [
         'name' => 'Training Officer',
         'level' => 60,
-        'modules' => ['training', 'users'],
+        'modules' => ['dashboard', 'training', 'users'],
         'description' => 'Training management only'
     ],
     'operations' => [
         'name' => 'Operations Officer',
         'level' => 60,
-        'modules' => ['operations', 'users'],
+        'modules' => ['dashboard', 'operations', 'users'],
         'description' => 'Operations management only'
     ],
     'admin_branch' => [
         'name' => 'Admin Branch Staff',
         'level' => 70,
-        'modules' => ['admin_branch', 'users'],
+        'modules' => ['dashboard', 'admin_branch', 'users'],
         'description' => 'Personnel administration'
     ],
     'finance' => [
         'name' => 'Finance Officer',
         'level' => 60,
-        'modules' => ['finance', 'users'],
+        'modules' => ['dashboard', 'finance', 'users'],
         'description' => 'Financial management only'
     ],
     'ordinance' => [
         'name' => 'Ordinance Officer',
         'level' => 60,
-        'modules' => ['ordinance', 'users'],
+        'modules' => ['dashboard', 'ordinance', 'users'],
         'description' => 'Equipment and ordinance management'
     ],
     'user' => [
         'name' => 'Standard User',
         'level' => 10,
-        'modules' => ['users'],
+        'modules' => ['dashboard', 'users'],
         'description' => 'Basic profile access only'
     ]
 ]);

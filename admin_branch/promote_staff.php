@@ -37,45 +37,27 @@ $ENABLE_PROFILE_POPUP = true;
  */
 function generatePromotionReport($serviceNumbers, $fromRank, $toRank, $effectiveDate, $promotionType) {
     global $pdo;
-    
     if (empty($serviceNumbers)) {
         return false;
     }
-    
     try {
         // Create directory if it doesn't exist
         $reportsDir = __DIR__ . '/../reports';
         if (!file_exists($reportsDir)) {
             mkdir($reportsDir, 0755, true);
         }
-        
         // Generate filename
         $timestamp = date('Ymd_His');
         $actionType = $promotionType === 'promotion' ? 'Promotion' : 'Reversion';
-        $filename = "{$actionType}_{$fromRank->name}_to_{$toRank->name}_{$timestamp}.csv";
+        $fromAbbr = str_replace(' ', '_', $fromRank->abbreviation ?? $fromRank->name ?? '');
+        $toAbbr = str_replace(' ', '_', $toRank->abbreviation ?? $toRank->name ?? '');
+        $filename = "{$actionType}_{$fromAbbr}_to_{$toAbbr}_{$timestamp}.pdf";
         $filepath = $reportsDir . '/' . $filename;
-        
-        // Prepare the CSV file
-        $file = fopen($filepath, 'w');
-        
-        // Write headers
-        fputcsv($file, [
-            'Service Number',
-            'Rank',
-            'Name',
-            'Unit',
-            'Action',
-            'From Rank',
-            'To Rank',
-            'Effective Date',
-            'Authority',
-            'Remarks'
-        ]);
-        
-        // Write data for each staff member
+
+        // Fetch staff data
         $placeholders = rtrim(str_repeat('?,', count($serviceNumbers)), ',');
         $stmt = $pdo->prepare("
-            SELECT s.service_number, r.name as rank_name, s.first_name, s.last_name, 
+            SELECT s.service_number, r.abbreviation as rank_abbr, s.first_name, s.last_name, 
                    u.name as unit_name
             FROM staff s
             LEFT JOIN ranks r ON s.rank_id = r.id
@@ -83,26 +65,48 @@ function generatePromotionReport($serviceNumbers, $fromRank, $toRank, $effective
             WHERE s.service_number IN ($placeholders)
         ");
         $stmt->execute($serviceNumbers);
-        
-        while ($staff = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $effectiveDateFormatted = date('d M Y', strtotime($effectiveDate));
-            
-            fputcsv($file, [
-                $staff['service_number'],
-                $staff['rank_name'],
-                $staff['first_name'] . ' ' . $staff['last_name'],
-                $staff['unit_name'],
-                $promotionType === 'promotion' ? 'Promotion' : 'Reversion',
-                $fromRank->name,
-                $toRank->name,
-                $effectiveDateFormatted,
-                'HQ Authority',  // This could be customized
-                'Regular ' . ucfirst($promotionType)  // This could be customized
-            ]);
+        $staffRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Prepare HTML for PDF
+        $effectiveDateFormatted = date('d M Y', strtotime($effectiveDate));
+        $html = '<h2 style="text-align:center;">' . htmlspecialchars($actionType) . ' Report</h2>';
+        $fromRankAbbr = $fromRank->abbreviation ?? '';
+        $toRankAbbr = $toRank->abbreviation ?? '';
+        $html .= '<p><strong>From Rank:</strong> ' . htmlspecialchars($fromRankAbbr) .
+            ' &nbsp; <strong>To Rank:</strong> ' . htmlspecialchars($toRankAbbr) .
+            ' &nbsp; <strong>Effective Date:</strong> ' . htmlspecialchars($effectiveDateFormatted) . '</p>';
+        $html .= '<table border="1" cellpadding="5" cellspacing="0" width="100%">';
+        $html .= '<thead><tr>';
+        $headers = [
+            'Service Number', 'Rank', 'Name', 'Unit', 'Action', 'From Rank', 'To Rank', 'Effective Date', 'Authority', 'Remarks'
+        ];
+        foreach ($headers as $header) {
+            $html .= '<th>' . htmlspecialchars($header) . '</th>';
         }
-        
-        fclose($file);
-        
+        $html .= '</tr></thead><tbody>';
+        foreach ($staffRows as $staff) {
+            $html .= '<tr>';
+            $html .= '<td>' . htmlspecialchars($staff['service_number']) . '</td>';
+            $html .= '<td>' . htmlspecialchars($staff['rank_abbr']) . '</td>';
+            $html .= '<td>' . htmlspecialchars($staff['first_name'] . ' ' . $staff['last_name']) . '</td>';
+            $html .= '<td>' . htmlspecialchars($staff['unit_name']) . '</td>';
+            $html .= '<td>' . htmlspecialchars($actionType) . '</td>';
+            $html .= '<td>' . htmlspecialchars($staff['rank_abbr']) . '</td>';
+            $html .= '<td>' . htmlspecialchars($toRank->abbreviation ?? $toRank->name ?? '') . '</td>';
+            $html .= '<td>' . htmlspecialchars($effectiveDateFormatted) . '</td>';
+            $html .= '<td>HQ Authority</td>';
+            $html .= '<td>Regular ' . htmlspecialchars(ucfirst($promotionType)) . '</td>';
+            $html .= '</tr>';
+        }
+        $html .= '</tbody></table>';
+
+        // Generate PDF using mPDF
+    // Use correct path to vendor/autoload.php (project root)
+    require_once dirname(__DIR__, 1) . '/vendor/autoload.php';
+        $mpdf = new \Mpdf\Mpdf();
+        $mpdf->WriteHTML($html);
+        $mpdf->Output($filepath, \Mpdf\Output\Destination::FILE);
+
         // Return the web-accessible path
         return '/Armis2/reports/' . $filename;
     } catch (Exception $e) {
@@ -162,10 +166,12 @@ if (isset($_SESSION['promotion_success']) && isset($_SESSION['promotion_success_
 try {
     // Exclude: Mister, Miss, Recruit, Officer Cadet (these are not promotable ranks)
     $rankStmt = $pdo->query("
-        SELECT id, name, abbreviation, level, category 
-        FROM ranks 
-        WHERE name NOT IN ('Mister', 'Miss', 'Recruit', 'Officer Cadet')
-        ORDER BY level ASC
+        SELECT r.id, r.name, r.abbreviation, r.level, r.category, COUNT(s.id) as staff_count
+        FROM ranks r
+        LEFT JOIN staff s ON s.rank_id = r.id AND (s.svcStatus IS NULL OR s.svcStatus = 'active')
+        WHERE r.name NOT IN ('Mister', 'Miss', 'Recruit', 'Officer Cadet')
+        GROUP BY r.id, r.name, r.abbreviation, r.level, r.category
+        ORDER BY r.level ASC
     ");
     $ranks = $rankStmt->fetchAll(PDO::FETCH_OBJ);
 } catch (Exception $e) {
@@ -260,6 +266,8 @@ if (isset($_GET['current_rank']) && is_numeric($_GET['current_rank'])) {
             $staffStmt->execute([$currentRankId]);
             $eligibleStaff = $staffStmt->fetchAll(PDO::FETCH_OBJ);
             $staffCount = count($eligibleStaff);
+
+            
             
             // Mark eligibility for each staff member with business rules
             foreach ($eligibleStaff as &$staff) {
@@ -339,7 +347,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
             $errors[] = "Invalid current rank.";
         }
         if (!$nextRankId || !is_numeric($nextRankId)) {
-            $errors[] = "Invalid next rank.";
+            $errors[] = "No lower rank available for demotion. Demotion is not possible from this rank.";
+        }
+        // Accept 'demotion' as an alias for 'reversion'
+        if ($promotionType === 'demotion') {
+            $promotionType = 'reversion';
         }
         if (!in_array($promotionType, ['promotion', 'reversion'])) {
             $errors[] = "Invalid promotion type.";
@@ -361,10 +373,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
             $currentRankObj = $stmt->fetch(PDO::FETCH_OBJ);
             
             // Get the next rank details for logging
-            $stmt = $pdo->prepare("SELECT name FROM ranks WHERE id = ?");
+            $stmt = $pdo->prepare("SELECT name, abbreviation FROM ranks WHERE id = ?");
             $stmt->execute([$nextRankId]);
             $nextRankObj = $stmt->fetch(PDO::FETCH_OBJ);
-            
             if (!$currentRankObj || !$nextRankObj) {
                 $errors[] = "Could not retrieve rank information.";
             } else {
@@ -372,20 +383,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                 try {
                     $pdo->beginTransaction();
                     $timestamp = date('Y-m-d H:i:s');
-                    
+
+                    // Insert authority order row for this action
+                    $orderType = ($promotionType === 'reversion') ? 'Demotion' : 'Promotion';
+                    $currentYear = date('Y');
+                    $orderQuery = $pdo->prepare("SELECT MAX(order_number) as max_order FROM authority_orders WHERE type = ? AND year = ?");
+                    $orderQuery->execute([$orderType, $currentYear]);
+                    $orderNum = ($orderQuery->fetchColumn() ?: 0) + 1;
+                    $authorityText = $orderType . " Order " . $orderNum . "-" . $currentYear;
+                    $desc = $orderType . " for rank change from " . ($currentRankObj->name ?? '') . " to " . ($nextRankObj->name ?? '') . " on $timestamp";
+                    $insertOrder = $pdo->prepare("INSERT INTO authority_orders (type, year, order_number, description, created_at) VALUES (?, ?, ?, ?, ?)");
+                    $insertOrder->execute([$orderType, $currentYear, $orderNum, $desc, $timestamp]);
+
                     foreach ($selectedStaff as $serviceNumber) {
                         // Get staff ID and current details
                         $stmt = $pdo->prepare("SELECT * FROM staff WHERE service_number = ? LIMIT 1");
                         $stmt->execute([$serviceNumber]);
                         $beforeStaff = $stmt->fetch(PDO::FETCH_ASSOC);
-                        
+
                         if (!$beforeStaff) {
                             $errors[] = "Staff member $serviceNumber not found.";
                             continue;
                         }
-                        
+
                         $staffId = $beforeStaff['id'];
-                        
+
                         // DUPLICATE PREVENTION CHECK 1: Verify staff is at the expected current rank
                         if ($beforeStaff['rank_id'] != $currentRankId) {
                             $errors[] = "Staff $serviceNumber is not at the selected rank. Current rank mismatch detected.";
@@ -492,6 +514,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                             created_at
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
                         
+                        // Use per-staff authority if provided, otherwise use generated authorityText
+                        $authorityValue = isset($perStaffAuthority[$serviceNumber]) && $perStaffAuthority[$serviceNumber] !== ''
+                            ? $perStaffAuthority[$serviceNumber]
+                            : $authorityText;
                         $insertStmt->execute([
                             $staffId,
                             $currentRankId,
@@ -499,15 +525,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                             date('Y-m-d'),
                             $promotionDate,
                             $promotionType,
-                            $perStaffAuthority[$serviceNumber] ?? '',
+                            $authorityValue,
                             $perStaffRemark[$serviceNumber] ?? '',
                             $userId
                         ]);
                         
                         // Promotion successfully recorded in staff_promotions table
-                        $successMessages[] = "$serviceNumber " . 
+                        $successMessages[] = "<div>$serviceNumber " . 
                             ($promotionType === 'promotion' ? "promoted" : "reverted") . 
-                            " from {$currentRankObj->name} to {$nextRankObj->name}";
+                            " from {$currentRankObj->name} to {$nextRankObj->name}</div>";
                     }
                     
                     $pdo->commit();
@@ -516,29 +542,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                     // Build a comprehensive success message
                     $totalProcessed = count($selectedStaff);
                     $actionWord = $promotionType === 'promotion' ? 'promoted' : 'reverted';
+
+                    // Prepare formatted effective date once
+                    $formattedDate = $promotionDate ? date('d M Y', strtotime($promotionDate)) : '';
+
+                    // Add summary message (only one Effective Date entry)
+                    $fromAbbr = $currentRankObj->abbreviation ?? $currentRankObj->name ?? '';
+                    $toAbbr = $nextRankObj->abbreviation ?? $nextRankObj->name ?? '';
+                    $actionLabel = ($promotionType === 'promotion') ? 'Promotion' : 'Demotion';
+
+                    $summaryMsg = '';
+                    if ($formattedDate !== '') {
+                        $summaryMsg .= "<div><strong>Effective Date:</strong> $formattedDate</div>";
+                    }
+                    $summaryMsg .= "<div>$actionLabel successful for all selected personnel.</div>";
+                    $summaryMsg .= "<div><strong>Successfully $actionWord $totalProcessed staff member" . ($totalProcessed > 1 ? 's' : '') . " from $fromAbbr to $toAbbr.</strong></div>";
+                    array_unshift($successMessages, $summaryMsg);
                     
-                    // Add summary message
-                    array_unshift($successMessages, "<strong>Successfully $actionWord $totalProcessed staff members from {$currentRankObj->name} to {$nextRankObj->name}.</strong>");
-                    
-                    // Add date information
-                    $formattedDate = date('d M Y', strtotime($promotionDate));
-                    array_unshift($successMessages, "<strong>Effective Date:</strong> $formattedDate");
-                    
-                    // Generate export report if requested
-                    if (isset($_POST['export_report']) && $ENABLE_EXPORT_REPORT) {
-                        // Implementation for report generation would go here
+                    // Always generate and show export report button for both promotion and demotion
+                    if ($ENABLE_EXPORT_REPORT) {
                         $reportPath = generatePromotionReport($selectedStaff, $currentRankObj, $nextRankObj, $promotionDate, $promotionType);
                         if ($reportPath) {
-                            $successMessages[] = "<a href='$reportPath' class='btn btn-sm btn-primary mt-2' download><i class='fas fa-download'></i> Download Promotion Report</a>";
+                            $actionLabel = ($promotionType === 'promotion') ? 'Promotion' : (($promotionType === 'reversion' || $promotionType === 'demotion') ? 'Demotion' : ucfirst($promotionType));
+                            $successMessages[] = "<div class='mt-3'><a href='$reportPath' class='btn btn-primary btn-lg' download><i class='fas fa-download'></i> Download $actionLabel Report</a></div>";
                         }
                     }
                     
                     // Store success message in session and redirect to refresh staff count
-                    $_SESSION['promotion_success'] = implode('<br>', $successMessages);
+                    // All success messages are wrapped in <div>, so join with an empty string for clean HTML output.
+                    $_SESSION['promotion_success'] = implode('', $successMessages);
                     $_SESSION['promotion_success_time'] = time();
-                    
                     // Redirect to same page with rank parameter to refresh staff count
-                    header("Location: promote_staff.php?current_rank=" . $currentRankId);
+                    header("Location: promote_staff.php?current_rank=" . $currentRankId . "&action_type=" . $promotionType);
                     exit;
                     
                 } catch (Exception $e) {
@@ -554,35 +589,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
 // Prepare next/previous rank for display and submission
 $nextRankObj = null;
 $nextRankName = '';
+$nextRankAbbr = '';
 $nextRankIdValue = '';
-if ($currentRank && isset($_POST['promotion_type'])) {
-    $promotionType = strtolower(trim($_POST['promotion_type']));
+$authorityText = '';
+if ($currentRank) {
+    $promotionType = strtolower(trim($_POST['promotion_type'] ?? $_GET['action_type'] ?? ''));
     $currentCategory = $currentRank->category ?? '';
     $currentRankLevel = $currentRank->level ?? null;
-    
     if ($promotionType === 'promotion' && $currentRankLevel !== null) {
-        foreach ($ranks as $r) {
-            // For promotion, find the next higher rank in the same category (lower level number)
-            if ($r->level < $currentRankLevel && $r->category === $currentCategory) {
-                if ($nextRankObj === null || $r->level > $nextRankObj->level) {
-                    $nextRankObj = $r;
-                }
-            }
+        // Promotion: Find next higher rank in same category (smaller level number)
+        $higherRanks = array_filter($ranks, function($r) use ($currentRankLevel, $currentCategory) {
+            return $r->level < $currentRankLevel && $r->category === $currentCategory;
+        });
+        // Pick the rank with the largest level less than current (closest higher rank)
+        if (!empty($higherRanks)) {
+            $nextRankObj = array_reduce($higherRanks, function($carry, $item) {
+                return ($carry === null || $item->level > $carry->level) ? $item : $carry;
+            }, null);
         }
     } elseif (in_array($promotionType, ['reversion', 'demotion']) && $currentRankLevel !== null) {
-        foreach ($ranks as $r) {
-            // For demotion, find the next lower rank in the same category (higher level number)
-            if ($r->level > $currentRankLevel && $r->category === $currentCategory) {
-                if ($nextRankObj === null || $r->level < $nextRankObj->level) {
-                    $nextRankObj = $r;
-                }
-            }
+        // Demotion: Find next lower rank in same category (larger level number)
+        $lowerRanks = array_filter($ranks, function($r) use ($currentRankLevel, $currentCategory) {
+            return $r->level > $currentRankLevel && $r->category === $currentCategory;
+        });
+        // Pick the rank with the smallest level greater than current (closest lower rank)
+        if (!empty($lowerRanks)) {
+            $nextRankObj = array_reduce($lowerRanks, function($carry, $item) {
+                return ($carry === null || $item->level < $carry->level) ? $item : $carry;
+            }, null);
         }
     }
     if ($nextRankObj) {
         $nextRankName = $nextRankObj->name;
+        $nextRankAbbr = $nextRankObj->abbreviation ?? $nextRankObj->name;
         $nextRankIdValue = $nextRankObj->id;
     }
+    // Set authority text for display (use same logic as backend summary)
+    $orderType = ($promotionType === 'reversion' || $promotionType === 'demotion') ? 'Demotion' : 'Promotion';
+    $currentYear = date('Y');
+    // Get next order number for this type and year
+    $orderQuery = $pdo->prepare("SELECT MAX(order_number) as max_order FROM authority_orders WHERE type = ? AND year = ?");
+    $orderQuery->execute([$orderType, $currentYear]);
+    $orderNum = ($orderQuery->fetchColumn() ?: 0) + 1;
+    $authorityText = $orderType . " Order " . $orderNum . " - " . $currentYear;
 }
 
 // Debug output for server-side next rank calculation
@@ -600,6 +649,16 @@ $pageTitle = "Promotions - Admin Branch";
 $moduleName = "Admin Branch";
 $moduleIcon = "users-cog";
 $currentPage = "promotions";
+// Ensure $actionType is always set before use
+if (!isset($actionType)) {
+    if (isset($_GET['action_type'])) {
+        $actionType = $_GET['action_type'];
+    } elseif (isset($_POST['promotion_type'])) {
+        $actionType = $_POST['promotion_type'];
+    } else {
+        $actionType = '';
+    }
+}
 // Sidebar navigation
 $sidebarLinks = [
     ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
@@ -636,26 +695,32 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 ?>
 
 <!-- DataTables CSS -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.13.6/css/dataTables.bootstrap5.min.css">
+
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.13.6/css/responsive.bootstrap5.min.css">
+
+<!-- jQuery (required for Bootstrap JS) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+<!-- Bootstrap JS Bundle (includes Popper) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <div class="content-wrapper with-sidebar">
     <div class="container-fluid">
         <div class="main-content">
             <div class="card shadow-sm">
                 <div class="card-header bg-success text-white">
-                    <h4 class="mb-0"><i class="fa fa-arrow-up"></i> Staff Promotion / Reversion</h4>
+                    <h4 class="mb-0">
+                        <i class="fa fa-arrow-up"></i>
+                        Staff <?=($actionType === 'demotion') ? 'Demotion' : 'Promotion'?>
+                    </h4>
                 </div>
                 <div class="card-body">
                     <?php if ($success): ?>
                         <div class="alert alert-success">
-                            Promotion/Demotion successful for all selected staff.
                             <?php if (!empty($successMessages)): ?>
-                                <ul class="mb-0">
-                                    <?php foreach ($successMessages as $msg): ?>
-                                        <li><?=htmlspecialchars($msg)?></li>
-                                    <?php endforeach; ?>
-                                </ul>
+                                <?php foreach ($successMessages as $msg): ?>
+                                    <?= $msg ?>
+                                <?php endforeach; ?>
                             <?php endif; ?>
                         </div>
                     <?php endif; ?>
@@ -670,25 +735,89 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     <?php endif; ?>
 
                     <!-- Stepper bar (UX enhancement) -->
+                    <?php
+                    function stepClass($current, $target) {
+                        if ($current > $target) return 'completed';
+                        if ($current === $target) return 'active';
+                        return '';
+                    }
+
+                    $actionType = $_GET['action_type'] ?? '';
+                    $step = 1;
+                    if (empty($actionType)) {
+                        $step = 1; // Choose Action
+                        ?>
+                        <!-- Step 0: Choose Action (Promotion or Demotion) -->
+                        <form class="mb-4" id="actionTypeForm" method="get" autocomplete="off">
+                            <div class="row">
+                                <div class="col-md-6 mb-2">
+                                    <label class="form-label">What action do you want to perform?</label>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="action_type" id="promotionRadio" value="promotion" required <?=($actionType==='promotion')?'checked':''?>>
+                                        <label class="form-check-label" for="promotionRadio">Promotion</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="action_type" id="demotionRadio" value="demotion" required <?=($actionType==='demotion')?'checked':''?>>
+                                        <label class="form-check-label" for="demotionRadio">Demotion</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6 mb-2 d-flex align-items-end">
+                                    <button type="submit" class="btn btn-primary btn-lg">Continue</button>
+                                </div>
+                            </div>
+                        </form>
+                        <?php
+                        return;
+                    }
+                    elseif (empty($currentRankId)) {
+                        $step = 2; // Select Rank
+                    }
+                    elseif ($currentRankId && (!$category || $staffCount <= 0)) {
+                        $step = 2; // Still on Select Rank if no staff
+                    }
+                    elseif ($currentRankId && $category && $staffCount > 0 && empty($nextRankIdValue)) {
+                        $step = 3; // Select Staff
+                    }
+                    elseif (!empty($nextRankIdValue)) {
+                        $step = 4; // Details
+                    }
+                    elseif ($success) {
+                        $step = 6; // Success
+                    }
+                    ?>
                     <div class="mb-3">
                         <ul class="stepper mb-0">
-                            <li class="step active">Select Rank</li>
-                            <li class="step <?=($currentRankId?'active':'')?>">Select Staff</li>
-                            <li class="step <?=($nextRankIdValue?'active':'')?>">Details</li>
-                            <li class="step">Confirm</li>
-                            <li class="step <?=($success?'active':'')?>">Success</li>
+                            <li class="step <?=stepClass($step, 1)?>">
+                                <?php if ($step > 1): ?>
+                                    <a href="promote_staff.php" style="color:inherit;text-decoration:none;">Choose Action</a>
+                                <?php else: ?>
+                                    Choose Action
+                                <?php endif; ?>
+                            </li>
+                            <li class="step <?=stepClass($step, 2)?>">
+                                <?php if ($step > 2): ?>
+                                    <a href="promote_staff.php?action_type=<?=htmlspecialchars($actionType)?>" style="color:inherit;text-decoration:none;">Select Rank</a>
+                                <?php else: ?>
+                                    Select Rank
+                                <?php endif; ?>
+                            </li>
+                            <li class="step <?=stepClass($step, 3)?>">Select Staff</li>
+                            <li class="step <?=stepClass($step, 4)?>">Details</li>
+                            <li class="step <?=stepClass($step, 5)?>">Confirm</li>
+                            <li class="step <?=stepClass($step, 6)?>">Success</li>
                         </ul>
                     </div>
 
                     <!-- Step 1: Select current rank -->
                     <form class="mb-4" id="rankForm" method="get" autocomplete="off">
+                        <input type="hidden" name="action_type" value="<?=htmlspecialchars($actionType)?>">
                         <div class="row">
                             <div class="col-md-6 mb-2">
-                                <label class="form-label">Current Rank Being Promoted / Reversed *</label>
+                                <label class="form-label">Current Rank Being <?=($actionType === 'demotion') ? 'Demotion' : 'Promotion'?></label>
                                 <select name="current_rank" id="current_rank" class="form-select" required>
                                     <option value="">Select Current Rank...</option>
                                     <?php foreach ($ranks as $r): ?>
-                                        <option value="<?=$r->id?>" <?=($currentRankId==$r->id)?'selected':''?>><?=$r->name?></option>
+                                        <option value="<?=$r->id?>" <?=($currentRankId==$r->id)?'selected':''?>><?=$r->abbreviation?> (<?=$r->staff_count?> Personnel)</option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>
@@ -696,11 +825,11 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <?php if ($staffCount>0 && $currentRank): ?>
                                     <div class="alert alert-info mb-0">
                                         <strong><?=htmlspecialchars($staffCount)?></strong>
-                                        staff member<?=($staffCount!=1?'s':'')?> at rank <strong><?=htmlspecialchars($currentRank->name ?? '')?></strong> found.
+                                        staff member<?=($staffCount!=1?'s':'')?> at rank <strong><?=htmlspecialchars($currentRank->abbreviation ?? '')?></strong> found.
                                     </div>
                                 <?php elseif ($currentRank): ?>
                                     <div class="alert alert-warning mb-0">
-                                        No staff found at rank <strong><?=htmlspecialchars($currentRank->name ?? '')?></strong>.
+                                        No staff found at rank <strong><?=htmlspecialchars($currentRank->abbreviation ?? '')?></strong>.
                                     </div>
                                 <?php endif; ?>
                             </div>
@@ -713,12 +842,13 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <input type="hidden" name="csrf_token" value="<?=htmlspecialchars($csrf_token)?>">
                         <input type="hidden" name="promote_staff" value="1">
                         <input type="hidden" name="current_rank" value="<?=htmlspecialchars($currentRankId)?>">
+                        <input type="hidden" id="promotion_type" name="promotion_type" value="<?=htmlspecialchars($actionType)?>">
                         <div class="row mb-3">
                             <div class="col-md-12 mb-2">
-                                <label class="form-label">Select Staff Members for Promotion *</label>
+                                <label class="form-label">Select Staff Members for <?=($actionType === 'demotion') ? 'Demotion' : 'Promotion'?> *</label>
                                 <p class="text-muted">
                                     <i class="fas fa-info-circle me-1"></i>
-                                    Staff at rank <strong><?=htmlspecialchars($currentRank->rankName ?? '')?></strong> - 
+                                    Staff at rank <strong><?=htmlspecialchars($currentRank->rankAbbr ?? '')?></strong> - 
                                     <span class="badge bg-primary"><?= $staffCount ?> members</span>
                                 </p>
                                 
@@ -793,38 +923,24 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <?php endif; ?>
                         <div id="staffDetailsPanel"></div>
                         <div class="row mb-3">
+                            <!-- Promotion/Reversion and Next/Previous Rank fields removed; details now shown in staff card -->
                             <div class="col-md-4 mb-2">
-                                <label class="form-label">Promotion / Reversion *</label>
-                                <select name="promotion_type" id="promotion_type" class="form-select" required>
-                                    <option value="">Select Type</option>
-                                    <option value="promotion" <?=isset($_POST['promotion_type']) && strtolower($_POST['promotion_type'])=='promotion'?'selected':''?>>Promotion</option>
-                                    <option value="reversion" <?=isset($_POST['promotion_type']) && strtolower($_POST['promotion_type'])=='reversion'?'selected':''?>>Reversion/Demotion</option>
-                                </select>
-                            </div>
-                            <div class="col-md-4 mb-2">
-                                <label class="form-label">Next / Previous Rank *</label>
-                                <input type="text" class="form-control" id="next_rank_display" value="<?=htmlspecialchars($nextRankName)?>" readonly>
-                                <input type="hidden" name="next_rank" id="next_rank" value="<?=htmlspecialchars($nextRankIdValue)?>">
-                            </div>
-                            <div class="col-md-4 mb-2">
-                                <label class="form-label">Date of Promotion *</label>
-                                <input type="date" name="promotion_date" class="form-control" required value="<?=htmlspecialchars($_POST['promotion_date'] ?? date('Y-m-d'))?>">
+                                <label class="form-label">Effective Date of <?=($actionType === 'demotion') ? 'Demotion' : 'Promotion'?> *</label>
+                                <?php
+                                $today = date('Y-m-d');
+                                $minDate = date('Y-m-d', strtotime('-2 months'));
+                                ?>
+                                <input type="date" name="promotion_date" id="promotion_date" class="form-control" required value="<?=htmlspecialchars($_POST['promotion_date'] ?? $today)?>" min="<?=$minDate?>" max="<?=$today?>">
                             </div>
                         </div>
-                        <div class="row mb-3">
-                            <div class="col-md-6 mb-2">
-                                <label class="form-label">Bulk Authority <span class="text-muted" aria-label="Apply this authority to all staff" data-bs-toggle="tooltip" title="Apply this authority to all selected staff."><i class="fa fa-info-circle"></i></span></label>
-                                <input type="text" id="bulk_authority" class="form-control" placeholder="Apply authority to all">
-                                <button type="button" id="apply_bulk_authority" class="btn btn-sm btn-outline-primary mt-2"><i class="fa fa-check"></i> Apply to All</button>
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <label class="form-label">Bulk Remark <span class="text-muted" aria-label="Apply this remark to all staff" data-bs-toggle="tooltip" title="Apply this remark to all selected staff."><i class="fa fa-info-circle"></i></span></label>
-                                <input type="text" id="bulk_remark" class="form-control" placeholder="Apply remark to all">
-                                <button type="button" id="apply_bulk_remark" class="btn btn-sm btn-outline-primary mt-2"><i class="fa fa-check"></i> Apply to All</button>
-                            </div>
-                        </div>
+                        <!-- Hidden next rank fields for backend validation -->
+                        <input type="hidden" id="next_rank" name="next_rank" value="<?=htmlspecialchars($nextRankIdValue)?>">
+                        <input type="hidden" id="next_rank_display" name="next_rank_display" value="<?=htmlspecialchars($nextRankName)?>">
+                        <!-- Bulk authority and remark fields removed -->
                         <div class="text-end">
-                            <button type="button" id="showConfirmModal" class="btn btn-primary px-5 py-2" aria-label="Review and confirm promotion/demotion" disabled><i class="fa fa-arrow-up"></i> Promote/Demote</button>
+                            <button type="button" id="showConfirmModal" class="btn btn-primary px-5 py-2" aria-label="Review and confirm promotion/demotion" disabled>
+                                <i class="fa fa-arrow-up"></i> <?=($actionType === 'demotion') ? 'Demote' : 'Promote'?>
+                            </button>
                             <?php if ($ENABLE_EXPORT_REPORT): ?>
                             <div class="mt-2 text-start">
                                 <div class="form-check">
@@ -840,7 +956,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <div class="modal-dialog modal-xl">
                             <div class="modal-content">
                             <div class="modal-header">
-                                <h5 class="modal-title" id="confirmModalLabel">Confirm Promotion/Demotion</h5>
+                                <h5 class="modal-title" id="confirmModalLabel">Confirm <?=($actionType === 'demotion') ? 'Demotion' : 'Promotion'?></h5>
                                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                             </div>
                             <div class="modal-body">
@@ -858,11 +974,11 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             <div class="modal-dialog">
                                 <div class="modal-content">
                                     <div class="modal-header">
-                                        <h5 class="modal-title">Bulk Promotion Confirmation</h5>
+                                        <h5 class="modal-title">Bulk <?=($actionType === 'demotion') ? 'Demotion' : 'Promotion'?> Confirmation</h5>
                                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                     </div>
                                     <div class="modal-body">
-                                        <p>You are about to promote <?=count($_POST['selected_staff']??[])?> staff. Are you sure?</p>
+                                        <p>You are about to <?=($actionType === 'demotion') ? 'demote' : 'promote'?> <?=count($_POST['selected_staff']??[])?> staff. Are you sure?</p>
                                     </div>
                                     <div class="modal-footer">
                                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -982,10 +1098,14 @@ include dirname(__DIR__) . '/shared/sidebar.php';
     window.currentRankLevel = <?= json_encode($currentRankLevel ?? null) ?>;
     window.currentRankId = <?= json_encode($currentRankId ?? null) ?>;
     window.eligibleStaff = <?= json_encode($eligibleStaff ?? []) ?>;
+    window.nextRankAbbr = <?= json_encode($nextRankAbbr) ?>;
+    window.authorityText = <?= json_encode($authorityText) ?>;
+    window.actionType = <?= json_encode($promotionType) ?>;
     console.log('Ranks data loaded:', window.ranksDataFromServer.length, 'ranks');
     console.log('Current rank level:', window.currentRankLevel);
     console.log('Current rank ID:', window.currentRankId);
     console.log('Eligible staff loaded:', window.eligibleStaff.length, 'members');
+    console.log('Next rank abbreviation:', window.nextRankAbbr);
 </script>
 
 <!-- Core library scripts with integrity checks and fallbacks -->
@@ -1004,6 +1124,24 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 <!-- Flatpickr for date picking -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var today = new Date();
+        var minDate = new Date();
+        minDate.setMonth(today.getMonth() - 2);
+        // If today is 17 Oct 2025, minDate is 17 Aug 2025
+        flatpickr('#promotion_date', {
+            dateFormat: 'Y-m-d',
+            minDate: minDate,
+            maxDate: today,
+            disableMobile: true // Always use Flatpickr UI
+        });
+    });
+</script>
+
+
+<!-- Chart.js CDN (required for dashboard charts) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <!-- External promotion module (optional) -->
 <script src="js/promote_staff.js"></script>
@@ -1149,38 +1287,31 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 : svcNo;
                             
                             const unitInfo = staffData && staffData.unit_name ? staffData.unit_name : 'N/A';
-                            const rankInfo = staffData && staffData.rank_name ? staffData.rank_name : 'N/A';
-                            
+                            const currentRankAbbr = staffData && staffData.rank_abbreviation ? staffData.rank_abbreviation : '';
+                            const nextRankAbbr = window.nextRankAbbr || '';
+                            const isDemotion = (window.actionType === 'demotion');
+                            const actionTypeText = isDemotion ? 'Demoted' : 'Promoted';
+                            const actionPhrase = isDemotion ? 'Demoted to' : 'Promoted to';
+                            const authorityText = window.authorityText || '';
+
+                            const militaryStatement = `<strong>Authority:</strong> ${authorityText ? authorityText : 'N/A'}<br>
+                                <strong>Action:</strong> ${currentRankAbbr} ${actionTypeText} to <span class='badge bg-secondary'>${nextRankAbbr ? nextRankAbbr : 'N/A'}</span>`;
+
                             const panel = $(`
                                 <div class="card mb-3 staff-detail-card" data-svcno="${svcNo}">
                                     <div class="card-header bg-light">
                                         <h5 class="mb-0">
                                             <span class="badge bg-primary me-2">${svcNo}</span>
                                             ${staffName}
-                                            <small class="text-muted ms-2">(${rankInfo})</small>
+                                            <small class="text-muted ms-2">(${currentRankAbbr} ${actionTypeText} to <span class='badge bg-secondary'>${nextRankAbbr ? nextRankAbbr : 'N/A'}</span>)</small>
                                         </h5>
                                     </div>
                                     <div class="card-body">
                                         <div class="row align-items-center">
-                                            <div class="col-md-4 mb-2">
-                                                <label class="form-label mb-1">Authority *</label>
-                                                <input type="text" 
-                                                       name="promotion_authority[${svcNo}]" 
-                                                       class="form-control authority-input" 
-                                                       placeholder="Enter authority reference"
-                                                       required
-                                                       aria-label="Authority for ${staffName}">
+                                            <div class="col-md-6 mb-2">
+                                                <div class="form-control-plaintext">${militaryStatement}</div>
                                             </div>
-                                            <div class="col-md-4 mb-2">
-                                                <label class="form-label mb-1">Remark</label>
-                                                <input type="text" 
-                                                       name="promotion_remark[${svcNo}]" 
-                                                       class="form-control remark-input" 
-                                                       placeholder="Optional remarks"
-                                                       maxlength="255"
-                                                       aria-label="Remark for ${staffName}">
-                                            </div>
-                                            <div class="col-md-4 mb-2">
+                                            <div class="col-md-6 mb-2">
                                                 <label class="form-label mb-1">Current Unit</label>
                                                 <div class="form-control-plaintext">
                                                     <span class="badge bg-info">${unitInfo}</span>
@@ -1190,7 +1321,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                     </div>
                                 </div>
                             `);
-                            
+                    
                             $('#staffDetailsPanel').append(panel);
                             console.log('✅ Panel added for:', svcNo, staffName);
                         });
@@ -1691,33 +1822,30 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         let summaryHtml = '<div class="table-responsive">';
                         summaryHtml += '<h6 class="mb-3">';
                         summaryHtml += promotionType === 'promotion' ? '📈 Promotion' : '📉 Reversion/Demotion';
-                        summaryHtml += ' to <strong>' + nextRankName + '</strong>';
+                        summaryHtml += ' to <strong>' + nextRankAbbr + '</strong>';
                         summaryHtml += ' effective <strong>' + promotionDate + '</strong></h6>';
                         summaryHtml += '<table class="table table-sm table-bordered">';
                         summaryHtml += '<thead class="table-light">';
-                        summaryHtml += '<tr><th>Service No.</th><th>Name</th><th>Current Rank</th><th>Unit</th><th>Authority</th><th>Remark</th></tr>';
+                        summaryHtml += '<tr><th>Service No.</th><th>Name</th><th>Current Rank</th><th>Unit</th><th>Authority</th></tr>';
                         summaryHtml += '</thead><tbody>';
                         
                         selectedServiceNumbers.forEach(svcNo => {
                             const staffData = window.eligibleStaff && Array.isArray(window.eligibleStaff) 
                                 ? window.eligibleStaff.find(staff => staff.service_number === svcNo) 
                                 : null;
-                            
                             const staffName = staffData 
                                 ? `${(staffData.last_name || '').toUpperCase()} ${staffData.first_name || ''}` 
                                 : svcNo;
-                            const rankName = staffData && staffData.rank_name ? staffData.rank_name : 'N/A';
+                            const rankAbbr = staffData && staffData.rank_abbreviation ? staffData.rank_abbreviation : '';
                             const unitName = staffData && staffData.unit_name ? staffData.unit_name : 'N/A';
                             const authority = $('input[name="promotion_authority[' + svcNo + ']"]').val() || '';
                             const remark = $('input[name="promotion_remark[' + svcNo + ']"]').val() || '';
-                            
                             summaryHtml += '<tr>';
                             summaryHtml += '<td>' + svcNo + '</td>';
                             summaryHtml += '<td>' + staffName + '</td>';
-                            summaryHtml += '<td>' + rankName + '</td>';
+                            summaryHtml += '<td>' + rankAbbr + '</td>';
                             summaryHtml += '<td>' + unitName + '</td>';
-                            summaryHtml += '<td>' + authority + '</td>';
-                            summaryHtml += '<td>' + (remark || '<em class="text-muted">None</em>') + '</td>';
+                            summaryHtml += '<td>' + authorityText + '</td>';
                             summaryHtml += '</tr>';
                         });
                         

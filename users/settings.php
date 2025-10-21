@@ -15,14 +15,9 @@ $moduleName = "User Profile";
 $moduleIcon = "user";
 $currentPage = "settings";
 
-$sidebarLinks = [
-    ['title' => 'My Profile', 'url' => '/Armis2/users/index.php', 'icon' => 'user', 'page' => 'profile'],
-    ['title' => 'Personal Info', 'url' => '/Armis2/users/personal.php', 'icon' => 'id-card', 'page' => 'personal'],
-    ['title' => 'Service Record', 'url' => '/Armis2/users/service.php', 'icon' => 'medal', 'page' => 'service'],
-    ['title' => 'Training History', 'url' => '/Armis2/users/training.php', 'icon' => 'graduation-cap', 'page' => 'training'],
-    ['title' => 'Download CV', 'url' => '/Armis2/users/cv_download.php', 'icon' => 'download', 'page' => 'cv_download'],
-    ['title' => 'Account Settings', 'url' => '/Armis2/users/settings.php', 'icon' => 'cogs', 'page' => 'settings']
-];
+// Load shared navigation
+require_once dirname(__DIR__) . '/shared/user_navigation.php';
+$sidebarLinks = $userNavigationItems;
 
 // Load user profile data
 require_once __DIR__ . '/profile_manager.php';

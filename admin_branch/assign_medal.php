@@ -71,6 +71,7 @@ $csrfToken = Token::generate();
 
 $errors = [];
 $success = false;
+$warnings = []; // Add warnings array for non-critical issues like duplicates
 $pdo = getDbConnection();
 $medals = [];
 try {
@@ -117,7 +118,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors[] = "Duplicate staff selected.";
         }
 
+        // Initialize duplicate tracking array before the loop
+        $duplicateStaff = [];
         $staffInfoList = [];
+        
         foreach ($selectedStaff as $staffIdOrServiceNumber) {
             // Handle both staff ID (numeric) and service number (may be alphanumeric)
             $staffIdOrServiceNumber = trim($staffIdOrServiceNumber);
@@ -166,7 +170,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt2->execute([$staffId, $medalId]);
             $alreadyAwarded = $stmt2->fetchColumn();
             if ($alreadyAwarded > 0) {
-                $errors[] = "Staff member {$full_name} ({$service_number}) has already been awarded this medal.";
+                // Track duplicate for later reporting (don't add to staffInfoList)
+                $duplicateStaff[] = "{$full_name} ({$service_number})";
                 continue;
             }
             
@@ -177,7 +182,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ];
         }
 
-        if (empty($errors)) {
+        // Process assignments if there are valid staff members and no errors
+        if (empty($errors) && !empty($staffInfoList)) {
             try {
                 $pdo->beginTransaction();
                 $stmt = $pdo->prepare("INSERT INTO staff_medals (staff_id, service_number, medal_id, award_date, citation, gazette_reference, bar_number, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
@@ -185,7 +191,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $now = date('Y-m-d H:i:s');
                 
                 $successCount = 0;
-                $duplicateStaff = [];
                 
                 foreach ($staffInfoList as $info) {
                     try {
@@ -202,7 +207,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ]);
                         $successCount++;
                     } catch (PDOException $e) {
-                        // Check for duplicate entry error
+                        // Check for duplicate entry error (race condition)
                         if ($e->getCode() == 23000 && strpos($e->getMessage(), 'Duplicate entry') !== false) {
                             $duplicateStaff[] = $info['full_name'] . " (" . $info['service_number'] . ")";
                         } else {
@@ -218,14 +223,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $medalStmt->execute([$medalId]);
                 $medalName = $medalStmt->fetchColumn();
                 
-                // Build success/warning messages
+                // Build success message
                 if ($successCount > 0) {
                     $success = "Successfully assigned <strong>{$medalName}</strong> to {$successCount} staff member" . ($successCount > 1 ? 's' : '') . ".";
-                }
-                
-                if (!empty($duplicateStaff)) {
-                    $duplicateList = implode(', ', $duplicateStaff);
-                    $errors[] = "The following staff members have already been awarded this medal: <strong>{$duplicateList}</strong>";
                 }
                 
                 $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -235,6 +235,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->rollBack();
                 $errors[] = "Error assigning medal: " . htmlspecialchars($e->getMessage());
             }
+        }
+        
+        // Report all duplicates (found in pre-check or during database insert)
+        // This runs whether or not we entered the transaction block
+        if (!empty($duplicateStaff)) {
+            $duplicateList = implode(', ', $duplicateStaff);
+            $warnings[] = "The following staff members have already been awarded this medal: <strong>{$duplicateList}</strong>";
         }
     }
 }
@@ -253,64 +260,205 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <h4 class="mb-0"><i class="fa fa-medal"></i> Assign Medal to Staff</h4>
         </div>
         <div class="card-body">
+            <!-- Enhanced Alert Messages -->
             <?php if ($success): ?>
-                <div class="alert alert-success"><?=htmlspecialchars($success)?></div>
-            <?php endif; ?>
-            <?php if ($errors): ?>
-                <div class="alert alert-danger">
-                    <ul class="mb-0">
-                        <?php foreach ($errors as $err): ?>
-                            <li><?=htmlspecialchars($err)?></li>
-                        <?php endforeach; ?>
-                    </ul>
+                <div class="alert alert-success alert-dismissible fade show shadow-sm border-0" role="alert">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fa fa-check-circle fa-2x me-3 text-success"></i>
+                        </div>
+                        <div class="flex-grow-1">
+                            <h5 class="alert-heading mb-1"><i class="fa fa-trophy"></i> Success!</h5>
+                            <p class="mb-0"><?=$success?></p>
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
                 </div>
             <?php endif; ?>
-            <div class="mb-3">
-                <ul class="stepper mb-0">
-                    <li class="step active">Select Medal</li>
-                    <li class="step <?=isset($_POST['medal_id'])?'active':''?>">Select Staff</li>
-                    <li class="step <?=isset($_POST['selected_staff'])?'active':''?>">Details</li>
-                    <li class="step">Confirm</li>
-                    <li class="step <?=($success?'active':'')?>">Success</li>
+            
+            <?php if ($warnings): ?>
+                <div class="alert alert-warning alert-dismissible fade show shadow-sm border-0" role="alert">
+                    <div class="d-flex align-items-start">
+                        <div class="flex-shrink-0">
+                            <i class="fa fa-info-circle fa-2x me-3 text-warning"></i>
+                        </div>
+                        <div class="flex-grow-1">
+                            <h5 class="alert-heading mb-2"><i class="fa fa-exclamation-triangle"></i> Note:</h5>
+                            <ul class="mb-0">
+                                <?php foreach ($warnings as $warning): ?>
+                                    <li><?=$warning?></li>
+                                <?php endforeach; ?>
+                            </ul>
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                </div>
+            <?php endif; ?>
+            
+            <?php if ($errors): ?>
+                <div class="alert alert-danger alert-dismissible fade show shadow-sm border-0" role="alert">
+                    <div class="d-flex align-items-start">
+                        <div class="flex-shrink-0">
+                            <i class="fa fa-exclamation-triangle fa-2x me-3 text-danger"></i>
+                        </div>
+                        <div class="flex-grow-1">
+                            <h5 class="alert-heading mb-2"><i class="fa fa-exclamation-circle"></i> Please fix the following issues:</h5>
+                            <ul class="mb-0">
+                                <?php foreach ($errors as $err): ?>
+                                    <li><?=$err?></li>
+                                <?php endforeach; ?>
+                            </ul>
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                </div>
+            <?php endif; ?>
+            
+            <!-- Dynamic Progress Bar -->
+            <div class="mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0"><i class="fa fa-tasks"></i> Assignment Progress</h6>
+                    <span class="badge bg-primary" id="progressPercentage">0%</span>
+                </div>
+                <div class="progress" style="height: 10px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" 
+                         id="progressBar" 
+                         role="progressbar" 
+                         style="width: 0%"
+                         aria-valuenow="0" 
+                         aria-valuemin="0" 
+                         aria-valuemax="100">
+                    </div>
+                </div>
+                
+                <!-- Stepper -->
+                <ul class="stepper mt-3 mb-0">
+                    <li class="step" id="step1"><i class="fa fa-medal"></i> Select Medal</li>
+                    <li class="step" id="step2"><i class="fa fa-users"></i> Select Staff</li>
+                    <li class="step" id="step3"><i class="fa fa-edit"></i> Add Details</li>
+                    <li class="step" id="step4"><i class="fa fa-check"></i> Confirm</li>
                 </ul>
             </div>
+            
             <form method="post" action="" autocomplete="off" aria-label="Assign Medal Form" id="assignMedalForm">
                 <input type="hidden" name="csrf" value="<?=htmlspecialchars($csrfToken)?>">
-                <div class="mb-3">
-                    <label for="medal_id" class="form-label" aria-label="Medal">Medal <span class="text-danger">*</span></label>
-                    <select name="medal_id" id="medal_id" class="form-select" required aria-required="true">
-                        <option value="">Select Medal...</option>
-                        <?php foreach ($medals as $medal): ?>
-                            <option value="<?=htmlspecialchars($medal->id)?>" <?=isset($_POST['medal_id']) && $_POST['medal_id']==$medal->id?'selected':''?>>
-                                <?=htmlspecialchars($medal->name)?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                    <?php if (!empty($medals)): ?>
-                    <div class="mt-2">
-                        <?php foreach ($medals as $medal): ?>
-                            <span class="badge bg-secondary mx-1" title="<?=htmlspecialchars($medal->description)?>">
-                                <?php if(!empty($medal->image_path)): ?>
-                                    <img src="<?=htmlspecialchars($medal->image_path)?>" alt="Medal" height="22" style="vertical-align:middle;">
-                                <?php endif; ?>
-                                <?=htmlspecialchars($medal->name)?>
-                            </span>
-                        <?php endforeach; ?>
+                
+                <!-- Two-Column Layout -->
+                <div class="row">
+                    <!-- Left Column - Primary Fields -->
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="medal_id" class="form-label" aria-label="Medal">
+                                <i class="fa fa-medal text-warning"></i> Medal <span class="text-danger">*</span>
+                            </label>
+                            <select name="medal_id" id="medal_id" class="form-select" required aria-required="true">
+                                <option value="">Select Medal...</option>
+                                <?php foreach ($medals as $medal): ?>
+                                    <option value="<?=htmlspecialchars($medal->id)?>" 
+                                            data-image="<?=htmlspecialchars($medal->image_path ?? '')?>"
+                                            data-description="<?=htmlspecialchars($medal->description ?? 'No description available')?>"
+                                            <?=isset($_POST['medal_id']) && $_POST['medal_id']==$medal->id?'selected':''?>>
+                                        <?=htmlspecialchars($medal->name)?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        
+                        <!-- Medal Preview Card -->
+                        <div id="medalPreviewCard" class="card bg-light p-3 mb-3" style="display: none;">
+                            <div class="row align-items-center">
+                                <div class="col-3 text-center">
+                                    <img id="previewImage" src="" alt="Medal" class="img-fluid" style="max-height: 80px;">
+                                </div>
+                                <div class="col-9">
+                                    <h6 id="previewMedalName" class="mb-1 text-primary"></h6>
+                                    <p id="previewMedalDescription" class="text-muted mb-0 small"></p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="award_date" class="form-label" aria-label="Award Date">
+                                <i class="fa fa-calendar text-primary"></i> Award Date <span class="text-danger">*</span>
+                            </label>
+                            <input type="date" class="form-control" id="award_date" name="award_date" required aria-required="true" min="1900-01-01" max="<?=date('Y-m-d')?>" value="<?=htmlspecialchars($_POST['award_date'] ?? date('Y-m-d'))?>">
+                        </div>
                     </div>
-                    <?php endif; ?>
+                    
+                    <!-- Right Column - Optional Fields -->
+                    <div class="col-md-6">
+                        <div class="card bg-light h-100 p-3">
+                            <h6 class="text-muted mb-3">
+                                <i class="fa fa-info-circle"></i> Additional Information <small class="text-muted">(Optional)</small>
+                            </h6>
+                            
+                            <div class="mb-3">
+                                <label for="remark" class="form-label" aria-label="Citation or Remarks">
+                                    <i class="fa fa-quote-left text-info"></i> Citation / Remarks
+                                </label>
+                                <textarea class="form-control" id="remark" name="remark" rows="3" placeholder="Enter citation or remarks..."><?=htmlspecialchars($_POST['remark'] ?? '')?></textarea>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="gazette_reference" class="form-label">
+                                    <i class="fa fa-file-alt text-secondary"></i> Gazette Reference
+                                </label>
+                                <input type="text" class="form-control" id="gazette_reference" name="gazette_reference" value="<?=htmlspecialchars($_POST['gazette_reference'] ?? '')?>" placeholder="e.g., GRZ No. 123/2025">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="bar_number" class="form-label">
+                                    <i class="fa fa-bars text-secondary"></i> Bar Number
+                                </label>
+                                <input type="number" class="form-control" id="bar_number" name="bar_number" value="<?=htmlspecialchars($_POST['bar_number'] ?? '')?>" min="0" placeholder="0">
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="mb-3">
-                    <label for="award_date" class="form-label" aria-label="Award Date">Award Date <span class="text-danger">*</span></label>
-                    <input type="date" class="form-control" id="award_date" name="award_date" required aria-required="true" min="1900-01-01" max="<?=date('Y-m-d')?>" value="<?=htmlspecialchars($_POST['award_date'] ?? date('Y-m-d'))?>">
-                </div>
-                <div class="mb-3">
-                    <label for="selected_staff" class="form-label" aria-label="Select Staff Members">Select Staff Members <span class="text-danger">*</span></label>
+                
+                <!-- Staff Selection Section -->
+                <div class="mb-3 mt-4">
+                    <label for="selected_staff" class="form-label" aria-label="Select Staff Members">
+                        <i class="fa fa-users text-success"></i> Select Staff Members <span class="text-danger">*</span>
+                    </label>
+                    
+                    <!-- Quick Filter Buttons -->
+                    <div class="btn-toolbar mb-3" role="toolbar" aria-label="Staff filter toolbar">
+                        <div class="btn-group btn-group-sm me-2" role="group" aria-label="Staff category filter">
+                            <button type="button" class="btn btn-outline-primary active filter-category" data-filter="all">
+                                <i class="fa fa-users"></i> All Staff
+                            </button>
+                            <button type="button" class="btn btn-outline-success filter-category" data-filter="officers">
+                                <i class="fa fa-star"></i> Officers Only
+                            </button>
+                            <button type="button" class="btn btn-outline-info filter-category" data-filter="ncos">
+                                <i class="fa fa-user"></i> NCOs Only
+                            </button>
+                        </div>
+                        
+                        <div class="btn-group btn-group-sm me-2" role="group" aria-label="Staff status filter">
+                            <button type="button" class="btn btn-outline-secondary filter-status active" data-filter="all">
+                                <i class="fa fa-list"></i> All
+                            </button>
+                            <button type="button" class="btn btn-outline-success filter-status" data-filter="active">
+                                <i class="fa fa-check-circle"></i> Active
+                            </button>
+                            <button type="button" class="btn btn-outline-warning filter-status" data-filter="retired">
+                                <i class="fa fa-user-clock"></i> Retired
+                            </button>
+                        </div>
+                        
+                        <div class="input-group input-group-sm flex-grow-1" style="max-width: 300px;">
+                            <span class="input-group-text"><i class="fa fa-search"></i></span>
+                            <input type="text" class="form-control" id="quickSearch" placeholder="Quick search by name or service number...">
+                        </div>
+                    </div>
                     
                     <!-- Staff Selection Controls -->
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <h6 class="mb-0">
-                            <i class="fa fa-users"></i> 
-                            Select Staff Members for Medal Assignment
+                            <i class="fa fa-list"></i> 
+                            Staff List <small class="text-muted">(Ordered by Seniority)</small>
                         </h6>
                         <div>
                             <button type="button" class="btn btn-sm btn-success" id="selectAllBtn">
@@ -371,34 +519,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <!-- Will be populated by JavaScript -->
                     </select>
                 </div>
-                <div class="mb-3">
-                    <label for="remark" class="form-label" aria-label="Citation or Remarks">Citation / Remarks</label>
-                    <input type="text" class="form-control" id="remark" name="remark" value="<?=htmlspecialchars($_POST['remark'] ?? '')?>">
-                </div>
-                <div class="mb-3">
-                    <label for="gazette_reference" class="form-label">Gazette Reference</label>
-                    <input type="text" class="form-control" id="gazette_reference" name="gazette_reference" value="<?=htmlspecialchars($_POST['gazette_reference'] ?? '')?>">
-                </div>
-                <div class="mb-3">
-                    <label for="bar_number" class="form-label">Bar Number</label>
-                    <input type="text" class="form-control" id="bar_number" name="bar_number" value="<?=htmlspecialchars($_POST['bar_number'] ?? '')?>">
-                </div>
                 <div class="text-end">
-                    <button type="button" id="showConfirmModal" class="btn btn-primary px-5 py-2" aria-label="Review and confirm medal assignment" disabled><i class="fa fa-medal"></i> Assign Medal</button>
+                    <!-- Split Button with Keyboard Shortcut -->
+                    <div class="btn-group" role="group" aria-label="Medal assignment actions">
+                        <button type="button" id="showConfirmModal" class="btn btn-primary px-4 py-2" aria-label="Review and confirm medal assignment" disabled>
+                            <i class="fa fa-medal"></i> Assign Medal <small class="opacity-75">(Ctrl+Enter)</small>
+                        </button>
+                        <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split px-3 py-2" data-bs-toggle="dropdown" aria-expanded="false" disabled id="splitDropdown">
+                            <span class="visually-hidden">Toggle Dropdown</span>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow">
+                            <li><a class="dropdown-item" href="#" id="assignAndNew"><i class="fa fa-plus-circle me-2"></i>Assign &amp; Create New</a></li>
+                            <li><a class="dropdown-item" href="#" id="assignAndView"><i class="fa fa-user me-2"></i>Assign &amp; View Profile</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="#" id="resetForm"><i class="fa fa-redo me-2"></i>Reset Form</a></li>
+                        </ul>
+                    </div>
                 </div>
+                
+                <!-- Enhanced Confirmation Modal -->
                 <div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalLabel" aria-hidden="true">
                     <div class="modal-dialog modal-lg">
                         <div class="modal-content">
-                            <div class="modal-header">
-                                <h5 class="modal-title" id="confirmModalLabel">Confirm Medal Assignment</h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            <div class="modal-header bg-primary text-white">
+                                <h5 class="modal-title" id="confirmModalLabel">
+                                    <i class="fa fa-check-circle me-2"></i>Confirm Medal Assignment
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                             </div>
                             <div class="modal-body">
+                                <!-- Assignment Statistics -->
+                                <div class="card mb-3 border-0 bg-light">
+                                    <div class="card-body">
+                                        <div class="row text-center">
+                                            <div class="col-md-4">
+                                                <div class="h2 text-primary mb-0" id="totalStaffCount">0</div>
+                                                <small class="text-muted">Staff Members</small>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <div class="h2 text-success mb-0">1</div>
+                                                <small class="text-muted">Medal Selected</small>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <div class="h2 text-info mb-0" id="totalAssignments">0</div>
+                                                <small class="text-muted">Total Assignments</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Assignment Details -->
                                 <div id="confirmSummary"></div>
                             </div>
                             <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                <button type="button" id="confirmSubmitBtn" class="btn btn-primary">Confirm</button>
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                    <i class="fa fa-times me-2"></i>Cancel
+                                </button>
+                                <button type="button" id="confirmSubmitBtn" class="btn btn-primary px-4">
+                                    <i class="fa fa-check me-2"></i>Confirm Assignment</button>
                             </div>
                         </div>
                     </div>
@@ -428,9 +606,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <!-- Recent Medal Assignments Table -->
 <div class="container-fluid p-4">
     <div class="card shadow-sm mt-4">
-        <div class="card-header bg-success text-white">
+        <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
             <h5 class="mb-0"><i class="fa fa-history"></i> Recent Medal Assignments</h5>
+            <button class="btn btn-sm btn-light" type="button" data-bs-toggle="collapse" data-bs-target="#recentMedalsSection" aria-expanded="true" aria-controls="recentMedalsSection">
+                <i class="fa fa-chevron-up" id="collapseIcon"></i>
+            </button>
         </div>
+        <div class="collapse show" id="recentMedalsSection">
         <div class="card-body">
             <?php
             // Fetch recent medal assignments
@@ -584,6 +766,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             <?php endif; ?>
         </div>
+        </div><!-- End collapse -->
     </div>
 </div>
 
@@ -593,8 +776,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <style>
 .stepper { list-style: none; padding: 0; display: flex; gap: 10px; }
-.step { padding: 4px 10px; border-radius: 12px; background: #eee; color: #333; }
-.step.active { background: #17a2b8; color: #fff; font-weight: bold; }
+.step { padding: 8px 16px; border-radius: 12px; background: #e9ecef; color: #6c757d; font-size: 0.9rem; transition: all 0.3s ease; }
+.step.active { background: #28a745; color: #fff; font-weight: bold; box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3); }
+.step.completed { background: #17a2b8; color: #fff; }
+.step i { margin-right: 5px; }
 
 /* DataTables Custom Styling */
 #staffSelectionTable {
@@ -751,6 +936,128 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     color: #fff;
     margin-right: 6px;
     font-weight: bold;
+}
+
+/* Mobile Responsive Enhancements */
+@media (max-width: 576px) {
+    /* Stack two-column layout on mobile */
+    .row.g-4 > .col-md-8,
+    .row.g-4 > .col-md-4 {
+        width: 100%;
+        margin-bottom: 1rem;
+    }
+    
+    /* Reduce padding on mobile */
+    .container-fluid {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+    }
+    
+    .card {
+        margin-bottom: 1rem;
+    }
+    
+    .card-body {
+        padding: 1rem;
+    }
+    
+    /* Adjust progress bar on mobile */
+    .progress {
+        height: 1.5rem;
+    }
+    
+    .progress-bar {
+        font-size: 0.75rem;
+    }
+    
+    /* Stepper adjustments */
+    .stepper {
+        flex-wrap: wrap;
+        gap: 5px;
+    }
+    
+    .step {
+        padding: 3px 8px;
+        font-size: 0.8rem;
+    }
+    
+    /* Filter buttons stack on mobile */
+    .btn-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+    }
+    
+    .btn-group .btn {
+        font-size: 0.8rem;
+        padding: 0.375rem 0.5rem;
+    }
+    
+    /* Split button adjustments */
+    .dropdown-menu {
+        min-width: 200px;
+    }
+    
+    /* Modal adjustments */
+    .modal-dialog {
+        margin: 0.5rem;
+    }
+    
+    /* Staff profile cards - full width on mobile */
+    .staff-profile-card .col-md-6,
+    .staff-profile-card .col-lg-4 {
+        width: 100%;
+    }
+    
+    /* Quick search input */
+    #quickSearch {
+        width: 100%;
+        margin-top: 0.5rem;
+    }
+    
+    /* Alert messages */
+    .alert {
+        font-size: 0.9rem;
+        padding: 0.75rem;
+    }
+    
+    .alert .btn-close {
+        padding: 0.5rem;
+    }
+}
+
+@media (min-width: 577px) and (max-width: 768px) {
+    /* Tablet adjustments */
+    .row.g-4 > .col-md-8 {
+        width: 60%;
+    }
+    
+    .row.g-4 > .col-md-4 {
+        width: 40%;
+    }
+}
+
+/* Print styles */
+@media print {
+    .btn,
+    .btn-group,
+    .dropdown,
+    .card-header button,
+    .staff-profile-card .btn-remove,
+    #quickSearch,
+    .filter-category,
+    .filter-status {
+        display: none !important;
+    }
+    
+    .card {
+        break-inside: avoid;
+    }
+    
+    #recentMedalsSection {
+        display: block !important;
+    }
+}
 </style>
 <!-- Load jQuery first from allowed CDN -->
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
@@ -790,12 +1097,22 @@ waitForJQuery(function() {
     });
 });
 
-function initializeStaffTable() {
+function initializeStaffTable(excludeMedalId = null) {
+    // Show loading state
+    $('#staffTableContainer').addClass('loading');
+    
     // Load all staff data with proper seniority information
+    const ajaxData = { q: 'all', limit: 1000 };
+    
+    // Exclude staff who already have the selected medal
+    if (excludeMedalId) {
+        ajaxData.exclude_medal_id = excludeMedalId;
+    }
+    
     $.ajax({
         url: 'search_staff.php',
         method: 'GET',
-        data: { q: 'all', limit: 1000 },
+        data: ajaxData,
         dataType: 'json',
         success: function(response) {
             console.log('Staff data loaded:', response);
@@ -852,6 +1169,7 @@ function initDataTable() {
             rank_name: staff.rank_name || 'N/A',
             rank_level: staff.rank_level || 999, // High number for unknown ranks
             rank_abbr: staff.rank_abbr || '',
+            rank_category: staff.rank_category || '',
             unit_name: staff.unit_name || 'N/A',
             full_name: formatSentenceCase((staff.first_name || '') + ' ' + (staff.last_name || '')).replace(/^\s+/, '').replace(/\s+$/, '') || 'N/A',
             surname: formatSentenceCase(staff.last_name || ''),
@@ -860,45 +1178,33 @@ function initDataTable() {
             status: staff.status || 'Active',
             attestDate: staff.attestDate || '',
             subWef: staff.subWef || '',
-            tempWef: staff.tempWef || '',
-            // Add sorting keys for military seniority (same logic as reports_seniority.php)
-            sort_key: [
-                staff.rank_level || 999,
-                staff.subWef || '9999-12-31',
-                staff.tempWef || '9999-12-31', 
-                staff.attestDate || '9999-12-31',
-                staff.service_number || 'ZZZ999'
-            ].join('|')
+            tempWef: staff.tempWef || ''
         };
     });
     
-    // Sort the data using military seniority logic
-    tableData.sort((a, b) => {
-        // Primary sort: Rank level (lower numbers = higher ranks)
-        if (a.rank_level !== b.rank_level) {
-            return a.rank_level - b.rank_level;
-        }
-        
-        // Secondary sort: Sub rank effective date (earlier = senior)
-        if (a.subWef !== b.subWef) {
-            return (a.subWef || '9999-12-31').localeCompare(b.subWef || '9999-12-31');
-        }
-        
-        // Tertiary sort: Temp rank effective date (earlier = senior)
-        if (a.tempWef !== b.tempWef) {
-            return (a.tempWef || '9999-12-31').localeCompare(b.tempWef || '9999-12-31');
-        }
-        
-        // Quaternary sort: Attestation date (earlier = senior)
-        if (a.attestDate !== b.attestDate) {
-            return (a.attestDate || '9999-12-31').localeCompare(b.attestDate || '9999-12-31');
-        }
-        
-        // Final sort: Service number
-        return (a.service_number || 'ZZZ999').localeCompare(b.service_number || 'ZZZ999');
-    });
+    // Data is already sorted by seniority from search_staff.php ORDER BY clause:
+    // ORDER BY r.level ASC, s.subWef ASC, s.tempWef ASC, s.attestDate ASC, s.service_number ASC
+    // No need to re-sort here - preserve the database order
     
-    console.log('Table data sample (sorted by seniority):', tableData.slice(0, 3));
+    console.log('Table data sample (database seniority order):', tableData.slice(0, 3));
+    console.log('Checking rank_category field:', tableData.slice(0, 5).map(s => ({ 
+        service: s.service_number, 
+        rank: s.rank_abbr, 
+        category: s.rank_category,
+        level: s.rank_level 
+    })));
+    console.log('Total staff by category:', {
+        officers: tableData.filter(s => s.rank_category === 'Officer').length,
+        ncos: tableData.filter(s => s.rank_category === 'NCO').length,
+        ce: tableData.filter(s => s.rank_category === 'CE').length,
+        undefined: tableData.filter(s => !s.rank_category).length
+    });
+    console.log('Sample NCOs:', tableData.filter(s => s.rank_category === 'NCO').slice(0, 5).map(s => ({
+        service: s.service_number,
+        rank: s.rank_abbr,
+        category: s.rank_category,
+        level: s.rank_level
+    })));
     
     $('#totalStaffCount').text(tableData.length);
     
@@ -910,7 +1216,8 @@ function initDataTable() {
         staffTable = $('#staffSelectionTable').DataTable({
             data: tableData,
             pageLength: 25,
-            order: [], // Don't apply additional ordering, data is already sorted by seniority
+            order: [], // Don't apply additional ordering - data is already sorted by database seniority order
+            ordering: false, // Disable column sorting to preserve database seniority order
             responsive: true,
             columns: [
                 {
@@ -1224,7 +1531,287 @@ function calculateAge(dob) {
 function enableAssignButton() {
     let allFilled = $('#medal_id').val() && $('#award_date').val() && selectedStaff.length > 0;
     $('#showConfirmModal').prop('disabled', !allFilled);
+    $('#splitDropdown').prop('disabled', !allFilled);
+    
+    // Update progress bar
+    updateProgressBar();
 }
+
+// Progress Bar Update Function
+function updateProgressBar() {
+    let progress = 0;
+    let currentStep = 0;
+    
+    // Step 1: Medal selected (25%)
+    if ($('#medal_id').val()) {
+        progress += 25;
+        currentStep = 1;
+        $('#step1').addClass('completed').removeClass('active');
+    } else {
+        $('#step1').addClass('active').removeClass('completed');
+        $('#step2, #step3, #step4').removeClass('active completed');
+    }
+    
+    // Step 2: Staff selected (25%)
+    if (selectedStaff.length > 0 && $('#medal_id').val()) {
+        progress += 25;
+        currentStep = 2;
+        $('#step2').addClass('completed').removeClass('active');
+    } else if ($('#medal_id').val()) {
+        $('#step2').addClass('active').removeClass('completed');
+        $('#step3, #step4').removeClass('active completed');
+    }
+    
+    // Step 3: Award date filled (25%)
+    if ($('#award_date').val() && selectedStaff.length > 0 && $('#medal_id').val()) {
+        progress += 25;
+        currentStep = 3;
+        $('#step3').addClass('completed').removeClass('active');
+    } else if (selectedStaff.length > 0 && $('#medal_id').val()) {
+        $('#step3').addClass('active').removeClass('completed');
+        $('#step4').removeClass('active completed');
+    }
+    
+    // Step 4: Ready to confirm (25%)
+    if ($('#medal_id').val() && $('#award_date').val() && selectedStaff.length > 0) {
+        progress += 25;
+        currentStep = 4;
+        $('#step4').addClass('active').removeClass('completed');
+    }
+    
+    // Update progress bar
+    $('#progressBar').css('width', progress + '%').attr('aria-valuenow', progress);
+    $('#progressPercentage').text(progress + '%');
+}
+
+// Medal Preview Card
+$('#medal_id').on('change', function() {
+    const selectedOption = $(this).find('option:selected');
+    const medalName = selectedOption.text();
+    const imagePath = selectedOption.data('image') || '';
+    const description = selectedOption.data('description') || 'No description available';
+    const medalId = $(this).val();
+    
+    if (medalId) {
+        $('#medalPreviewCard').show();
+        $('#previewMedalName').text(medalName);
+        $('#previewMedalDescription').text(description);
+        
+        // Reload staff table excluding those who already have this medal
+        console.log('Medal selected, reloading staff excluding those with medal ID:', medalId);
+        initializeStaffTable(medalId);
+        
+        // Update image if available
+        if (imagePath) {
+            $('#previewImage').attr('src', imagePath).show();
+        } else {
+            $('#previewImage').hide();
+        }
+    } else {
+        $('#medalPreviewCard').hide();
+        // Reload all staff when medal is cleared
+        console.log('Medal cleared, reloading all staff');
+        initializeStaffTable(null);
+    }
+    
+    enableAssignButton();
+});
+
+// Quick Filter Buttons
+$('.filter-category').on('click', function() {
+    $('.filter-category').removeClass('active');
+    $(this).addClass('active');
+    
+    const filter = $(this).data('filter');
+    
+    if (staffTable) {
+        // Use custom filter function for category filtering
+        $.fn.dataTable.ext.search.pop(); // Remove previous custom filter if exists
+        
+        if (filter === 'all') {
+            console.log('Showing all staff');
+            staffTable.draw();
+        } else {
+            let matchCount = 0;
+            let totalChecked = 0;
+            
+            $.fn.dataTable.ext.search.push(
+                function(settings, data, dataIndex) {
+                    const rowData = staffTable.row(dataIndex).data();
+                    if (!rowData) return true;
+                    
+                    totalChecked++;
+                    const rankCategory = rowData.rank_category || '';
+                    const rankLevel = rowData.rank_level || 999;
+                    const rankName = (rowData.rank_name || '').toLowerCase();
+                    const rankAbbr = (rowData.rank_abbr || '').toLowerCase();
+                    
+                    let matches = false;
+                    
+                    if (filter === 'officers') {
+                        // Primary: Check database category field
+                        if (rankCategory === 'Officer') {
+                            matches = true;
+                        }
+                        // Secondary: Officers have rank_level 1-14
+                        else if (rankLevel >= 1 && rankLevel <= 14) {
+                            matches = true;
+                        }
+                        // Fallback: Check for officer titles
+                        else if (rankName.match(/officer|captain|lieutenant|major|colonel|general|brigadier|commander|cadet/i) ||
+                               rankAbbr.match(/^(2lt|lt|capt|maj|lt col|col|brig|maj gen|lt gen|gen|cmdr|cdr|o\/cdt)$/i)) {
+                            matches = true;
+                        }
+                    } else if (filter === 'ncos') {
+                        // Primary: Check database category field
+                        if (rankCategory === 'NCO') {
+                            matches = true;
+                        }
+                        // Secondary: NCOs have rank_level 15-27
+                        else if (rankLevel >= 15 && rankLevel <= 27) {
+                            matches = true;
+                        }
+                        // Fallback: Check for NCO titles
+                        else if (rankName.match(/private|lance|corporal|sergeant|warrant|recruit/i) ||
+                               rankAbbr.match(/^(pvt|pte|rct|lcpl|l\/cpl|l cpl|cpl|sgt|ssgt|s sgt|wo1|wo2|woi|woii)$/i)) {
+                            matches = true;
+                        }
+                    }
+                    
+                    if (matches) matchCount++;
+                    
+                    // Debug sample rows
+                    if (dataIndex < 5 || (filter === 'ncos' && matches && matchCount <= 5)) {
+                        console.log('Filter check:', {
+                            index: dataIndex,
+                            service: rowData.service_number,
+                            rank: rankAbbr,
+                            category: rankCategory,
+                            level: rankLevel,
+                            filter: filter,
+                            matches: matches
+                        });
+                    }
+                    
+                    return matches;
+                }
+            );
+            
+            staffTable.draw();
+            
+            // Log summary after a short delay to let DataTables finish drawing
+            setTimeout(function() {
+                console.log(`Filter "${filter}" applied: ${matchCount} of ${totalChecked} staff matched`);
+                console.log('Visible rows after filter:', staffTable.rows({search: 'applied'}).count());
+            }, 100);
+        }
+    }
+});
+
+$('.filter-status').on('click', function() {
+    $('.filter-status').removeClass('active');
+    $(this).addClass('active');
+    
+    const status = $(this).data('filter');
+    
+    if (staffTable) {
+        if (status === 'all') {
+            staffTable.column(6).search('').draw(); // Clear status filter
+        } else if (status === 'active') {
+            staffTable.column(6).search('^Active$', true, false).draw(); // Status column
+        } else if (status === 'retired') {
+            staffTable.column(6).search('^Retired$', true, false).draw(); // Status column
+        }
+    }
+});
+
+$('#quickSearch').on('keyup', function() {
+    const searchValue = $(this).val();
+    if (staffTable) {
+        staffTable.search(searchValue).draw();
+    }
+});
+
+// Split Button Actions
+$('#assignAndNew').on('click', function(e) {
+    e.preventDefault();
+    // Set flag to reset form after assignment
+    sessionStorage.setItem('assignAction', 'new');
+    $('#showConfirmModal').click();
+});
+
+$('#assignAndView').on('click', function(e) {
+    e.preventDefault();
+    // Set flag to view profile after assignment
+    sessionStorage.setItem('assignAction', 'view');
+    $('#showConfirmModal').click();
+});
+
+$('#resetForm').on('click', function(e) {
+    e.preventDefault();
+    if (confirm('Are you sure you want to reset the form? All current selections will be lost.')) {
+        location.reload();
+    }
+});
+
+// Keyboard Shortcut (Ctrl+Enter)
+$(document).on('keydown', function(e) {
+    if (e.ctrlKey && e.key === 'Enter') {
+        e.preventDefault();
+        if (!$('#showConfirmModal').prop('disabled')) {
+            $('#showConfirmModal').click();
+        }
+    }
+});
+
+// Collapse Icon Toggle
+$('#recentMedalsSection').on('show.bs.collapse', function() {
+    $('#collapseIcon').removeClass('fa-chevron-down').addClass('fa-chevron-up');
+});
+
+$('#recentMedalsSection').on('hide.bs.collapse', function() {
+    $('#collapseIcon').removeClass('fa-chevron-up').addClass('fa-chevron-down');
+});
+
+// Loading Overlay Functions
+function showLoadingOverlay(message = 'Processing...') {
+    if ($('#loadingOverlay').length === 0) {
+        $('body').append(`
+            <div id="loadingOverlay" style="
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 9999;
+            ">
+                <div style="
+                    background: white;
+                    padding: 30px;
+                    border-radius: 10px;
+                    text-align: center;
+                    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                ">
+                    <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h5 class="mb-0">${message}</h5>
+                </div>
+            </div>
+        `);
+    }
+}
+
+function hideLoadingOverlay() {
+    $('#loadingOverlay').fadeOut(300, function() {
+        $(this).remove();
+    });
+}
+
 $('#medal_id, #award_date').on('input', enableAssignButton);
 $('#showConfirmModal').on('click', function() {
     if (selectedStaff.length >= <?=json_encode($BULK_CONFIRMATION_THRESHOLD)?>) {
@@ -1244,19 +1831,48 @@ $('#showConfirmModal').on('click', function() {
     modal.show();
 });
 function renderConfirmSummary(selected) {
+    // Update statistics
+    $('#totalStaffCount').text(selected.length);
+    $('#totalAssignments').text(selected.length);
+    
+    // Render staff list
     let summary = '<ul class="list-group">';
     selected.forEach(function(staff){
-        summary += `<li class="list-group-item">${staff.service_number} - ${staff.rank_name ? staff.rank_name + ' ' : ''}${staff.first_name} ${staff.last_name} <br><strong>Medal:</strong> ${$('#medal_id option:selected').text()}</li>`;
+        summary += `<li class="list-group-item d-flex justify-content-between align-items-start">
+            <div>
+                <div class="fw-bold">${staff.service_number} - ${staff.rank_name ? staff.rank_name + ' ' : ''}${staff.first_name} ${staff.last_name}</div>
+                <small class="text-muted">${staff.unit_name || 'N/A'}</small>
+            </div>
+            <span class="badge bg-primary rounded-pill">${$('#medal_id option:selected').text()}</span>
+        </li>`;
     });
     summary += '</ul>';
     $('#confirmSummary').html(summary);
 }
 $('#confirmSubmitBtn').on('click', function() {
+    showLoadingOverlay('Assigning medals to selected staff...');
     $('#assignMedalForm').submit();
 });
 $('#assignMedalForm').on('submit', function() {
-    $('#assignMedalBtn').prop('disabled', true).text('Assigning...');
+    $('#showConfirmModal').prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Assigning...');
 });
+
+// Handle post-assignment actions
+$(document).ready(function() {
+    const assignAction = sessionStorage.getItem('assignAction');
+    if (assignAction) {
+        sessionStorage.removeItem('assignAction');
+        
+        if (assignAction === 'new') {
+            // Form is already cleared, just show success message
+            console.log('Ready for new assignment');
+        } else if (assignAction === 'view' && selectedStaff.length === 1) {
+            // Redirect to profile view (you'll need to implement this URL)
+            // window.location.href = 'view_staff.php?id=' + selectedStaff[0].staff_id;
+        }
+    }
+});
+
 $(function() {
     enableAssignButton();
 });

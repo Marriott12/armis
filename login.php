@@ -77,16 +77,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Include RBAC functions for centralized role management
             require_once __DIR__ . '/shared/rbac.php';
             
+            // Check for return URL parameter from POST or GET
+            $returnUrl = $_POST['return_url'] ?? $_GET['return_url'] ?? null;
+            
+            // Validate return URL to prevent open redirects
+            if ($returnUrl && !isValidReturnUrl($returnUrl)) {
+                $returnUrl = null; // Reset if invalid
+            }
+            
             // Check for saved state from session timeout
-            $savedState = null;
             if (isset($_GET['reason']) && $_GET['reason'] === 'timeout') {
                 // User was redirected here due to timeout
                 // State should be in sessionStorage (handled by JavaScript)
                 $_SESSION['restore_state'] = true;
             }
-            
-            // Check for return URL parameter
-            $returnUrl = $_GET['return_url'] ?? null;
             
             // For admin role, always go directly to admin dashboard
             if ($user['role'] === 'admin') {
@@ -183,13 +187,24 @@ $pageTitle = "Login";
                 </div>
                 
                 <div class="login-form-container">
+                    <?php if (isset($_SESSION['timeout_message'])): ?>
+                        <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                            <i class="fas fa-clock"></i> <?php echo htmlspecialchars($_SESSION['timeout_message']); ?>
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                        <?php unset($_SESSION['timeout_message']); ?>
+                    <?php endif; ?>
+                    
                     <?php if (isset($error)): ?>
                         <div class="alert alert-danger" role="alert">
                             <i class="fas fa-exclamation-triangle"></i> <?php echo htmlspecialchars($error); ?>
                         </div>
                     <?php endif; ?>
                     
-                    <form method="POST" action="/Armis2/login.php" class="needs-validation" novalidate>
+                    <form method="POST" action="/Armis2/login.php<?php echo isset($_GET['return_url']) ? '?return_url=' . urlencode($_GET['return_url']) : ''; ?>" class="needs-validation" novalidate>
+                        <?php if (isset($_GET['return_url'])): ?>
+                            <input type="hidden" name="return_url" value="<?php echo htmlspecialchars($_GET['return_url']); ?>">
+                        <?php endif; ?>
                         <div class="mb-3">
                             <label for="username" class="form-label">
                                 <i class="fas fa-user"></i> Username

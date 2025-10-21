@@ -19,6 +19,8 @@ try {
     $educationRecords = $profileManager->getEducationRecords();
     $trainingRecords = $profileManager->getTrainingRecords();
     $serviceRecord = $profileManager->getServiceHistory();
+    $promotions = $profileManager->getPromotionHistory();
+    $medals = $profileManager->getMedals();
     $awards = $profileManager->getAwards();
     $deployments = $profileManager->getDeployments();
     $skills = $profileManager->getSkills();
@@ -40,14 +42,9 @@ $moduleName = "User Profile";
 $moduleIcon = "user";
 $currentPage = "cv_download";
 
-$sidebarLinks = [
-    ['title' => 'My Profile', 'url' => '/Armis2/users/index.php', 'icon' => 'user', 'page' => 'profile'],
-    ['title' => 'Personal Info', 'url' => '/Armis2/users/personal.php', 'icon' => 'id-card', 'page' => 'personal'],
-    ['title' => 'Service Record', 'url' => '/Armis2/users/service.php', 'icon' => 'medal', 'page' => 'service'],
-    ['title' => 'Training History', 'url' => '/Armis2/users/training.php', 'icon' => 'graduation-cap', 'page' => 'training'],
-    ['title' => 'Download CV', 'url' => '/Armis2/users/cv_download.php', 'icon' => 'download', 'page' => 'cv_download'],
-    ['title' => 'Account Settings', 'url' => '/Armis2/users/settings.php', 'icon' => 'cogs', 'page' => 'settings']
-];
+// Load shared navigation
+require_once dirname(__DIR__) . '/shared/user_navigation.php';
+$sidebarLinks = $userNavigationItems;
 
 // Handle PDF download
 if (isset($_GET['download']) && $_GET['download'] === 'pdf') {
@@ -276,11 +273,11 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         <tbody>
                                             <?php foreach ($educationRecords as $education): ?>
                                             <tr>
-                                                <td><?= htmlspecialchars($education->institution_name ?? 'N/A') ?></td>
-                                                <td><?= htmlspecialchars($education->qualification_type ?? 'N/A') ?></td>
-                                                <td><?= htmlspecialchars($education->field_of_study ?? 'N/A') ?></td>
-                                                <td><?= $education->completion_date ? date('Y', strtotime($education->completion_date)) : 'N/A' ?></td>
-                                                <td><?= htmlspecialchars($education->grade_result ?? 'N/A') ?></td>
+                                                <td><?= htmlspecialchars($education['institution'] ?? 'N/A') ?></td>
+                                                <td><?= htmlspecialchars($education['qualification'] ?? 'N/A') ?></td>
+                                                <td><?= htmlspecialchars($education['field_of_study'] ?? 'N/A') ?></td>
+                                                <td><?= !empty($education['year_completed']) ? htmlspecialchars($education['year_completed']) : 'N/A' ?></td>
+                                                <td><?= htmlspecialchars($education['grade_obtained'] ?? 'N/A') ?></td>
                                             </tr>
                                             <?php endforeach; ?>
                                         </tbody>
@@ -345,6 +342,85 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                 <td><?= $record->record_date ? date('M j, Y', strtotime($record->record_date)) : 'N/A' ?></td>
                                                 <td><?= htmlspecialchars($record->record_type ?? 'N/A') ?></td>
                                                 <td><?= htmlspecialchars($record->description ?? 'N/A') ?></td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <?php endif; ?>
+
+                            <!-- Promotion History -->
+                            <?php if (!empty($promotions)): ?>
+                            <div class="mb-4">
+                                <h4 class="text-primary border-bottom pb-2">PROMOTION HISTORY</h4>
+                                <div class="table-responsive">
+                                    <table class="table table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>Effective Date</th>
+                                                <th>Type</th>
+                                                <th>From Rank</th>
+                                                <th>To Rank</th>
+                                                <th>Authority</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($promotions as $promotion): ?>
+                                            <tr>
+                                                <td>
+                                                    <?= !empty($promotion->date_from) ? date('M j, Y', strtotime($promotion->date_from)) : 'N/A' ?>
+                                                </td>
+                                                <td>
+                                                    <?= ucfirst($promotion->type ?? 'Promotion') ?>
+                                                </td>
+                                                <td>
+                                                    <?= htmlspecialchars($promotion->current_rank_name ?? 'N/A') ?>
+                                                    <?php if (!empty($promotion->current_rank_level)): ?>
+                                                        (Level <?= htmlspecialchars($promotion->current_rank_level) ?>)
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td>
+                                                    <?= htmlspecialchars($promotion->new_rank_name ?? 'N/A') ?>
+                                                    <?php if (!empty($promotion->new_rank_level)): ?>
+                                                        (Level <?= htmlspecialchars($promotion->new_rank_level) ?>)
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td><?= htmlspecialchars($promotion->authority ?? 'N/A') ?></td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <?php endif; ?>
+
+                            <!-- Medals and Honors -->
+                            <?php if (!empty($medals)): ?>
+                            <div class="mb-4">
+                                <h4 class="text-primary border-bottom pb-2">MEDALS AND HONORS</h4>
+                                <div class="table-responsive">
+                                    <table class="table table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>Medal Name</th>
+                                                <th>Award Date</th>
+                                                <th>Citation</th>
+                                                <th>Gazette Reference</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($medals as $medal): ?>
+                                            <tr>
+                                                <td>
+                                                    <?= htmlspecialchars($medal->medal_name ?? 'N/A') ?>
+                                                    <?php if (!empty($medal->bar_number) && $medal->bar_number > 0): ?>
+                                                        <br><small class="text-muted">Bar: <?= htmlspecialchars($medal->bar_number) ?></small>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td><?= !empty($medal->award_date) ? date('M j, Y', strtotime($medal->award_date)) : 'N/A' ?></td>
+                                                <td><?= htmlspecialchars($medal->citation ?? 'N/A') ?></td>
+                                                <td><?= htmlspecialchars($medal->gazette_reference ?? 'N/A') ?></td>
                                             </tr>
                                             <?php endforeach; ?>
                                         </tbody>
@@ -430,11 +506,11 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         <tbody>
                                             <?php foreach ($deployments as $deployment): ?>
                                             <tr>
-                                                <td><?= htmlspecialchars($deployment->operation_name ?? 'N/A') ?></td>
+                                                <td><?= htmlspecialchars($deployment->deployment_name ?? 'N/A') ?></td>
                                                 <td><?= htmlspecialchars($deployment->location ?? 'N/A') ?></td>
                                                 <td><?= $deployment->start_date ? date('M j, Y', strtotime($deployment->start_date)) : 'N/A' ?></td>
                                                 <td><?= $deployment->end_date ? date('M j, Y', strtotime($deployment->end_date)) : 'Ongoing' ?></td>
-                                                <td><?= htmlspecialchars($deployment->role ?? 'N/A') ?></td>
+                                                <td><?= htmlspecialchars($deployment->role_during_deployment ?? 'N/A') ?></td>
                                             </tr>
                                             <?php endforeach; ?>
                                         </tbody>
@@ -501,90 +577,6 @@ include dirname(__DIR__) . '/shared/sidebar.php';
         border: 1px solid #000;
         color: #000 !important;
         background: #fff !important;
-    }
-}
-</style>
-                                            <tr>
-                                                <th>Rank/Position</th>
-                                                <th>Date of Promotion</th>
-                                                <th>Years of Service</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <?php foreach ($serviceRecord as $record): ?>
-                                                <tr>
-                                                    <td><?php echo htmlspecialchars($record['promotion']); ?></td>
-                                                    <td><?php echo htmlspecialchars(date('F j, Y', strtotime($record['date']))); ?></td>
-                                                    <td><?php echo number_format((time() - strtotime($record['date'])) / (365.25 * 24 * 3600), 1); ?> years</td>
-                                                </tr>
-                                            <?php endforeach; ?>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-
-                            <!-- Training History -->
-                            <div class="mb-4">
-                                <h4 class="text-primary border-bottom pb-2">TRAINING & CERTIFICATIONS</h4>
-                                <div class="table-responsive">
-                                    <table class="table table-striped">
-                                        <thead>
-                                            <tr>
-                                                <th>Course/Training</th>
-                                                <th>Completion Date</th>
-                                                <th>Status</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <?php foreach ($trainingHistory as $training): ?>
-                                                <tr>
-                                                    <td><?php echo htmlspecialchars($training['course']); ?></td>
-                                                    <td><?php echo htmlspecialchars(date('F j, Y', strtotime($training['date']))); ?></td>
-                                                    <td><span class="badge bg-success"><?php echo htmlspecialchars($training['status']); ?></span></td>
-                                                </tr>
-                                            <?php endforeach; ?>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-
-                            <!-- Official Footer -->
-                            <div class="text-center mt-5 pt-3 border-top">
-                                <p class="text-muted small">
-                                    This document was generated by the Army Resource Management Information System (ARMIS)<br>
-                                    Document ID: CV-<?php echo $userData['svcNo']; ?>-<?php echo date('Ymd-His'); ?><br>
-                                    Generated on: <?php echo date('F j, Y \a\t g:i A'); ?>
-                                </p>
-                                <p class="text-muted small">
-                                    <strong>OFFICIAL USE ONLY</strong> - This document contains sensitive military information
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<style>
-@media print {
-    .sidebar, .navbar, .btn, .card-header .btn {
-        display: none !important;
-    }
-    
-    .content-wrapper {
-        margin-left: 0 !important;
-        padding: 0 !important;
-    }
-    
-    .card {
-        border: none !important;
-        box-shadow: none !important;
-    }
-    
-    body {
-        background: white !important;
     }
 }
 </style>

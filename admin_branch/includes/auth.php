@@ -16,12 +16,29 @@ $SESSION_TIMEOUT = 20 * 60; // 20 minutes
 if (isset($_SESSION['LAST_ACTIVITY'])) {
     if (time() - $_SESSION['LAST_ACTIVITY'] > $SESSION_TIMEOUT) {
         // Session expired due to inactivity
+        
+        // Save current URL and page state for restoration after re-login
+        $currentUrl = $_SERVER['REQUEST_URI'] ?? '';
+        $currentPath = parse_url($currentUrl, PHP_URL_PATH);
+        $currentQuery = parse_url($currentUrl, PHP_URL_QUERY);
+        
+        // Store in a temporary variable before destroying session
+        $returnUrl = $currentPath;
+        if ($currentQuery) {
+            $returnUrl .= '?' . $currentQuery;
+        }
+        
+        // Clear session data
         session_unset();
         session_destroy();
-        // Optionally, start a new session to show a message
+        
+        // Start a new session to show timeout message
         session_start();
         $_SESSION['timeout_message'] = 'Your session has expired due to inactivity. Please log in again.';
-        header('Location: /Armis2/login.php');
+        $_SESSION['timeout_return_url'] = $returnUrl;
+        
+        // Redirect to login with timeout reason
+        header('Location: /Armis2/login.php?reason=timeout&return_url=' . urlencode($returnUrl));
         exit();
     }
 }

@@ -30,7 +30,7 @@ function initPromotionPage() {
     } else {
         // Find the current rank's level dynamically
         const currentRankId = document.getElementById('current_rank')?.value;
-        if (currentRankId && window.ranksDataFromServer) {
+        if (currentRankId && window.ranksDataFromServer && Array.isArray(window.ranksDataFromServer)) {
             ranksData = window.ranksDataFromServer;
             for (let i=0; i < ranksData.length; i++) {
                 if (ranksData[i].id == currentRankId) {
@@ -41,11 +41,13 @@ function initPromotionPage() {
             }
         }
     }
-    
-    // Set ranksData if available
-    if (window.ranksDataFromServer) {
+    // Set ranksData if available, else fallback to empty array
+    if (window.ranksDataFromServer && Array.isArray(window.ranksDataFromServer)) {
         ranksData = window.ranksDataFromServer;
         console.log("Ranks data initialized:", ranksData.length, "ranks");
+    } else {
+        ranksData = [];
+        console.warn("Ranks data not found or not an array. Using empty array.");
     }
 
     // Auto-submit rank form on change AND auto-load staff
@@ -89,7 +91,7 @@ function initPromotionPage() {
     });
 
     // Initialize Select2 for staff selection (only if element exists and select2 is available)
-    if ($('#selected_staff').length > 0 && typeof $.fn.select2 !== 'undefined') {
+    if ($('#selected_staff') && $('#selected_staff').length > 0 && typeof $.fn.select2 !== 'undefined') {
         initSelect2StaffSelect();
     } else {
         console.log('Select2 not needed - using DataTables for staff selection');
@@ -158,8 +160,11 @@ function initPromotionPage() {
     });
 
     $('#confirmSubmitBtn').on('click', function() {
-        showLoading('Processing promotion/demotion...');
-        $('#promotionForm').submit();
+    // Ensure next_rank is set before submitting for demotion
+    const promotionType = ($('#promotion_type').val() || '').toLowerCase();
+    updateNextRankBasedOnType(promotionType);
+    showLoading('Processing promotion/demotion...');
+    $('#promotionForm').submit();
     });
 
     // Enable tooltips
@@ -330,12 +335,18 @@ function updateNextRankBasedOnType(type) {
     console.log("Next rank calculated:", nextId, nextName);
     $('#next_rank').val(nextId);
     $('#next_rank_display').val(nextName);
-    
-    // Store the calculated rank data globally for access by other functions
     window.nextRankData = {
         id: nextId,
         name: nextName
     };
+    if (!nextId) {
+        // Show user-friendly error and disable confirm button
+        $('#validation-message').html(`<div class="alert alert-danger"><i class="fa fa-exclamation-triangle me-2"></i>No lower rank available for demotion. Demotion is not possible from this rank.</div>`).show();
+        $('#showConfirmModal').prop('disabled', true);
+    } else {
+        $('#validation-message').hide();
+        $('#showConfirmModal').prop('disabled', false);
+    }
 }
 
 /**
@@ -375,16 +386,44 @@ function getNextRankId(type) {
     console.log("Available ranks:", ranksData.map(r => ({ id: r.id, name: r.name, level: r.level, category: r.category })));
     
     // Find rank with target level in the same category
+    // Normalize category strings for matching
+    console.log('---[DEBUG: getNextRankId]---');
+    console.log('Current rank level:', currentRankLevel);
+    console.log('Current rank category:', currentRankCategory);
+    console.log('Target level:', targetLevel);
+    console.log('Normalized current category:', (currentRankCategory || '').trim().toLowerCase());
+    console.log('All ranks:', ranksData.map(r => ({id: r.id, name: r.name, level: r.level, category: r.category})));
+        console.log('---[DETAILED DEBUG: getNextRankId]---');
+        console.log('Type:', type);
+        console.log('Normalized current category:', (currentRankCategory || '').trim().toLowerCase());
+        console.log('RanksData:', JSON.stringify(ranksData, null, 2));
+    let currentCatNorm = (currentRankCategory || '').trim().toLowerCase();
+    // First, try direct match for target level and category
     for (let i=0; i<ranksData.length; i++) {
         const rankLevel = parseInt(ranksData[i].level);
-        const rankCategory = ranksData[i].category;
-        
-        if (rankLevel === targetLevel && rankCategory === currentRankCategory) {
+        const rankCategory = (ranksData[i].category || '').trim().toLowerCase();
+        if (rankLevel === targetLevel && rankCategory === currentCatNorm) {
             console.log("Found matching rank:", ranksData[i].name, "ID:", ranksData[i].id);
             return ranksData[i].id;
         }
     }
-    
+    // If not found, fallback: find the next higher level in same category (lowest level > current)
+    let fallbackId = '';
+    let minLevel = null;
+    for (let i=0; i<ranksData.length; i++) {
+        const rankLevel = parseInt(ranksData[i].level);
+        const rankCategory = (ranksData[i].category || '').trim().toLowerCase();
+        if (rankLevel > currentRankLevel && rankCategory === currentCatNorm) {
+            if (minLevel === null || rankLevel < minLevel) {
+                minLevel = rankLevel;
+                fallbackId = ranksData[i].id;
+            }
+        }
+    }
+    if (fallbackId) {
+        console.log("Fallback: Found next available lower rank:", fallbackId);
+        return fallbackId;
+    }
     console.log("No rank found with level", targetLevel, "in category", currentRankCategory);
     return '';
 }
@@ -418,13 +457,29 @@ function getNextRankName(type) {
     }
     
     // Find rank with target level in the same category
+    let currentCatNorm = (currentRankCategory || '').trim().toLowerCase();
     for (let i = 0; i < ranksData.length; i++) {
         const rankLevel = parseInt(ranksData[i].level);
-        const rankCategory = ranksData[i].category;
-        
-        if (rankLevel === targetLevel && rankCategory === currentRankCategory) {
+        const rankCategory = (ranksData[i].category || '').trim().toLowerCase();
+        if (rankLevel === targetLevel && rankCategory === currentCatNorm) {
             return ranksData[i].name;
         }
+    }
+    // Fallback: find the next higher level in same category
+    let fallbackName = '';
+    let minLevel = null;
+    for (let i = 0; i < ranksData.length; i++) {
+        const rankLevel = parseInt(ranksData[i].level);
+        const rankCategory = (ranksData[i].category || '').trim().toLowerCase();
+        if (rankLevel > currentRankLevel && rankCategory === currentCatNorm) {
+            if (minLevel === null || rankLevel < minLevel) {
+                minLevel = rankLevel;
+                fallbackName = ranksData[i].name;
+            }
+        }
+    }
+    if (fallbackName) {
+        return fallbackName;
     }
     return '';
 }
@@ -438,7 +493,7 @@ function renderStaffPanels(selected) {
     const panel = $('#staffDetailsPanel');
     panel.empty();
     
-    if (!selected || selected.length === 0) {
+    if (!Array.isArray(selected) || selected.length === 0) {
         $('#showConfirmModal').prop('disabled', true);
         return;
     }
@@ -541,7 +596,7 @@ function renderStaffPanels(selected) {
 function validateForm() {
     let allFilled = true;
     // Check for selected staff using DataTable checkboxes instead of Select2
-    let hasStaff = $('.staff-checkbox:checked').length > 0;
+    let hasStaff = ($('.staff-checkbox:checked') && $('.staff-checkbox:checked').length > 0);
     let hasPromotionType = !!$('#promotion_type').val();
     let hasNextRank = !!$('#next_rank').val();
     let hasDate = !!$('input[name="promotion_date"]').val();
@@ -801,7 +856,7 @@ function escapeHtml(html) {
  */
 function initProfileInteractiveElements() {
     // Initialize tabs if present
-    if ($('#staffProfileContent .nav-tabs').length) {
+    if ($('#staffProfileContent .nav-tabs') && $('#staffProfileContent .nav-tabs').length) {
         $('#staffProfileContent .nav-tabs .nav-link').on('click', function(e) {
             e.preventDefault();
             $(this).tab('show');
@@ -812,7 +867,7 @@ function initProfileInteractiveElements() {
     }
     
     // Initialize any charts
-    if (window.Chart && $('#staffProfileContent canvas.chart').length) {
+    if (window.Chart && $('#staffProfileContent canvas.chart') && $('#staffProfileContent canvas.chart').length) {
         // Implementation depends on what charts are in the profile
         $('#staffProfileContent canvas.chart').each(function() {
             // Chart initialization logic here
@@ -826,156 +881,148 @@ function initProfileInteractiveElements() {
  * @param {Array} selected - Array of selected staff service numbers
  */
 function renderConfirmSummary(selected) {
-    const promotionType = $('#promotion_type').val();
-    const nextRankName = $('#next_rank').closest('.col-md-4').find('input.form-control[readonly]').val();
+    let nextRankAbbr = '';
+    let authorityText = window.authorityText || '';
+    const promotionType = ($('#promotion_type').val() || '').toLowerCase();
+    if (window.nextRankAbbr && window.nextRankAbbr !== '') {
+        nextRankAbbr = window.nextRankAbbr;
+    } else if (typeof getNextRankName === 'function') {
+        nextRankAbbr = getNextRankName(promotionType);
+    }
     const promotionDate = $('input[name="promotion_date"]').val();
-    
-    let summary = `
-        <div class="alert alert-info mb-3">
-            <h5><i class="fa fa-info-circle me-2"></i>Promotion Summary</h5>
-            <p><strong>Action:</strong> ${promotionType.toUpperCase()}</p>
-            <p><strong>New Rank:</strong> ${nextRankName}</p>
-            <p><strong>Effective Date:</strong> ${promotionDate}</p>
-            <p><strong>Staff Members:</strong> ${selected.length}</p>
-        </div>
-        <div class="table-responsive">
-            <table class="table table-bordered table-hover">
-                <thead class="table-light">
-                    <tr>
-                        <th>Service #</th>
-                        <th>Name</th>
-                        <th>Authority</th>
-                        <th>Remark</th>
-                    </tr>
-                </thead>
-                <tbody>
-    `;
-    
+    const actionLabel = promotionType === 'demotion' || promotionType === 'reversion' ? 'Reversion/Demotion' : 'Promotion';
+    const icon = promotionType === 'demotion' || promotionType === 'reversion' ? 'fa-arrow-down text-danger' : 'fa-arrow-up text-success';
+
+    let summary = `<div class="alert alert-info mb-3">
+        <h5><i class="fa ${icon} me-2"></i>${actionLabel} Summary</h5>
+        <p><strong>Action:</strong> ${actionLabel}</p>
+        <p><strong>Next Rank Abbreviation:</strong> <span class="badge bg-secondary">${nextRankAbbr || 'N/A'}</span></p>
+        <p><strong>Authority:</strong> <span class="badge bg-info">${authorityText || 'N/A'}</span></p>
+        <p><strong>Effective Date:</strong> ${promotionDate}</p>
+        <p><strong>Staff Members:</strong> ${selected.length}</p>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-bordered table-hover">
+            <thead class="table-light">
+                <tr>
+                    <th>Service #</th>
+                    <th>Name</th>
+                    <th>Rank (Abbr.)</th>
+                    <th>Unit</th>
+                </tr>
+            </thead>
+            <tbody>`;
     selected.forEach(svcNo => {
         let staff = staffDetailsCache[svcNo] || {id: svcNo, text: svcNo};
-        let staffName = staff.text ? staff.text.split('-')[1]?.trim() : '';
-        let authority = $(`input[name='promotion_authority[${svcNo}]']`).val();
-        let remark = $(`input[name='promotion_remark[${svcNo}]']`).val();
-        
-        summary += `
-            <tr>
-                <td>${svcNo}</td>
-                <td>${staffName || 'N/A'}</td>
-                <td>${authority || '<span class="text-danger">Missing</span>'}</td>
-                <td>${remark || '<em class="text-muted">None</em>'}</td>
-            </tr>
-        `;
+        let staffName = staff.first_name && staff.last_name ? `${staff.last_name} ${staff.first_name}` : (staff.text ? staff.text.split('-')[1]?.trim() : '');
+        let currentRankAbbr = staff.rank_abbreviation || staff.rank_name || '';
+        let unit = staff.unit_name || staff.unit_id || '';
+        summary += `<tr>
+            <td>${svcNo}</td>
+            <td>${staffName || 'N/A'}</td>
+            <td>${currentRankAbbr || 'N/A'}</td>
+            <td>${unit || 'N/A'}</td>
+        </tr>`;
     });
-    
-    summary += `
-                </tbody>
-            </table>
-        </div>
-        <div class="alert alert-warning mt-3">
-            <i class="fa fa-exclamation-triangle me-2"></i>
-            Please review the information above carefully. This action will update rank information for all listed staff members.
-        </div>
-    `;
-    
+    summary += `</tbody>
+        </table>
+    </div>
+    <div class="alert alert-warning mt-3">
+        <i class="fa fa-exclamation-triangle me-2"></i>
+        Please review the information above carefully. This action will update rank information for all listed staff members.
+    </div>`;
     $('#confirmSummary').html(summary);
 }
 
 /**
- * Show a toast notification
+ * Show a small temporary toast message (non-blocking)
  * @function showToast
- * @param {string} message - The message to display
- * @param {string} type - The type of toast (success, error, warning, info)
+ * @param {string} message - Message to show
+ * @param {string} type - 'success' | 'error' | 'info'
  */
 function showToast(message, type = 'info') {
-    // Create toast container if it doesn't exist
-    if (!document.getElementById('toast-container')) {
-        const container = document.createElement('div');
-        container.id = 'toast-container';
-        container.className = 'position-fixed bottom-0 end-0 p-3';
-        container.style.zIndex = '1050';
+    const containerId = 'global-toast-container';
+    let container = document.getElementById(containerId);
+    if (!container) {
+        container = document.createElement('div');
+        container.id = containerId;
+        container.style.position = 'fixed';
+        container.style.top = '1rem';
+        container.style.right = '1rem';
+        container.style.zIndex = 1080;
         document.body.appendChild(container);
     }
-    
-    // Create a unique ID for this toast
-    const toastId = 'toast-' + Date.now();
-    
-    // Set the icon based on type
-    let icon = 'info-circle';
-    let bgClass = 'bg-info';
-    if (type === 'success') {
-        icon = 'check-circle';
-        bgClass = 'bg-success';
-    } else if (type === 'error') {
-        icon = 'exclamation-circle';
-        bgClass = 'bg-danger';
-    } else if (type === 'warning') {
-        icon = 'exclamation-triangle';
-        bgClass = 'bg-warning';
-    }
-    
-    // Create and append the toast
-    const toastHtml = `
-        <div id="${toastId}" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
-            <div class="toast-header ${bgClass} text-white">
-                <i class="fa fa-${icon} me-2"></i>
-                <strong class="me-auto">Notification</strong>
-                <small>${new Date().toLocaleTimeString()}</small>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
-            </div>
-            <div class="toast-body">
-                ${message}
-            </div>
-        </div>
-    `;
-    
-    document.getElementById('toast-container').insertAdjacentHTML('beforeend', toastHtml);
-    
-    // Initialize and show the toast
-    const toastElement = document.getElementById(toastId);
-    const toast = new bootstrap.Toast(toastElement, {
-        delay: 5000,
-        autohide: true
-    });
-    
-    toast.show();
-    
-    // Remove the toast from DOM after it's hidden
-    toastElement.addEventListener('hidden.bs.toast', function() {
-        toastElement.remove();
-    });
+
+    const alertDiv = document.createElement('div');
+    const alertType = type === 'success' ? 'success' : (type === 'error' ? 'danger' : 'info');
+    alertDiv.className = 'alert alert-' + alertType + ' shadow';
+    alertDiv.style.marginBottom = '0.5rem';
+    alertDiv.style.minWidth = '200px';
+    alertDiv.textContent = message;
+
+    container.appendChild(alertDiv);
+
+    // Fade out and remove
+    setTimeout(() => {
+        alertDiv.style.transition = 'opacity 0.4s ease';
+        alertDiv.style.opacity = '0';
+    }, 2500);
+    setTimeout(() => {
+        if (alertDiv.parentNode) alertDiv.parentNode.removeChild(alertDiv);
+        // remove container if empty
+        if (container && container.children.length === 0 && container.parentNode) container.parentNode.removeChild(container);
+    }, 3000);
 }
 
 /**
- * Show a loading overlay
+ * Show a blocking loading overlay with a single parent element
  * @function showLoading
- * @param {string} message - The message to display
+ * @param {string} message - Optional message to show
  */
 function showLoading(message = 'Loading...') {
-    // Create loading overlay if it doesn't exist
-    if (!document.getElementById('loading-overlay')) {
-        const overlay = document.createElement('div');
+    let overlay = document.getElementById('loading-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
         overlay.id = 'loading-overlay';
-        overlay.className = 'position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center';
-        overlay.style.zIndex = '2000';
-        overlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
         overlay.style.display = 'none';
-        
-        const spinner = `
-            <div class="bg-white p-4 rounded shadow-lg text-center">
-                <div class="spinner-border text-primary mb-3" role="status">
-                    <span class="visually-hidden">Loading...</span>
-                </div>
-                <div id="loading-message" class="text-dark">${message}</div>
-            </div>
-        `;
-        
-        overlay.innerHTML = spinner;
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        overlay.style.backgroundColor = 'rgba(0,0,0,0.4)';
+        overlay.style.zIndex = '1090';
+
+        // single parent element that contains spinner and message
+        const inner = document.createElement('div');
+        inner.className = 'bg-white p-4 rounded shadow-lg text-center';
+        inner.style.maxWidth = '320px';
+
+        const spinner = document.createElement('div');
+        spinner.className = 'spinner-border text-primary mb-3';
+        spinner.setAttribute('role', 'status');
+        const vis = document.createElement('span');
+        vis.className = 'visually-hidden';
+        vis.textContent = 'Loading...';
+        spinner.appendChild(vis);
+
+        const msg = document.createElement('div');
+        msg.id = 'loading-message';
+        msg.className = 'text-dark';
+        msg.textContent = message;
+
+        inner.appendChild(spinner);
+        inner.appendChild(msg);
+        overlay.appendChild(inner);
         document.body.appendChild(overlay);
+    } else {
+        const msg = document.getElementById('loading-message');
+        if (msg) msg.textContent = message;
     }
-    
-    // Update message and show overlay
-    document.getElementById('loading-message').textContent = message;
-    document.getElementById('loading-overlay').style.display = 'flex';
+
+    overlay.style.display = 'flex';
 }
 
 /**

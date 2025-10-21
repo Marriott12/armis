@@ -424,6 +424,10 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <td><?=htmlspecialchars($staff->unitName ?? 'N/A')?></td>
                             </tr>
                             <tr>
+                                <th><i class="fa fa-user-cog text-primary"></i> Appointment</th>
+                                <td><?=htmlspecialchars($staff->appt ?? 'N/A')?></td>
+                            </tr>
+                            <tr>
                                 <th><i class="fa fa-shield-alt text-primary"></i> Corps</th>
                                 <td><?=htmlspecialchars($staff->corpsName ?? 'N/A')?></td>
                             </tr>
@@ -571,58 +575,6 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             </div>
         </div>
 
-        <!-- ==================== STATISTICS CARDS ==================== -->
-        <!--<div class="row mb-4">
-            <div class="col-md-2 col-sm-6 mb-3">
-                <div class="card stat-card shadow-sm">
-                    <div class="card-body text-center">
-                        <div class="stat-number"><?=$yearsOfService?></div>
-                        <div class="stat-label">Years of Service</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-2 col-sm-6 mb-3">
-                <div class="card stat-card shadow-sm">
-                    <div class="card-body text-center">
-                        <div class="stat-number"><?=$promotionCount?></div>
-                        <div class="stat-label">Promotions</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-2 col-sm-6 mb-3">
-                <div class="card stat-card shadow-sm">
-                    <div class="card-body text-center">
-                        <div class="stat-number"><?=$medalCount?></div>
-                        <div class="stat-label">Medals</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-2 col-sm-6 mb-3">
-                <div class="card stat-card shadow-sm">
-                    <div class="card-body text-center">
-                        <div class="stat-number"><?=$courseCount?></div>
-                        <div class="stat-label">Courses</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-2 col-sm-6 mb-3">
-                <div class="card stat-card shadow-sm">
-                    <div class="card-body text-center">
-                        <div class="stat-number"><?=$operationCount?></div>
-                        <div class="stat-label">Operations</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-2 col-sm-6 mb-3">
-                <div class="card stat-card shadow-sm">
-                    <div class="card-body text-center">
-                        <div class="stat-number"><?=$deploymentCount?></div>
-                        <div class="stat-label">Deployments</div>
-                    </div>
-                </div>
-            </div>
-        </div>-->
-
         <!-- ==================== TABBED SECTIONS ==================== -->
         <div class="card shadow-sm">
             <div class="card-header bg-white">
@@ -636,7 +588,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     </li>
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="postings-tab" data-bs-toggle="tab" data-bs-target="#postings" type="button">
-                            <i class="fa fa-map-marker-alt me-1"></i> Postings 
+                            <i class="fa fa-map-marker-alt me-1"></i>Appointments 
                             <span class="badge <?=$postingCount > 0 ? 'bg-primary' : 'bg-secondary'?> ms-1"><?=$postingCount?></span>
                         </button>
                     </li>
@@ -648,12 +600,12 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             <span class="badge <?=$medalCount > 0 ? 'bg-primary' : 'bg-secondary'?> ms-1"><?=$medalCount?></span>
                         </button>
                     </li>
-                    <li class="nav-item" role="presentation">
+                    <!--<li class="nav-item" role="presentation">
                         <button class="nav-link" id="awards-tab" data-bs-toggle="tab" data-bs-target="#awards" type="button">
                             <i class="fa fa-trophy me-1"></i> Awards 
                             <span class="badge <?=$awardCount > 0 ? 'bg-primary' : 'bg-secondary'?> ms-1"><?=$awardCount?></span>
                         </button>
-                    </li>
+                    </li>-->
                     
                     <!-- Development Group -->
                     <li class="nav-item" role="presentation">
@@ -682,12 +634,12 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             <span class="badge <?=$operationCount > 0 ? 'bg-primary' : 'bg-secondary'?> ms-1"><?=$operationCount?></span>
                         </button>
                     </li>
-                    <li class="nav-item" role="presentation">
+                    <!--<li class="nav-item" role="presentation">
                         <button class="nav-link" id="deployments-tab" data-bs-toggle="tab" data-bs-target="#deployments" type="button">
                             <i class="fa fa-globe me-1"></i> Deployments 
                             <span class="badge <?=$deploymentCount > 0 ? 'bg-primary' : 'bg-secondary'?> ms-1"><?=$deploymentCount?></span>
                         </button>
-                    </li>
+                    </li>-->
                     
                     <!-- Records Group -->
                     <li class="nav-item" role="presentation">
@@ -823,7 +775,6 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                             <th>#</th>
                                             <th>Institution</th>
                                             <th>Qualification</th>
-                                            <th>Level</th>
                                             <th>Year Started</th>
                                             <th>Year Completed</th>
                                             <th>Grade</th>
@@ -835,10 +786,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                 <td><?=$idx + 1?></td>
                                                 <td><?=htmlspecialchars($edu->institution ?? 'N/A')?></td>
                                                 <td><strong><?=htmlspecialchars($edu->qualification ?? 'N/A')?></strong></td>
-                                                <td><?=htmlspecialchars($edu->level ?? 'N/A')?></td>
                                                 <td><?=htmlspecialchars($edu->year_started ?? 'N/A')?></td>
                                                 <td><?=htmlspecialchars($edu->year_completed ?? 'N/A')?></td>
-                                                <td><?=htmlspecialchars($edu->grade ?? 'N/A')?></td>
+                                                <td><?=htmlspecialchars($edu->grade_obtained ?? 'N/A')?></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -1087,7 +1037,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                         N/A
                                                     <?php endif; ?>
                                                 </td>
-                                                <td><?=htmlspecialchars($post->appointment_id ?? 'N/A')?></td>
+                                                <td><?=htmlspecialchars($post->appointment ?? 'N/A')?></td>
                                                 <td><?=!empty($post->start_date) ? date('d M Y', strtotime($post->start_date)) : 'N/A'?></td>
                                                 <td>
                                                     <?php if (!empty($post->end_date)): ?>

@@ -7,6 +7,34 @@
 require_once dirname(__DIR__) . '/shared/database_connection.php';
 
 class UserProfileManager {
+    /**
+     * Get all appointments for the user (with appointment type and unit details)
+     */
+    public function getAppointments() {
+        try {
+            if (empty($this->userId)) {
+                return [];
+            }
+            $stmt = $this->pdo->prepare("
+                SELECT sa.id, sa.staff_id, sa.appointment_id, sa.appointment_type, at.name as appointment_type_name, at.is_temporary,
+                       sa.rank_id, r.abbreviation as rank_abbr, r.name as rank_name,
+                       sa.unit_id, u.name as unit_name, sa.location,
+                       sa.service_number, sa.appointment_date, sa.start_date, sa.end_date, sa.duration_months,
+                       sa.posting_order_reference, sa.comment, sa.remarks, sa.created_by, sa.created_at, sa.updated_at
+                FROM staff_appointment sa
+                LEFT JOIN appointment_types at ON sa.appointment_type = at.id
+                LEFT JOIN units u ON sa.unit_id = u.id
+                LEFT JOIN ranks r ON sa.rank_id = r.id
+                WHERE sa.staff_id = ?
+                ORDER BY sa.appointment_date DESC, sa.created_at DESC
+            ");
+            $stmt->execute([$this->userId]);
+            return $stmt->fetchAll(PDO::FETCH_OBJ);
+        } catch (PDOException $e) {
+            error_log("Error fetching appointments: " . $e->getMessage());
+            return [];
+        }
+    }
     private $pdo;
     private $userId;
     private $userSvcNo;
@@ -892,6 +920,56 @@ class UserProfileManager {
             return $stmt->fetchAll(PDO::FETCH_OBJ);
         } catch (PDOException $e) {
             error_log("Error fetching deployments: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Get user's medals with medal details
+     */
+    public function getMedals() {
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT 
+                    sm.*,
+                    m.name as medal_name,
+                    m.description as medal_description,
+                    m.image_path
+                FROM staff_medals sm
+                INNER JOIN medals m ON sm.medal_id = m.id
+                WHERE sm.staff_id = ? 
+                ORDER BY sm.award_date DESC
+            ");
+            $stmt->execute([$this->userId]);
+            return $stmt->fetchAll(PDO::FETCH_OBJ);
+        } catch (PDOException $e) {
+            error_log("Error fetching medals: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Get user's promotion history with rank details
+     */
+    public function getPromotionHistory() {
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT 
+                    sp.*,
+                    r1.abbreviation as current_rank_abbr,
+                    r1.level as current_rank_level,
+                    r2.abbreviation as new_rank_abbr,
+                    r2.level as new_rank_level
+                FROM staff_promotions sp
+                LEFT JOIN ranks r1 ON sp.current_rank = r1.id
+                LEFT JOIN ranks r2 ON sp.new_rank = r2.id
+                WHERE sp.staff_id = ? 
+                ORDER BY sp.date_from DESC
+            ");
+            $stmt->execute([$this->userId]);
+            return $stmt->fetchAll(PDO::FETCH_OBJ);
+        } catch (PDOException $e) {
+            error_log("Error fetching promotion history: " . $e->getMessage());
             return [];
         }
     }

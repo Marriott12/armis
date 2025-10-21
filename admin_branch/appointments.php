@@ -1,4 +1,6 @@
 <?php
+// Always initialize selectedStaff to an array to avoid null warnings
+$selectedStaff = [];
 // Define module constants
 define('ARMIS_ADMIN_BRANCH', true);
 define('ARMIS_DEVELOPMENT', true);
@@ -10,7 +12,7 @@ ini_set('error_log', dirname(__DIR__) . '/logs/appointments_errors.log');
 error_reporting(E_ALL);
 
 // Log script start
-error_log("APPOINTMENTS: Script started at " . date('Y-m-d H:i:s'));
+error_log("APPOINTMENTS: Script started at " . date('d-M-Y H:i:s'));
 
 // Include admin branch authentication and database
 try {
@@ -178,7 +180,7 @@ try {
     } else {
         error_log("APPOINTMENTS: Fetching ranks from database");
         // Get all ranks ordered by rank level (seniority)
-        $ranksStmt = $pdo->query("SELECT id as rankID, name as rankName, level as rankIndex FROM ranks ORDER BY rankIndex ASC");
+        $ranksStmt = $pdo->query("SELECT id as rankID, name as rankName, abbreviation as rankAbbr, level as rankIndex FROM ranks ORDER BY rankIndex ASC");
         $ranks = $ranksStmt->fetchAll(PDO::FETCH_OBJ);
         error_log("APPOINTMENTS: Fetched " . count($ranks) . " ranks successfully");
         
@@ -251,13 +253,24 @@ if ($currentRankId) {
             $staffStmt = $pdo->prepare("
                 SELECT s.id, s.service_number, s.first_name, s.last_name, s.rank_id, 
                        s.attestDate, s.unit_id, s.subWef, s.tempWef, s.DOB as dateOfBirth,
-                       s.corps, s.svcStatus as status,
-                       u.name as unit_name, r.level, r.name as rank_name, r.abbreviation as rank_abbr
+                       s.corps, s.svcStatus as status, s.appt,
+                       u.name as unit_name, r.level, r.name as rank_name, r.abbreviation as rank_abbr,
+                       COALESCE(
+                           (SELECT MAX(sp.date_to) 
+                            FROM staff_promotions sp 
+                            WHERE sp.staff_id = s.id 
+                            AND sp.new_rank = s.rank_id 
+                            AND sp.type = 'promotion'),
+                           s.subWef,
+                           s.tempWef,
+                           s.attestDate,
+                           '1900-01-01'
+                       ) as rank_date
                 FROM staff s
                 LEFT JOIN units u ON s.unit_id = u.id
                 LEFT JOIN ranks r ON s.rank_id = r.id
                 WHERE s.rank_id = ? AND s.svcStatus = 'Active'
-                ORDER BY r.level ASC, s.subWef ASC, s.tempWef ASC, s.attestDate ASC, s.service_number ASC
+                ORDER BY rank_date ASC, s.service_number ASC
             ");
             $staffStmt->execute([$currentRankId]);
             $eligibleStaff = $staffStmt->fetchAll(PDO::FETCH_OBJ);
@@ -273,80 +286,88 @@ if ($currentRankId) {
 // Step 2: Handle form submission for appointments
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
     error_log("APPOINTMENTS: Form submission received");
-    
+
+    // Always initialize POST variables to arrays/values to avoid null warnings
+    $selectedStaff = $_POST['selected_staff'] ?? [];
+    $appointmentTypeId = $_POST['appointment_type'] ?? '';
+    $apptDate = $_POST['appt_date'] ?? '';
+    $endDate = null; // Will be set dynamically below
+    $requiresApproval = isset($_POST['requires_approval']);
+    $unitsSelected = $_POST['unit'] ?? [];
+    $positions = $_POST['position'] ?? [];
+    $withPowersOf = $_POST['with_powers_of'] ?? [];
+    $comments = $_POST['comment'] ?? [];
+    $createdBy = $_SESSION['user_id'] ?? 0;
+    $dateCreated = date('Y-m-d H:i:s');
+    $status = $requiresApproval ? 'pending' : 'approved';
+
     // CSRF Protection
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== ($_SESSION['csrf_token'] ?? '')) {
         error_log("APPOINTMENTS: CSRF token validation failed");
         $errors[] = "Invalid security token. Please refresh the page and try again.";
     }
-    
+
     if (empty($errors)) {
         error_log("APPOINTMENTS: Processing form data");
-        $selectedStaff = $_POST['selected_staff'] ?? [];
-        $appointmentTypeId = $_POST['appointment_type'] ?? '';
-        $apptDate = $_POST['appt_date'] ?? '';
-        $endDate = $_POST['end_date'] ?? null;
-        $requiresApproval = isset($_POST['requires_approval']);
-        $unitsSelected = $_POST['unit'] ?? [];
-        $positions = $_POST['position'] ?? [];
-        $locations = $_POST['location'] ?? [];
-        $comments = $_POST['comment'] ?? [];
-        $createdBy = $_SESSION['user_id'] ?? 0;
-    $dateCreated = date('Y-m-d H:i:s');
-    $status = $requiresApproval ? 'pending' : 'approved';
 
-    if (empty($selectedStaff)) $errors[] = "Please select at least one staff member.";
-    if (empty($apptDate)) {
-        $errors[] = "Please select the appointment date.";
-    } else {
-        // Validate appointment date format and range
-        $apptTimestamp = strtotime($apptDate);
-        if (!$apptTimestamp) {
-            $errors[] = "Invalid appointment date format.";
+        if (empty($selectedStaff)) $errors[] = "Please select at least one staff member.";
+        if (empty($apptDate)) {
+            $errors[] = "Please select the appointment date.";
         } else {
-            $today = strtotime(date('Y-m-d'));
-            $maxFutureDate = strtotime('+2 years');
-            if ($apptTimestamp < $today) {
-                $errors[] = "Appointment date cannot be in the past.";
-            } elseif ($apptTimestamp > $maxFutureDate) {
-                $errors[] = "Appointment date cannot be more than 2 years in the future.";
+            // Validate appointment date format and range
+            $apptTimestamp = strtotime($apptDate);
+            if (!$apptTimestamp) {
+                $errors[] = "Invalid appointment date format.";
+            } else {
+                $today = strtotime(date('Y-m-d'));
+                $maxFutureDate = strtotime('+2 years');
+                if ($apptTimestamp < $today) {
+                    $errors[] = "Appointment date cannot be in the past.";
+                } elseif ($apptTimestamp > $maxFutureDate) {
+                    $errors[] = "Appointment date cannot be more than 2 years in the future.";
+                }
             }
         }
+        // ...existing code for processing appointments...
+    } // End if (empty($errors))
+    if (empty($appointmentTypeId)) {
+        $errors[] = "Please select an appointment type.";
     }
-    if (empty($appointmentTypeId)) $errors[] = "Please select an appointment type.";
-    
     // Validate appointment type exists in database
     if (!empty($appointmentTypeId)) {
         $typeStmt = $pdo->prepare("SELECT id, is_temporary FROM appointment_type WHERE id = ?");
         $typeStmt->execute([$appointmentTypeId]);
         $typeInfo = $typeStmt->fetch(PDO::FETCH_ASSOC);
-        
         if (!$typeInfo) {
             $errors[] = "Invalid appointment type selected.";
         } else {
             $isTemporary = $typeInfo['is_temporary'];
+            // Only set end date for acting/secondment (temporary) appointments
+            if ($isTemporary && !empty($apptDate)) {
+                // Use user-supplied end date if present, else default to 3 years
+                $endDate = $_POST['end_date'] ?? null;
+                if (empty($endDate)) {
+                    $endDate = date('Y-m-d', strtotime($apptDate . ' +3 years'));
+                    error_log("APPOINTMENTS: Auto-calculated end date as 3 years from appointment: $endDate");
+                }
+                // Validate end date if provided
+                if (!empty($endDate)) {
+                    $endTimestamp = strtotime($endDate);
+                    $apptTimestamp = strtotime($apptDate);
+                    if (!$endTimestamp) {
+                        $errors[] = "Invalid end date format.";
+                    } elseif ($apptTimestamp && $endTimestamp <= $apptTimestamp) {
+                        $errors[] = "End date must be after the appointment date.";
+                    } elseif ($endTimestamp > strtotime('+10 years')) {
+                        $errors[] = "End date cannot be more than 10 years in the future.";
+                    }
+                }
+            } else {
+                $endDate = null; // Permanent appointment
+            }
         }
     }
-
-    // Calculate end date if not provided (3 years from appointment date for all types if not specified)
-    if (empty($endDate) && !empty($apptDate)) {
-        $endDate = date('Y-m-d', strtotime($apptDate . ' +3 years'));
-        error_log("APPOINTMENTS: Auto-calculated end date as 3 years from appointment: $endDate");
-    }
-
-    // Validate end date if provided
-    if (!empty($endDate)) {
-        $endTimestamp = strtotime($endDate);
-        $apptTimestamp = strtotime($apptDate);
-        
-        if (!$endTimestamp) {
-            $errors[] = "Invalid end date format.";
-        } elseif ($apptTimestamp && $endTimestamp <= $apptTimestamp) {
-            $errors[] = "End date must be after the appointment date.";
-        } elseif ($endTimestamp > strtotime('+10 years')) {
-            $errors[] = "End date cannot be more than 10 years in the future.";
-        }
-    }
+} // End if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff']))
 
     // Validate each selected staff member and their units
     foreach ($selectedStaff as $svcNo) {
@@ -383,9 +404,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
             try {
                 // Fetch ALL active appointments for each staff member with appointment type info
                 $duplicateCheckStmt = $pdo->prepare("
-                    SELECT sa.service_number, sa.appointment_id, sa.appointment_date, 
-                           sa.end_date, u.name as unit_name, sa.id as appt_record_id,
-                           sa.appointment_type, at.type_name, at.is_temporary
+              SELECT sa.service_number, sa.appointment, sa.appointment_date, 
+                  sa.end_date, u.name as unit_name, sa.id as appt_record_id,
+                  sa.appointment_type, at.type_name, at.is_temporary
                     FROM staff_appointment sa
                     LEFT JOIN units u ON sa.unit_id = u.id
                     LEFT JOIN appointment_type at ON sa.appointment_type = at.id
@@ -455,11 +476,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
         $selectStaffStmt = $pdo->prepare("SELECT id, service_number, rank_id FROM staff WHERE service_number = ? LIMIT 1");
         $insertApptStmt = $pdo->prepare("INSERT INTO staff_appointment (
             staff_id, 
-            appointment_id, 
+            appointment, 
             appointment_type, 
             rank_id,
             unit_id, 
-            location,
+            with_powers_of,
             service_number, 
             appointment_date, 
             start_date,
@@ -482,8 +503,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
             foreach ($selectedStaff as $serviceNumber) {
                 $unitId = htmlspecialchars(trim($unitsSelected[$serviceNumber]));
                 $position = htmlspecialchars(trim($positions[$serviceNumber] ?? ''));
-                $location = htmlspecialchars(trim($locations[$serviceNumber] ?? ''));
+                $powers = htmlspecialchars(trim($withPowersOf[$serviceNumber] ?? ''));
                 $comment = htmlspecialchars(trim($comments[$serviceNumber] ?? ''));
+                // Duplicate appointment check: prevent same person, position, and unit if active
+                $duplicateCheckStmt = $pdo->prepare("SELECT COUNT(*) FROM staff_appointment WHERE service_number = ? AND appointment = ? AND unit_id = ? AND (end_date IS NULL OR end_date > ?)" );
+                $duplicateCheckStmt->execute([$serviceNumber, $position, $unitId, date('Y-m-d')]);
+                $duplicateCount = $duplicateCheckStmt->fetchColumn();
+                if ($duplicateCount > 0) {
+                    $errors[] = "Cannot appoint {$serviceNumber} to '{$position}' in this unit: already holding this appointment.";
+                    continue;
+                }
+
+                // Fetch location from units table for the selected unit
+                $location = '';
+                if ($unitId) {
+                    $unitLocationStmt = $pdo->prepare("SELECT location FROM units WHERE id = ? LIMIT 1");
+                    $unitLocationStmt->execute([$unitId]);
+                    $unitRow = $unitLocationStmt->fetch(PDO::FETCH_ASSOC);
+                    if ($unitRow && !empty($unitRow['location'])) {
+                        $location = $unitRow['location'];
+                    }
+                }
                 
                 // Get staff details including rank_id
                 $selectStaffStmt->execute([$serviceNumber]);
@@ -500,7 +540,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
                 if (isset($existingAppointments[$serviceNumber])) {
                     $existingAppts = $existingAppointments[$serviceNumber];
                     $newEndDate = date('Y-m-d', strtotime($apptDate . ' -1 day'));
-                    $endComment = " | Ended automatically for new appointment on " . date('d M Y');
+                $endComment = " | Ended automatically for new appointment on " . date('d-M-Y');
                     
                     // End ALL existing active appointments for this staff member
                     foreach ($existingAppts as $existingAppt) {
@@ -515,10 +555,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
                         // Enhanced audit log for ended appointment
                         error_log(json_encode([
                             'action' => 'appointment_ended_automatically',
-                            'timestamp' => date('Y-m-d H:i:s'),
+                            'timestamp' => date('d-M-Y H:i:s'),
                             'user_id' => $createdBy,
                             'service_number' => $serviceNumber,
-                            'old_appointment_position' => $existingAppt['appointment_id'],
+                            'old_appointment_position' => $existingAppt['appointment'],
                             'old_unit' => $existingAppt['unit_name'],
                             'old_type' => $existingAppt['type_name'],
                             'end_date' => $newEndDate,
@@ -540,12 +580,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
                     $appointmentTypeId,        // appointment_type = FK to appointment_type table
                     $rankId,                   // rank_id = staff's current rank at time of appointment
                     $unitId,                   // unit_id
-                    $location,                 // location field
+                    $powers,                   // with_powers_of field
                     $serviceNumber,            // service_number
                     $apptDate,                 // appointment_date
                     $startDate,                // start_date (same as appointment_date)
                     $endDate,                  // end_date (3 years from appointment if not specified)
-                    '',                        // comment field (keeping empty, using remarks instead)
+                    $location,                 // location from units table
                     $remarks,                  // remarks = user comments
                     $createdBy,                // created_by
                     $dateCreated               // created_at
@@ -554,7 +594,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
                 // Update staff unit for the appointment
                 $updateStaffStmt->execute([$unitId, $serviceNumber]);
                 
-                // Update staff appt column with the appointment position
+                // Always update staff appt column with the current appointment (even if empty/null)
                 $updateApptStmt = $pdo->prepare("UPDATE staff SET appt = ? WHERE service_number = ?");
                 $updateApptStmt->execute([$appointmentPosition, $serviceNumber]);
                 
@@ -589,12 +629,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
             // Clear session data
             unset($_SESSION['existing_appointments']);
             
-            // Build success message
-            $successMessage = "Successfully created {$appointmentsCreated} appointment(s)";
-            if ($appointmentsEnded > 0) {
-                $successMessage .= " and automatically ended {$appointmentsEnded} previous appointment(s)";
+            // Build success message only if at least one appointment was created
+            if ($appointmentsCreated > 0) {
+                $successMessage = "Successfully created {$appointmentsCreated} appointment(s)";
+                if ($appointmentsEnded > 0) {
+                    $successMessage .= " and automatically ended {$appointmentsEnded} previous appointment(s)";
+                }
+                $successMessage .= ". " . ($requiresApproval ? "Appointments submitted for approval." : "");
+            } else {
+                $successMessage = '';
             }
-            $successMessage .= ". " . ($requiresApproval ? "Appointments submitted for approval." : "");
             
         } catch (Exception $e) {
             // Rollback ALL changes on any error
@@ -608,8 +652,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
         }
         } // Close inner if (empty($errors))
     } // Close if (empty($errors)) from line 214 (validation check)
-    } // Close if (empty($errors)) from line 140 (first validation check)
-} // Close if ($_SERVER['REQUEST_METHOD'] === 'POST')
 
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';
@@ -780,12 +822,34 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             <h4 class="mb-0"><i class="fa fa-user-plus"></i> Staff Appointments</h4>
                         </div>
                         <div class="card-body">
-            <?php if ($success): ?>
+            <?php if (!empty($successMessage)): ?>
                 <div class="alert alert-success">
-                    <i class="fas fa-check-circle"></i> <?= $successMessage ?? 'Appointments successful for all selected staff.' ?>
+                    <i class="fas fa-check-circle"></i> <?= $successMessage ?>
+                    <?php if (!empty($selectedStaff) && $appointmentsCreated > 0) : 
+                        // Get the most recently appointed staff member (last in array)
+                        $recentSvcNo = end($selectedStaff);
+                    ?>
+                    <button type="button" class="btn btn-outline-info btn-sm ms-3" id="viewAppointmentSummaryBtn" data-svcno="<?= htmlspecialchars($recentSvcNo) ?>">
+                        <i class="fas fa-list"></i> View Appointment Summary
+                    </button>
+                    <?php endif; ?>
                 </div>
             <?php endif; ?>
-            <?php if ($errors): ?>
+            <!-- Appointment Summary Modal -->
+            <div class="modal fade" id="appointmentSummaryModal" tabindex="-1" aria-labelledby="appointmentSummaryModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-lg modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="appointmentSummaryModalLabel"><i class="fas fa-list"></i> Appointment Summary</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body" id="appointmentSummaryContent">
+                            <div class="text-center text-muted"><i class="fas fa-spinner fa-spin"></i> Loading...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <?php if (!empty($errors)): ?>
                 <div class="alert alert-danger">
                     <ul class="mb-0">
                         <?php foreach ($errors as $err): ?>
@@ -810,7 +874,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 $staffCount = isset($rankCounts[$r->rankID]) ? $rankCounts[$r->rankID] : 0;
                                 ?>
                                 <option value="<?=$r->rankID?>" <?=($currentRankId==$r->rankID)?'selected':''?>>
-                                    <?=$r->rankName?> (<?=$staffCount?> staff)
+                                    <?=$r->rankAbbr ? $r->rankAbbr : $r->rankName?> (<?=$staffCount?> Personnel)
                                 </option>
                             <?php endforeach; ?>
                         </select>
@@ -847,7 +911,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <div class="alert alert-info d-flex justify-content-between align-items-center">
                             <div>
                                 <i class="fa fa-info-circle"></i>
-                                <strong>Rank Selected:</strong> <?= htmlspecialchars($currentRank->name ?? '') ?>
+                                <strong>Rank Selected:</strong> <?= htmlspecialchars($currentRank->abbreviation ?? $currentRank->name ?? '') ?>
                             </div>
                         </div>
                         
@@ -874,6 +938,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                     <th>Name</th>
                                     <th>Unit</th>
                                     <th>Corps</th>
+                                    <th>Current Appointment</th>
                                     <th>Status</th>
                                     <th style="width: 80px;">History</th>
                                 </tr>
@@ -905,10 +970,10 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         </select>
                     </div>
                     <div class="col-md-3 mb-2">
-                        <label class="form-label">Appointment Date *</label>
+                        <label class="form-label">Effective From *</label>
                         <input type="date" name="appt_date" id="appt_date" class="form-control" required value="<?=htmlspecialchars($_POST['appt_date'] ?? date('Y-m-d'))?>">
                     </div>
-                    <div class="col-md-3 mb-2">
+                    <div class="col-md-3 mb-2" id="endDateField" style="display:none;">
                         <label class="form-label">End Date</label>
                         <input type="date" name="end_date" id="end_date" class="form-control" value="<?=htmlspecialchars($_POST['end_date'] ?? '')?>">
                         <small class="text-muted">Default: 3 years from appointment date</small>
@@ -916,6 +981,23 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     <div class="col-md-3 mb-2">
                         <!-- Automatic ending - no checkbox needed -->
                     </div>
+                    <script>
+                    document.addEventListener('DOMContentLoaded', function() {
+                        var apptTypeSelect = document.getElementById('appointment_type');
+                        var endDateField = document.getElementById('endDateField');
+                        function toggleEndDate() {
+                            var selected = apptTypeSelect.options[apptTypeSelect.selectedIndex];
+                            if (selected && selected.getAttribute('data-is-temporary') == '1') {
+                                endDateField.style.display = '';
+                            } else {
+                                endDateField.style.display = 'none';
+                                document.getElementById('end_date').value = '';
+                            }
+                        }
+                        apptTypeSelect.addEventListener('change', toggleEndDate);
+                        toggleEndDate(); // Initial call in case of pre-selected value
+                    });
+                    </script>
                 </div>
                 
                 <?php if (!empty($_SESSION['existing_appointments'])): ?>
@@ -935,7 +1017,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             at <?= htmlspecialchars($appt['unit_name'] ?? 'Unknown Unit') ?>
                             <span class="badge bg-secondary"><?= htmlspecialchars($appt['type_name'] ?? 'Unknown Type') ?></span>
                             <?php if ($appt['end_date']): ?>
-                                (current end date: <?= date('d M Y', strtotime($appt['end_date'])) ?>)
+                                (current end date: <?= date('d-M-Y', strtotime($appt['end_date'])) ?>)
                             <?php else: ?>
                                 (permanent)
                             <?php endif; ?>
@@ -972,6 +1054,26 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 const unitsData = <?=json_encode($units, JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
 const eligibleStaff = <?=json_encode($eligibleStaff ?? [], JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
 
+// Appointment Summary Modal logic
+$(document).on('click', '#viewAppointmentSummaryBtn', function() {
+    var svcNo = $(this).data('svcno');
+    $('#appointmentSummaryContent').html('<div class="text-center text-muted"><i class="fas fa-spinner fa-spin"></i> Loading...</div>');
+    var modal = new bootstrap.Modal(document.getElementById('appointmentSummaryModal'));
+    modal.show();
+    // AJAX to fetch summary
+    $.ajax({
+        url: 'ajax_staff_profile.php',
+        method: 'GET',
+        data: { service_number: svcNo, summary_only: 1 },
+        success: function(data) {
+            $('#appointmentSummaryContent').html(data);
+        },
+        error: function() {
+            $('#appointmentSummaryContent').html('<div class="alert alert-danger">Failed to load appointment summary.</div>');
+        }
+    });
+});
+
 // Define missing formatStaffResult function
 function formatStaffResult(staff) {
     if (!staff.id) {
@@ -1002,7 +1104,7 @@ function renderStaffPanels(selected) {
             unitOptions += `<option value="${u.unitID}">${u.unitName}</option>`;
         });
         
-        let positionOptions = '<option value="">Select Position</option>';
+        let positionOptions = '<option value="">Select Appointment</option>';
         <?php foreach ($standardPositions as $pos): ?>
         positionOptions += '<option value="<?= htmlspecialchars($pos) ?>"><?= htmlspecialchars($pos) ?></option>';
         <?php endforeach; ?>
@@ -1022,15 +1124,19 @@ function renderStaffPanels(selected) {
                             <select name="unit[${svcNo}]" class="form-select unit-select" style="width: 100%;" required>${unitOptions}</select>
                         </div>
                         <div class="col-md-3 mb-2">
-                            <label class="form-label mb-1">Position/Role *</label>
+                            <label class="form-label mb-1">Appointment *</label>
                             <select name="position[${svcNo}]" class="form-select position-select" style="width: 100%;" required>
                                 ${positionOptions}
                             </select>
                         </div>
                         <div class="col-md-3 mb-2">
-                            <label class="form-label mb-1">Location</label>
-                            <input type="text" name="location[${svcNo}]" class="form-control location-input" 
-                                   maxlength="200" placeholder="e.g., Camp Ayanganna">
+                            <label class="form-label mb-1">With Powers of</label>
+                            <select name="with_powers_of[${svcNo}]" class="form-control">
+                                <option value="">Select...</option>
+                                <option value="Subordinate Commander">Subordinate Commander</option>
+                                <option value="Commanding Officer">Commanding Officer</option>
+                                <option value="Appropriate Superior Authority">Appropriate Superior Authority</option>
+                            </select>
                         </div>
                         <div class="col-md-3 mb-2">
                             <label class="form-label mb-1">Comments</label>
@@ -1104,12 +1210,12 @@ $(function() {
                     { 
                         data: 'service_number', 
                         title: 'Service No.',
-                        orderable: true
+                        orderable: false
                     },
                     { 
                         data: null,
                         title: 'Rank',
-                        orderable: true,
+                        orderable: false,
                         render: function(data, type, row) {
                             return `<span class="badge bg-primary">${row.rank_abbr || row.rank_name || 'N/A'}</span>`;
                         }
@@ -1117,7 +1223,7 @@ $(function() {
                     {
                         data: null,
                         title: 'Name',
-                        orderable: true,
+                        orderable: false,
                         render: function(data, type, row) {
                             // Helper function for proper title case
                             function toTitleCase(str) {
@@ -1154,19 +1260,25 @@ $(function() {
                     { 
                         data: 'unit_name', 
                         title: 'Unit',
-                        orderable: true,
+                        orderable: false,
                         defaultContent: 'N/A'
                     },
                     { 
                         data: 'corps', 
                         title: 'Corps',
-                        orderable: true,
+                        orderable: false,
+                        defaultContent: 'N/A'
+                    },
+                    { 
+                        data: 'appt', 
+                        title: 'Current Appointment',
+                        orderable: false,
                         defaultContent: 'N/A'
                     },
                     { 
                         data: null,
                         title: 'Status',
-                        orderable: true,
+                        orderable: false,
                         render: function(data, type, row) {
                             const status = row.status || 'Active';
                             const statusClass = status === 'Active' ? 'bg-success' : 'bg-secondary';
@@ -1530,7 +1642,7 @@ $(function() {
         });
     }
     
-    // Load staff on page load if rank is selected (disabled - let user search manually)
+    // Load staff on page load if rank is selected 
     <?php if ($currentRankId): ?>
     $(document).ready(function() {
         // Show helpful message instead of auto-loading

@@ -41,6 +41,14 @@
     
     <!-- ARMIS Notifications System -->
     <script src="/Armis2/shared/notifications.js"></script>
+    
+    <!-- ARMIS Session Management and Form State Preservation -->
+    <script>
+        // Pass session restore flag from PHP to JavaScript
+        var PHP_SESSION_RESTORE_STATE = <?php echo (isset($_SESSION['restore_state']) && $_SESSION['restore_state'] === true) ? 'true' : 'false'; ?>;
+        <?php if (isset($_SESSION['restore_state'])) { unset($_SESSION['restore_state']); } ?>
+    </script>
+    <script src="/Armis2/shared/session-management.js"></script>
     <?php endif; ?>
     
     <script>

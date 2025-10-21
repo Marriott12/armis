@@ -194,6 +194,8 @@ $sidebarLinks = [
             ['title' => 'Units', 'url' => '/Armis2/admin_branch/reports_units.php'],
         ]
     ],
+
+    ['title' => 'System Settings', 'url' => '/Armis2/admin_branch/system_settings.php', 'icon' => 'cogs', 'page' => 'settings']
 ];
 
 // Ensure shared admin branch CSS is loaded

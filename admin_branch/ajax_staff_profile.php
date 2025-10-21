@@ -1,6 +1,7 @@
 <?php
 // AJAX endpoint for staff profile modal
 require_once dirname(__DIR__) . '/shared/database_connection.php';
+require_once dirname(__DIR__) . '/shared/military_formatting.php';
 
 // Set content type based on request type
 $wantJson = isset($_GET['format']) && $_GET['format'] === 'json';
@@ -49,7 +50,6 @@ try {
         LIMIT 1
     ';
     error_log("ajax_staff_profile.php: Executing query: $sql with service_number=$serviceNumber");
-    
     $stmt = $pdo->prepare($sql);
     $stmt->execute([$serviceNumber]);
     $staff = $stmt->fetch(PDO::FETCH_OBJ);
@@ -67,9 +67,23 @@ try {
         error_log("ajax_staff_profile.php: Staff member not found: $serviceNumber");
         exit;
     }
-    
+
     error_log("ajax_staff_profile.php: Staff found: " . json_encode($staff));
-    
+
+    // Get current appointment date from staff_appointment (latest active appointment)
+    $apptSql = '
+        SELECT appointment_date
+        FROM staff_appointment
+        WHERE service_number = ?
+          AND (end_date IS NULL OR end_date >= CURDATE())
+        ORDER BY appointment_date DESC
+        LIMIT 1
+    ';
+    $apptStmt = $pdo->prepare($apptSql);
+    $apptStmt->execute([$serviceNumber]);
+    $currentAppointmentDateRow = $apptStmt->fetch(PDO::FETCH_ASSOC);
+    $currentAppointmentDate = $currentAppointmentDateRow ? $currentAppointmentDateRow['appointment_date'] : null;
+
     // Get promotion history if available
     $promotionHistory = [];
     $stmt = $pdo->prepare('
@@ -88,7 +102,7 @@ try {
     ');
     $stmt->execute([$serviceNumber]);
     $promotionHistory = $stmt->fetchAll(PDO::FETCH_OBJ);
-    
+
     // If JSON response is requested, return data as JSON
     if ($wantJson) {
         echo json_encode([
@@ -96,7 +110,8 @@ try {
             'message' => 'Staff data retrieved successfully',
             'data' => [
                 'staff' => $staff,
-                'promotionHistory' => $promotionHistory
+                'promotionHistory' => $promotionHistory,
+                'currentAppointmentDate' => $currentAppointmentDate
             ]
         ]);
         exit;
@@ -119,23 +134,47 @@ try {
 ?>
 <div class="container-fluid profile-container">
     <div class="row mb-3">
-        <div class="col-md-6">
-            <h5 class="staff-name"><?=htmlspecialchars($staff->rank_short_name ?? '') . ' ' . htmlspecialchars($staff->last_name . ', ' . $staff->first_name)?></h5>
+        <div class="col-md-12">
+            <?php
+                // Use military formatting for name (no comma after last name)
+                $formattedName = formatMilitaryName(
+                    $staff->rank_name ?? '',
+                    $staff->rank_short_name ?? '',
+                    $staff->first_name ?? '',
+                    $staff->last_name ?? '',
+                    $staff->category ?? ''
+                );
+                // Get current appointment and unit (if available)
+                $currentAppointment = $staff->appt ?? '';
+                $currentUnit = $staff->unit_name ?? '';
+            ?>
+            <h5 class="staff-name"><?=htmlspecialchars($formattedName)?></h5>
             <p><strong>Service Number:</strong> <span class="service-number"><?=htmlspecialchars($staff->service_number)?></span></p>
-            <p><strong>Rank:</strong> <span class="rank"><?=htmlspecialchars($staff->rank_name ?? $staff->rank_id)?></span></p>
-            <p><strong>Unit:</strong> <span class="unit"><?=htmlspecialchars($staff->unit_name ?? $staff->unit_id)?></span></p>
+            <p><strong>Rank:</strong> <span class="rank"><?=htmlspecialchars($staff->rank_short_name ?? $staff->rank_name ?? $staff->rank_id)?></span></p>
+            <p><strong>Unit:</strong> <span class="unit"><?=htmlspecialchars($currentUnit)?></span></p>
+            <p><strong>Current Appointment:</strong> <span class="appointment"><?=htmlspecialchars($currentAppointment)?></span></p>
+            <p><strong>Appointment Date:</strong> <span class="appointment-date">
+                <?php
+                if ($currentAppointmentDate) {
+                    $today = date('Y-m-d');
+                    $isToday = ($currentAppointmentDate === $today);
+                    echo htmlspecialchars(date('d-M-Y', strtotime($currentAppointmentDate)));
+                    if ($isToday) {
+                        echo ' <span class="badge bg-success">Appointed Today</span>';
+                    }
+                } else {
+                    echo '-';
+                }
+                ?>
+            </span></p>
             <p><strong>Date of Birth:</strong> <span class="dob"><?=htmlspecialchars($staff->DOB ?? '-')?></span></p>
             <p><strong>Gender:</strong> <span class="gender"><?=htmlspecialchars($staff->gender ?? '-')?></span></p>
-        </div>
-        <div class="col-md-6">
             <p><strong>Email:</strong> <span class="email"><?=htmlspecialchars($staff->email ?? '-')?></span></p>
-            <p><strong>Phone:</strong> <span class="phone"><?=htmlspecialchars($staff->phone ?? '-')?></span></p>
+            <p><strong>Phone:</strong> <span class="phone"><?=htmlspecialchars($staff->tel ?? $staff->phone ?? '-')?></span></p>
             <p><strong>Address:</strong> <span class="address"><?=htmlspecialchars($staff->address ?? '-')?></span></p>
             <p><strong>Status:</strong> <span class="status <?=strtolower($staff->status ?? '')?>"><?=htmlspecialchars($staff->status ?? '-')?></span></p>
             <p><strong>Date of Attestation:</strong> <span class="attest-date"><?=htmlspecialchars($staff->attestation_date ?? '-')?></span></p>
             <p><strong>Current Rank Since:</strong> <span class="rank-date"><?=htmlspecialchars($staff->sub_wef ?? '-')?></span></p>
-            <p><strong>Debug Info:</strong> <small>attestation_date: <?=htmlspecialchars($staff->attestation_date ?? 'NULL')?>, 
-               sub_wef: <?=htmlspecialchars($staff->sub_wef ?? 'NULL')?></small></p>
         </div>
     </div>
     
