@@ -241,7 +241,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
                    s.svcStatus, s.DOB, s.attestDate, s.category 
             FROM staff s
             LEFT JOIN ranks r ON s.rank_id = r.id
-            LEFT JOIN units u ON s.unit_id = u.id
+            LEFT JOIN unit u ON s.unit_id = u.unit_id
             WHERE 1=1";
     
     $params = [];
@@ -350,194 +350,182 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 }
 
 // --- AJAX search endpoint ---
+
 if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
     header('Content-Type: application/json');
+    $debug = [];
+    $debug[] = 'AJAX handler entered';
     $pdo = getDbConnection();
-    
-    // Handle audit logging for search
-    if (isset($_GET['log_search']) && $_GET['log_search'] === '1') {
-        $requestData = json_decode(file_get_contents('php://input'), true);
-        $logData = [
-            'user_id' => $user->data()->id ?? 0,
-            'action' => 'staff_search',
-            'search_terms' => json_encode($requestData),
-            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? '',
-            'created_at' => date('Y-m-d H:i:s')
-        ];
-        try {
-            $stmt = $pdo->prepare("INSERT INTO activity_log (user_id, action, details, ip_address, created_at) VALUES (?, ?, ?, ?, ?)");
-            $stmt->execute([$logData['user_id'], $logData['action'], $logData['search_terms'], $logData['ip_address'], $logData['created_at']]);
-        } catch (Exception $e) {
-            error_log("Failed to log search activity: " . $e->getMessage());
+    try {
+        $pdo = getDbConnection();
+        // Handle audit logging for search
+        if (isset($_GET['log_search']) && $_GET['log_search'] === '1') {
+            $debug[] = 'log_search branch entered';
+            $requestData = json_decode(file_get_contents('php://input'), true);
+            $logData = [
+                'user_id' => $user->data()->id ?? 0,
+                'action' => 'staff_search',
+                'search_terms' => json_encode($requestData),
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? '',
+                'created_at' => date('Y-m-d H:i:s')
+            ];
+            try {
+                $stmt = $pdo->prepare("INSERT INTO activity_log (user_id, action, details, ip_address, created_at) VALUES (?, ?, ?, ?, ?)");
+                $stmt->execute([$logData['user_id'], $logData['action'], $logData['search_terms'], $logData['ip_address'], $logData['created_at']]);
+            } catch (Exception $e) {
+                error_log("Failed to log search activity: " . $e->getMessage());
+            }
+            echo json_encode(['success' => true, 'debug' => $debug, 'branch' => 'log_search exit']);
+            exit;
         }
-        echo json_encode(['success' => true]);
+        // Handle audit logging for viewing staff
+        if (isset($_GET['audit_view']) && $_GET['audit_view'] === '1' && isset($_GET['staff_id'])) {
+            $debug[] = 'audit_view branch entered';
+            $staffId = $_GET['staff_id'];
+            $logData = [
+                'user_id' => $user->data()->id ?? 0,
+                'action' => 'staff_view',
+                'details' => json_encode(['staff_id' => $staffId]),
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? '',
+                'created_at' => date('Y-m-d H:i:s')
+            ];
+            try {
+                $stmt = $pdo->prepare("INSERT INTO activity_log (user_id, action, details, ip_address, created_at) VALUES (?, ?, ?, ?, ?)");
+                $stmt->execute([$logData['user_id'], $logData['action'], $logData['details'], $logData['ip_address'], $logData['created_at']]);
+            } catch (Exception $e) {
+                error_log("Failed to log view activity: " . $e->getMessage());
+            }
+            echo json_encode(['success' => true, 'debug' => $debug, 'branch' => 'audit_view exit']);
+            exit;
+        }
+        // Perform staff search with pagination and sorting like reports_seniority.php
+        $debug[] = 'staff search branch entered';
+        $ranks = $pdo->query("SELECT id as rankID, name as rankName, level FROM ranks ORDER BY level ASC")->fetchAll(PDO::FETCH_OBJ);
+        $rankMap = [];
+        foreach ($ranks as $r) $rankMap[$r->rankID] = $r->rankName;
+        $units = $pdo->query("SELECT unit_id as unitID, code as unitName FROM unit ORDER BY code ASC")->fetchAll(PDO::FETCH_OBJ);
+        $unitMap = [];
+        foreach ($units as $u) $unitMap[$u->unitID] = $u->unitName;
+        $search = trim($_GET['search'] ?? '');
+        $rankFilter = $_GET['rank'] ?? '';
+        $unitFilter = $_GET['unit'] ?? '';
+        $statusFilter = $_GET['status'] ?? '';
+        $excludeInactive = isset($_GET['exclude_inactive']) && $_GET['exclude_inactive'] === '1';
+        // Pagination parameters (matching reports_seniority.php)
+        $per_page = intval($_GET['per_page'] ?? 25);
+        $page = max(1, intval($_GET['page'] ?? 1));
+        $offset = ($page - 1) * $per_page;
+        // Sorting parameters (matching reports_seniority.php)
+        $sortable_columns = [
+            'service_number' => 's.service_number',
+            'rank' => 'r.level',
+            'surname' => 's.last_name',
+            'first_name' => 's.first_name',
+            'unit' => 'u.code',
+            'category' => 's.category',
+            'DOB' => 's.DOB',
+            'attestDate' => 's.attestDate',
+            'subWef' => 's.subWef',
+            'tempWef' => 's.tempWef',
+            'svcStatus' => 's.svcStatus'
+        ];
+        $sort_col = $_GET['sort_col'] ?? '';
+        $sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
+        // Main query with JOINs
+        $sql = "SELECT s.id, s.service_number, s.first_name, s.last_name, s.rank_id, s.unit_id, s.svcStatus, \
+                       r.name as rankName, r.abbreviation as rankAbbr, r.level as rankLevel, \
+                       u.code as unitName, u.code as unitCode,\
+                       s.subWef, s.tempWef, s.attestDate\
+                FROM staff s\
+                LEFT JOIN ranks r ON s.rank_id = r.id\
+                LEFT JOIN unit u ON s.unit_id = u.unit_id\
+                WHERE 1=1";
+        // Count query for pagination
+        $count_sql = "SELECT COUNT(*) FROM staff s\n                      LEFT JOIN ranks r ON s.rank_id = r.id\n                      LEFT JOIN unit u ON s.unit_id = u.unit_id\n                      WHERE 1=1";
+        $params = [];
+        $count_params = [];
+        // Search condition
+        if ($search !== '') {
+            $searchCondition = " AND (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ? OR r.name LIKE ? OR u.code LIKE ?)";
+            $sql .= $searchCondition;
+            $count_sql .= $searchCondition;
+            $searchParam = '%' . $search . '%';
+            for ($i = 0; $i < 5; $i++) {
+                $params[] = $searchParam;
+                $count_params[] = $searchParam;
+            }
+        }
+        // Filter conditions
+        if ($rankFilter !== '') {
+            $sql .= " AND s.rank_id = ?";
+            $count_sql .= " AND s.rank_id = ?";
+            $params[] = $rankFilter;
+            $count_params[] = $rankFilter;
+        }
+        if ($unitFilter !== '') {
+            $sql .= " AND s.unit_id = ?";
+            $count_sql .= " AND s.unit_id = ?";
+            $params[] = $unitFilter;
+            $count_params[] = $unitFilter;
+        }
+        if ($statusFilter !== '') {
+            $sql .= " AND s.svcStatus = ?";
+            $count_sql .= " AND s.svcStatus = ?";
+            $params[] = $statusFilter;
+            $count_params[] = $statusFilter;
+        }
+        // Exclude retired and deceased staff when requested
+        if ($excludeInactive) {
+            $sql .= " AND s.svcStatus = 'Active'";
+            $count_sql .= " AND s.svcStatus = 'Active'";
+        }
+        // Get total count for pagination
+        $stmt_count = $pdo->prepare($count_sql);
+        $stmt_count->execute($count_params);
+        $total_staff = $stmt_count->fetchColumn();
+        $total_pages = ceil($total_staff / $per_page);
+        // Apply sorting (matching reports_seniority.php logic)
+        if ($sort_col && array_key_exists($sort_col, $sortable_columns)) {
+            $sql .= " ORDER BY " . $sortable_columns[$sort_col] . " $sort_dir";
+        } else {
+            // Default seniority sorting: rank level, then subWef, then tempWef, then attestDate, then service number
+            $sql .= " ORDER BY \n                r.level ASC,\n                s.subWef ASC,\n                s.tempWef ASC,\n                s.attestDate ASC,\n                s.service_number ASC";
+        }
+        // Apply pagination
+        $sql .= " LIMIT $per_page OFFSET $offset";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $staffList = $stmt->fetchAll(PDO::FETCH_OBJ);
+        $result = [];
+        foreach ($staffList as $s) {
+            $result[] = [
+                'id' => $s->id,
+                'svcNo' => $s->service_number,
+                'rank' => $s->rankAbbr ?? $s->rankName ?? ('ID:' . $s->rank_id),
+                'name' => $s->last_name . ' ' . $s->first_name,
+                'unit' => $s->unitCode ?? $s->unitName ?? '',
+                'status' => $s->svcStatus
+            ];
+        }
+        // Return data with pagination info and debug trace
+        echo json_encode([
+            'data' => $result,
+            'pagination' => [
+                'current_page' => $page,
+                'per_page' => $per_page,
+                'total_items' => $total_staff,
+                'total_pages' => $total_pages
+            ],
+            'debug' => $debug
+        ]);
+        exit;
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Server error: ' . $e->getMessage()]);
         exit;
     }
     
-    // Handle audit logging for viewing staff
-    if (isset($_GET['audit_view']) && $_GET['audit_view'] === '1' && isset($_GET['staff_id'])) {
-        $staffId = $_GET['staff_id'];
-        $logData = [
-            'user_id' => $user->data()->id ?? 0,
-            'action' => 'staff_view',
-            'details' => json_encode(['staff_id' => $staffId]),
-            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? '',
-            'created_at' => date('Y-m-d H:i:s')
-        ];
-        try {
-            $stmt = $pdo->prepare("INSERT INTO activity_log (user_id, action, details, ip_address, created_at) VALUES (?, ?, ?, ?, ?)");
-            $stmt->execute([$logData['user_id'], $logData['action'], $logData['details'], $logData['ip_address'], $logData['created_at']]);
-        } catch (Exception $e) {
-            error_log("Failed to log view activity: " . $e->getMessage());
-        }
-        echo json_encode(['success' => true]);
-        exit;
-    }
-    
-    // Perform staff search with pagination and sorting like reports_seniority.php
-    $ranks = $pdo->query("SELECT id as rankID, name as rankName, level FROM ranks ORDER BY level ASC")->fetchAll(PDO::FETCH_OBJ);
-    $rankMap = [];
-    foreach ($ranks as $r) $rankMap[$r->rankID] = $r->rankName;
-    $units = $pdo->query("SELECT id as unitID, name as unitName FROM units ORDER BY name ASC")->fetchAll(PDO::FETCH_OBJ);
-    $unitMap = [];
-    foreach ($units as $u) $unitMap[$u->unitID] = $u->unitName;
-
-    $search = trim($_GET['search'] ?? '');
-    $rankFilter = $_GET['rank'] ?? '';
-    $unitFilter = $_GET['unit'] ?? '';
-    $statusFilter = $_GET['status'] ?? '';
-    $excludeInactive = isset($_GET['exclude_inactive']) && $_GET['exclude_inactive'] === '1';
-    
-    // Pagination parameters (matching reports_seniority.php)
-    $per_page = intval($_GET['per_page'] ?? 25);
-    $page = max(1, intval($_GET['page'] ?? 1));
-    $offset = ($page - 1) * $per_page;
-    
-    // Sorting parameters (matching reports_seniority.php)
-    $sortable_columns = [
-        'service_number' => 's.service_number',
-        'rank' => 'r.level',
-        'surname' => 's.last_name',
-        'first_name' => 's.first_name',
-        'unit' => 'u.name',
-        'category' => 's.category',
-        'DOB' => 's.DOB',
-        'attestDate' => 's.attestDate',
-        'subWef' => 's.subWef',
-        'tempWef' => 's.tempWef',
-        'svcStatus' => 's.svcStatus'
-    ];
-    $sort_col = $_GET['sort_col'] ?? '';
-    $sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
-    
-    // Main query with JOINs
-    $sql = "SELECT s.id, s.service_number, s.first_name, s.last_name, s.rank_id, s.unit_id, s.svcStatus, 
-                   r.name as rankName, r.abbreviation as rankAbbr, r.level as rankLevel, 
-                   u.name as unitName, u.code as unitCode,
-                   s.subWef, s.tempWef, s.attestDate
-            FROM staff s
-            LEFT JOIN ranks r ON s.rank_id = r.id
-            LEFT JOIN units u ON s.unit_id = u.id
-            WHERE 1=1";
-    
-    // Count query for pagination
-    $count_sql = "SELECT COUNT(*) FROM staff s
-                  LEFT JOIN ranks r ON s.rank_id = r.id
-                  LEFT JOIN units u ON s.unit_id = u.id
-                  WHERE 1=1";
-    
-    $params = [];
-    $count_params = [];
-    
-    // Search condition
-    if ($search !== '') {
-        $searchCondition = " AND (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ? OR r.name LIKE ? OR u.name LIKE ?)";
-        $sql .= $searchCondition;
-        $count_sql .= $searchCondition;
-        $searchParam = '%' . $search . '%';
-        for ($i = 0; $i < 5; $i++) {
-            $params[] = $searchParam;
-            $count_params[] = $searchParam;
-        }
-    }
-    
-    // Filter conditions
-    if ($rankFilter !== '') {
-        $sql .= " AND s.rank_id = ?";
-        $count_sql .= " AND s.rank_id = ?";
-        $params[] = $rankFilter;
-        $count_params[] = $rankFilter;
-    }
-    
-    if ($unitFilter !== '') {
-        $sql .= " AND s.unit_id = ?";
-        $count_sql .= " AND s.unit_id = ?";
-        $params[] = $unitFilter;
-        $count_params[] = $unitFilter;
-    }
-    
-    if ($statusFilter !== '') {
-        $sql .= " AND s.svcStatus = ?";
-        $count_sql .= " AND s.svcStatus = ?";
-        $params[] = $statusFilter;
-        $count_params[] = $statusFilter;
-    }
-    
-    // Exclude retired and deceased staff when requested
-    if ($excludeInactive) {
-        $sql .= " AND s.svcStatus = 'Active'";
-        $count_sql .= " AND s.svcStatus = 'Active'";
-    }
-    
-    // Get total count for pagination
-    $stmt_count = $pdo->prepare($count_sql);
-    $stmt_count->execute($count_params);
-    $total_staff = $stmt_count->fetchColumn();
-    $total_pages = ceil($total_staff / $per_page);
-    
-    // Apply sorting (matching reports_seniority.php logic)
-    if ($sort_col && array_key_exists($sort_col, $sortable_columns)) {
-        $sql .= " ORDER BY " . $sortable_columns[$sort_col] . " $sort_dir";
-    } else {
-        // Default seniority sorting: rank level, then subWef, then tempWef, then attestDate, then service number
-        $sql .= " ORDER BY 
-            r.level ASC,
-            s.subWef ASC,
-            s.tempWef ASC,
-            s.attestDate ASC,
-            s.service_number ASC";
-    }
-    
-    // Apply pagination
-    $sql .= " LIMIT $per_page OFFSET $offset";
-    
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $staffList = $stmt->fetchAll(PDO::FETCH_OBJ);
-    
-    $result = [];
-    foreach ($staffList as $s) {
-        $result[] = [
-            'id' => $s->id,
-            'svcNo' => $s->service_number,
-            'rank' => $s->rankAbbr ?? $s->rankName ?? ('ID:' . $s->rank_id),
-            'name' => $s->last_name . ' ' . $s->first_name,
-            'unit' => $s->unitCode ?? $s->unitName ?? '',
-            'status' => $s->svcStatus
-        ];
-    }
-    
-    // Return data with pagination info
-    echo json_encode([
-        'data' => $result,
-        'pagination' => [
-            'current_page' => $page,
-            'per_page' => $per_page,
-            'total_items' => $total_staff,
-            'total_pages' => $total_pages
-        ]
-    ]);
-    exit;
+    // Unreachable code removed after exit;
 }
 
 // --- CSRF helper ---
@@ -551,7 +539,7 @@ $pdo = getDbConnection();
 $ranks = $pdo->query("SELECT id as rankID, name as rankName FROM ranks")->fetchAll(PDO::FETCH_OBJ);
 $rankMap = [];
 foreach ($ranks as $r) $rankMap[$r->rankID] = $r->rankName;
-$units = $pdo->query("SELECT id as unitID, name as unitName FROM units")->fetchAll(PDO::FETCH_OBJ);
+$units = $pdo->query("SELECT unit_id as unitID, code as unitName FROM unit")->fetchAll(PDO::FETCH_OBJ);
 $unitMap = [];
 foreach ($units as $u) $unitMap[$u->unitID] = $u->unitName;
 $corps = $pdo->query("SELECT id, name FROM corps ORDER BY name ASC")->fetchAll(PDO::FETCH_OBJ);
@@ -1422,7 +1410,7 @@ function getStaffStatistics() {
     $stmt = $pdo->query("SELECT r.name as rankName, COUNT(s.service_number) as count FROM ranks r LEFT JOIN staff s ON r.id = s.rank_id GROUP BY r.id, r.name ORDER BY count DESC");
     $stats['ranks'] = $stmt->fetchAll(PDO::FETCH_OBJ);
     // Staff by unit
-    $stmt = $pdo->query("SELECT u.name as unitName, COUNT(s.service_number) as count FROM units u LEFT JOIN staff s ON u.id = s.unit_id GROUP BY u.id, u.name ORDER BY count DESC");
+    $stmt = $pdo->query("SELECT u.code as unitName, COUNT(s.service_number) as count FROM unit u LEFT JOIN staff s ON u.unit_id = s.unit_id GROUP BY u.unit_id, u.code ORDER BY count DESC");
     $stats['units'] = $stmt->fetchAll(PDO::FETCH_OBJ);
     return $stats;
 }
@@ -1537,7 +1525,7 @@ if (!empty($staff)) {
             $stmt = $pdo->prepare("
                 SELECT sa.*, u.name as unit_name, r.abbreviation as rank_abbr, r.name as rank_name
                 FROM staff_appointment sa
-                LEFT JOIN units u ON sa.unit_id = u.id
+                LEFT JOIN unit u ON sa.unit_id = u.unit_id
                 LEFT JOIN ranks r ON sa.rank_id = r.id
                 WHERE sa.staff_id = ? 
                 ORDER BY sa.start_date DESC
@@ -1606,7 +1594,7 @@ window.operationsOptions = <?php
 
 // Fetch distinct units (case-insensitive) for JavaScript dropdowns
 window.unitsOptions = <?php
-    $unitsForDropdown = $pdo->query("SELECT DISTINCT id, name, location FROM units WHERE is_active = 1 ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+    $unitsForDropdown = $pdo->query("SELECT DISTINCT unit_id, code, location FROM unit ORDER BY code ASC")->fetchAll(PDO::FETCH_ASSOC);
     echo json_encode($unitsForDropdown);
 ?>;
 
@@ -1721,10 +1709,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <!-- Load custom CSS and assets -->
 <link rel="stylesheet" href="/Armis2/assets/css/admin_branch.css">
-<link rel="stylesheet" href="/Armis2/assets/css/custom-icons.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css">
 <link rel="stylesheet" href="/Armis2/admin_branch/css/form-step-styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+<!-- Bootstrap JS must be loaded before any script that uses 'bootstrap' -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
 <script src="/Armis2/assets/js/edit_staff_support.js"></script>
 <div class="content-wrapper with-sidebar">
@@ -3284,9 +3273,7 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
         </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
-<script src="/Armis2/assets/js/edit_staff_support.js"></script>
+<!-- Bootstrap JS and jQuery already loaded above -->
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Include multi-step form functionality

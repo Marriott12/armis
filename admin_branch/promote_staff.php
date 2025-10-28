@@ -58,10 +58,10 @@ function generatePromotionReport($serviceNumbers, $fromRank, $toRank, $effective
         $placeholders = rtrim(str_repeat('?,', count($serviceNumbers)), ',');
         $stmt = $pdo->prepare("
             SELECT s.service_number, r.abbreviation as rank_abbr, s.first_name, s.last_name, 
-                   u.name as unit_name
+                   u.code as unit_name
             FROM staff s
             LEFT JOIN ranks r ON s.rank_id = r.id
-            LEFT JOIN units u ON s.unit_id = u.id
+            LEFT JOIN unit u ON s.unit_id = u.unit_id
             WHERE s.service_number IN ($placeholders)
         ");
         $stmt->execute($serviceNumbers);
@@ -200,7 +200,7 @@ if (isset($_GET['current_rank']) && is_numeric($_GET['current_rank'])) {
             $staffStmt = $pdo->prepare("
                 SELECT s.id, s.service_number, s.first_name, s.last_name, s.rank_id, 
                        s.attestDate, s.unit_id, s.subWef, s.tempWef, s.corps, s.svcStatus,
-                       u.name as unit_name,
+                       u.code as unit_name,
                        r.name as rank_name,
                        COALESCE(r.abbreviation, r.name) as rank_abbreviation,
                        -- Date when they got current rank (for display)
@@ -243,7 +243,7 @@ if (isset($_GET['current_rank']) && is_numeric($_GET['current_rank'])) {
                            CURDATE()
                        ) as calculated_months_at_rank
                 FROM staff s
-                LEFT JOIN units u ON s.unit_id = u.id
+                LEFT JOIN unit u ON s.unit_id = u.unit_id
                 LEFT JOIN ranks r ON s.rank_id = r.id
                 WHERE s.rank_id = ? 
                 ORDER BY 
@@ -695,14 +695,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 ?>
 
 <!-- DataTables CSS -->
-
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.13.6/css/responsive.bootstrap5.min.css">
-
-<!-- jQuery (required for Bootstrap JS) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
-<!-- Bootstrap JS Bundle (includes Popper) -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<!-- DataTables CSS intentionally left to be loaded with the page scripts below if required -->
 
 <div class="content-wrapper with-sidebar">
     <div class="container-fluid">
@@ -1108,18 +1101,16 @@ include dirname(__DIR__) . '/shared/sidebar.php';
     console.log('Next rank abbreviation:', window.nextRankAbbr);
 </script>
 
-<!-- Core library scripts with integrity checks and fallbacks -->
+<!-- Core library scripts: jQuery (with local fallback) -->
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+<script>window.jQuery || document.write('\x3Cscript src="/Armis2/assets/js/jquery-3.6.0.min.js">\x3C/script>');</script>
 
-<!-- DataTables CSS (loaded in head via shared/header.php, but include again if needed) -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.6/css/dataTables.bootstrap5.min.css">
+<!-- DataTables Scripts (Bootstrap integration) -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
 
-<!-- DataTables Scripts -->
-<script src="https://cdn.jsdelivr.net/npm/datatables.net@1.13.6/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.6/js/dataTables.bootstrap5.min.js"></script>
-
-<!-- Bootstrap Bundle -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Note: Bootstrap JS bundle is included in shared/footer.php to avoid duplicate loads -->
 
 <!-- Flatpickr for date picking -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">

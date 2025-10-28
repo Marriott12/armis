@@ -146,7 +146,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Direct redirect to admin dashboard
                 header('Location: /Armis2/admin/index.php');
                 exit();
-                exit();
             } else {
                 $error = 'Invalid username or password';
             }
@@ -368,55 +367,5 @@ $pageTitle = "Login";
             }
         });
     </script>
-</body>
-</html>
-                            </label>
-                            <input type="password" class="form-control" id="password" name="password" required 
-                                   placeholder="Enter your password">
-                        </div>
-                        
-                        <button type="submit" class="btn btn-login">
-                            <i class="fas fa-sign-in-alt"></i> Login to ARMIS
-                        </button>
-                    </form>
-                    
-                    <div class="text-center mt-3 mb-2">
-                        <a href="/Armis2/reset_password.php" class="btn btn-link text-decoration-none">
-                            <i class="fas fa-key"></i> Forgot Password?
-                        </a>
-                    </div>
-                    <hr class="my-4">
-                    <div class="text-center">
-                        <a href="/Armis2/" class="btn btn-outline-secondary">
-                            <i class="fas fa-home"></i> Back to Home
-                        </a>
-                    </div>
-                    
-                    <!-- Demo Credentials -->
-                    <div class="mt-4 p-3 bg-light rounded">
-                        <h6 class="mb-2"><i class="fas fa-info-circle"></i> Demo Credentials:</h6>
-                        <div class="row">
-                            <div class="col-12">
-                                <small class="text-muted">
-                                    <strong>Administrator:</strong><br>
-                                    • admin / armis2025<br><br>
-                                    
-                                    <strong>Officers:</strong><br>
-                                    • commander / commander123<br>
-                                    • trainer / trainer123<br><br>
-                                    
-                                    <strong>Staff:</strong><br>
-                                    • staff1 / staff123<br>
-                                    • staff2 / staff456
-                                </small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

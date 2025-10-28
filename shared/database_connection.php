@@ -77,7 +77,6 @@ function getMysqliConnection() {
 function authenticateUser($username, $password) {
     try {
         $pdo = getDbConnection();
-        
         $stmt = $pdo->prepare("
             SELECT s.id, s.username, s.password, s.role, s.accStatus, 
                    s.last_login, s.service_number, s.is_first_login,
@@ -90,22 +89,20 @@ function authenticateUser($username, $password) {
             LEFT JOIN corps c ON s.corps = c.name
             WHERE s.username = ? AND (s.accStatus = 'active' OR s.accStatus = 'Active')
         ");
-        
         $stmt->execute([$username]);
         $user = $stmt->fetch();
-        
         if (!$user) {
+            error_log("AUTH DEBUG: No user found for username: $username");
             return false;
         }
-        
-        // Check regular password
-        if (password_verify($password, $user['password'])) {
+        error_log("AUTH DEBUG: Found user: username={$user['username']} accStatus={$user['accStatus']} hash={$user['password']}");
+        $verify = password_verify($password, $user['password']);
+        error_log("AUTH DEBUG: password_verify result: " . ($verify ? 'true' : 'false'));
+        if ($verify) {
             updateLastLogin($user['id']);
             return $user;
         }
-        
         return false;
-        
     } catch (Exception $e) {
         error_log("Authentication error: " . $e->getMessage());
         return false;

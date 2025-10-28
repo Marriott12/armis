@@ -250,6 +250,7 @@ $deploymentCount = count($deployments);
 $operationCount = count($operations);
 $educationCount = count($education);
 $skillCount = count($skills);
+
 $postingCount = count($postings);
 $awardCount = count($awards);
 $disciplinaryCount = count($disciplinary);
@@ -611,19 +612,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="courses-tab" data-bs-toggle="tab" data-bs-target="#courses" type="button">
                             <i class="fa fa-graduation-cap me-1"></i> Courses 
-                            <span class="badge <?=$courseCount > 0 ? 'bg-primary' : 'bg-secondary'?> ms-1"><?=$courseCount?></span>
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="education-tab" data-bs-toggle="tab" data-bs-target="#education" type="button">
-                            <i class="fa fa-book me-1"></i> Education 
-                            <span class="badge <?=$educationCount > 0 ? 'bg-primary' : 'bg-secondary'?> ms-1"><?=$educationCount?></span>
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="skills-tab" data-bs-toggle="tab" data-bs-target="#skills" type="button">
-                            <i class="fa fa-cogs me-1"></i> Skills 
-                            <span class="badge <?=$skillCount > 0 ? 'bg-primary' : 'bg-secondary'?> ms-1"><?=$skillCount?></span>
+                            <span class="badge <?=($courseCount + $educationCount) > 0 ? 'bg-primary' : 'bg-secondary'?> ms-1"><?=($courseCount + $educationCount)?></span>
                         </button>
                     </li>
                     
@@ -652,10 +641,62 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             </div>
             <div class="card-body">
                 <div class="tab-content" id="profileTabsContent">
+                    <!-- ==================== OPERATIONS TAB ==================== -->
+                    <div class="tab-pane fade" id="operations" role="tabpanel">
+                        <?php if (!empty($operations)): ?>
+                            <div class="table-responsive">
+                                <table class="table table-hover table-bordered">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Operation Name</th>
+                                            <th>Type</th>
+                                            <th>Location</th>
+                                            <th>Start Date</th>
+                                            <th>End Date</th>
+                                            <th>Role</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($operations as $idx => $op): ?>
+                                            <tr>
+                                                <td><?=$idx + 1?></td>
+                                                <td><strong><?=htmlspecialchars($op->operationName ?? 'N/A')?></strong></td>
+                                                <td><?=htmlspecialchars($op->operationType ?? 'N/A')?></td>
+                                                <td><?=htmlspecialchars($op->operationLocation ?? 'N/A')?></td>
+                                                <td><?=!empty($op->start_date) ? date('d M Y', strtotime($op->start_date)) : 'N/A'?></td>
+                                                <td><?=!empty($op->end_date) ? date('d M Y', strtotime($op->end_date)) : 'Ongoing'?></td>
+                                                <td><?=htmlspecialchars($op->role ?? 'N/A')?></td>
+                                                <td>
+                                                    <?php
+                                                    $status = $op->status ?? '';
+                                                    $statusClass = match(strtolower($status)) {
+                                                        'completed' => 'bg-success',
+                                                        'active' => 'bg-primary',
+                                                        'cancelled' => 'bg-danger',
+                                                        default => 'bg-secondary'
+                                                    };
+                                                    ?>
+                                                    <span class="badge <?=$statusClass?>">
+                                                        <?=htmlspecialchars($status ?: 'N/A')?>
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php else: ?>
+                            <div class="alert alert-info">
+                                <i class="fa fa-info-circle"></i> No operations participation recorded.
+                            </div>
+                        <?php endif; ?>
+                    </div>
                     
                     <!-- ==================== PROMOTIONS TAB ==================== -->
                     <div class="tab-pane fade show active" id="promotions" role="tabpanel">
-                        <?php if (!empty($promotions)): ?>
+                        <?php if (!empty($promotions) && count($promotions) > 0): ?>
                             <div class="table-responsive">
                                 <table class="table table-hover table-bordered">
                                     <thead class="table-light">
@@ -723,72 +764,44 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <?php endif; ?>
                     </div>
 
-                    <!-- ==================== COURSES TAB ==================== -->
+                    <!-- ==================== COURSES TAB (COMBINED) ==================== -->
                     <div class="tab-pane fade" id="courses" role="tabpanel">
-                        <?php if (!empty($courses)): ?>
+                        <?php if (!empty($courses) || !empty($education)): ?>
                             <div class="table-responsive">
                                 <table class="table table-hover table-bordered">
                                     <thead class="table-light">
                                         <tr>
                                             <th>#</th>
-                                            <th>Course Name</th>
+                                            <th>Name/Institution</th>
+                                            <th>Qualification/Course</th>
                                             <th>Start Date</th>
                                             <th>End Date</th>
-                                            <th>Duration</th>
                                             <th>Grade</th>
                                             <th>Status</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <?php foreach ($courses as $idx => $course): ?>
+                                        <?php $idx = 1; ?>
+                                        <?php foreach ($courses as $course): ?>
                                             <tr>
-                                                <td><?=$idx + 1?></td>
+                                                <td><?=$idx++?></td>
                                                 <td><strong><?=htmlspecialchars($course->courseName ?? 'N/A')?></strong></td>
+                                                <td><?=htmlspecialchars($course->qualification ?? $course->courseName ?? 'N/A')?></td>
                                                 <td><?=!empty($course->start_date) ? date('d M Y', strtotime($course->start_date)) : 'N/A'?></td>
                                                 <td><?=!empty($course->end_date) ? date('d M Y', strtotime($course->end_date)) : 'N/A'?></td>
-                                                <td><?=htmlspecialchars($course->courseDuration ?? 'N/A')?></td>
                                                 <td><?=htmlspecialchars($course->grade ?? 'N/A')?></td>
-                                                <td>
-                                                    <span class="badge bg-<?=strcasecmp($course->status ?? '','Completed')===0?'success':'warning'?>">
-                                                        <?=htmlspecialchars($course->status ?? 'N/A')?>
-                                                    </span>
-                                                </td>
+                                                <td><span class="badge bg-<?=strcasecmp($course->status ?? '','Completed')===0?'success':'warning'?>"><?=htmlspecialchars($course->status ?? 'N/A')?></span></td>
                                             </tr>
                                         <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                        <?php else: ?>
-                            <div class="alert alert-info">
-                                <i class="fa fa-info-circle"></i> No courses completed.
-                            </div>
-                        <?php endif; ?>
-                    </div>
-
-                    <!-- ==================== EDUCATION TAB ==================== -->
-                    <div class="tab-pane fade" id="education" role="tabpanel">
-                        <?php if (!empty($education)): ?>
-                            <div class="table-responsive">
-                                <table class="table table-hover table-bordered">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th>#</th>
-                                            <th>Institution</th>
-                                            <th>Qualification</th>
-                                            <th>Year Started</th>
-                                            <th>Year Completed</th>
-                                            <th>Grade</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php foreach ($education as $idx => $edu): ?>
+                                        <?php foreach ($education as $edu): ?>
                                             <tr>
-                                                <td><?=$idx + 1?></td>
+                                                <td><?=$idx++?></td>
                                                 <td><?=htmlspecialchars($edu->institution ?? 'N/A')?></td>
                                                 <td><strong><?=htmlspecialchars($edu->qualification ?? 'N/A')?></strong></td>
                                                 <td><?=htmlspecialchars($edu->year_started ?? 'N/A')?></td>
                                                 <td><?=htmlspecialchars($edu->year_completed ?? 'N/A')?></td>
                                                 <td><?=htmlspecialchars($edu->grade_obtained ?? 'N/A')?></td>
+                                                <td><span class="badge bg-info">Education</span></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -796,128 +809,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             </div>
                         <?php else: ?>
                             <div class="alert alert-info">
-                                <i class="fa fa-info-circle"></i> No education records found.
-                            </div>
-                        <?php endif; ?>
-                    </div>
-
-                    <!-- ==================== SKILLS TAB ==================== -->
-                    <div class="tab-pane fade" id="skills" role="tabpanel">
-                        <?php if (!empty($skills)): ?>
-                            <div class="table-responsive">
-                                <table class="table table-hover table-bordered">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th>#</th>
-                                            <th>Skill Name</th>
-                                            <th>Level</th>
-                                            <th>Category</th>
-                                            <th>Certification</th>
-                                            <th>Valid Until</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php foreach ($skills as $idx => $skill): ?>
-                                            <tr>
-                                                <td><?=$idx + 1?></td>
-                                                <td><strong><?=htmlspecialchars($skill->skill_name ?? 'N/A')?></strong></td>
-                                                <td>
-                                                    <?php
-                                                    $level = $skill->skill_level ?? '';
-                                                    $badgeClass = match(strtolower($level)) {
-                                                        'expert' => 'bg-danger',
-                                                        'advanced' => 'bg-success',
-                                                        'intermediate' => 'bg-primary',
-                                                        'beginner' => 'bg-info',
-                                                        default => 'bg-secondary'
-                                                    };
-                                                    ?>
-                                                    <span class="badge <?=$badgeClass?> badge-skill-level">
-                                                        <?=htmlspecialchars($level)?>
-                                                    </span>
-                                                </td>
-                                                <td><?=htmlspecialchars($skill->skill_category ?? 'N/A')?></td>
-                                                <td><?=htmlspecialchars($skill->certification ?? 'N/A')?></td>
-                                                <td>
-                                                    <?php if (!empty($skill->certification_expiry)): ?>
-                                                        <?=date('d M Y', strtotime($skill->certification_expiry))?>
-                                                        <?php
-                                                        $expiryTime = strtotime($skill->certification_expiry);
-                                                        $now = time();
-                                                        if ($expiryTime < $now): ?>
-                                                            <span class="badge bg-danger ms-1">Expired</span>
-                                                        <?php elseif ($expiryTime < strtotime('+3 months')): ?>
-                                                            <span class="badge bg-warning ms-1">Expiring Soon</span>
-                                                        <?php endif; ?>
-                                                    <?php else: ?>
-                                                        N/A
-                                                    <?php endif; ?>
-                                                </td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                        <?php else: ?>
-                            <div class="alert alert-info">
-                                <i class="fa fa-info-circle"></i> No skills registered.
-                            </div>
-                        <?php endif; ?>
-                    </div>
-
-                    <!-- ==================== OPERATIONS TAB ==================== -->
-                    <div class="tab-pane fade" id="operations" role="tabpanel">
-                        <?php if (!empty($operations)): ?>
-                            <div class="table-responsive">
-                                <table class="table table-hover table-bordered">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th>#</th>
-                                            <th>Operation Name</th>
-                                            <th>Role</th>
-                                            <th>Start Date</th>
-                                            <th>End Date</th>
-                                            <th>Duration</th>
-                                            <th>Performance</th>
-                                            <th>Remarks</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php foreach ($operations as $idx => $op): ?>
-                                            <?php
-                                            $duration = '';
-                                            if (!empty($op->start_date)) {
-                                                $start = strtotime($op->start_date);
-                                                $end = !empty($op->end_date) ? strtotime($op->end_date) : time();
-                                                $days = floor(($end - $start) / (60 * 60 * 24));
-                                                $duration = $days . ' days';
-                                            }
-                                            ?>
-                                            <tr>
-                                                <td><?=$idx + 1?></td>
-                                                <td><strong><?=htmlspecialchars($op->operation_name ?? 'N/A')?></strong></td>
-                                                <td><?=htmlspecialchars($op->role ?? 'N/A')?></td>
-                                                <td><?=!empty($op->start_date) ? date('d M Y', strtotime($op->start_date)) : 'N/A'?></td>
-                                                <td><?=!empty($op->end_date) ? date('d M Y', strtotime($op->end_date)) : 'Ongoing'?></td>
-                                                <td><?=$duration?></td>
-                                                <td>
-                                                    <?php if (!empty($op->performance_rating)): ?>
-                                                        <span class="badge bg-<?=$op->performance_rating >= 4 ? 'success' : ($op->performance_rating >= 3 ? 'primary' : 'warning')?>">
-                                                            <?=$op->performance_rating?>/5
-                                                        </span>
-                                                    <?php else: ?>
-                                                        N/A
-                                                    <?php endif; ?>
-                                                </td>
-                                                <td><?=htmlspecialchars($op->remarks ?? '')?></td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                        <?php else: ?>
-                            <div class="alert alert-info">
-                                <i class="fa fa-info-circle"></i> No operations participation recorded.
+                                <i class="fa fa-info-circle"></i> No courses or education records found.
                             </div>
                         <?php endif; ?>
                     </div>

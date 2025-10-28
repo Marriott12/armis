@@ -150,11 +150,17 @@ const EditStaffForm = (() => {
         return { addRow, init };
     })();
 
+
+    function goToStep(step) {
+        // Stub: Step navigation is now handled by multi-step-form.js
+        // This prevents JS errors if called elsewhere
+        // Optionally, you can add logic here if needed
+    }
+
     function init() {
-        goToStep(0);
+        // Step navigation is now handled by multi-step-form.js
         DynamicFields.init();
 
-    // Step navigation is now handled by multi-step-form.js
         document.getElementById('validateFormBtn')?.addEventListener('click', () => validateForm(true));
 
         document.getElementById('editStaffForm')?.addEventListener('submit', function (e) {
