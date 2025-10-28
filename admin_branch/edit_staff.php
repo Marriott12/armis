@@ -432,16 +432,16 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         $sort_col = $_GET['sort_col'] ?? '';
         $sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
         // Main query with JOINs
-        $sql = "SELECT s.id, s.service_number, s.first_name, s.last_name, s.rank_id, s.unit_id, s.svcStatus, \
-                       r.name as rankName, r.abbreviation as rankAbbr, r.level as rankLevel, \
-                       u.code as unitName, u.code as unitCode,\
-                       s.subWef, s.tempWef, s.attestDate\
-                FROM staff s\
-                LEFT JOIN ranks r ON s.rank_id = r.id\
-                LEFT JOIN unit u ON s.unit_id = u.unit_id\
-                WHERE 1=1";
+    $sql = "SELECT DISTINCT s.id, s.service_number, s.first_name, s.last_name, s.rank_id, s.unit_id, s.svcStatus, 
+               r.name as rankName, r.abbreviation as rankAbbr, r.level as rankLevel, 
+               u.code as unitName, u.code as unitCode, 
+               s.subWef, s.tempWef, s.attestDate 
+        FROM staff s 
+        LEFT JOIN ranks r ON s.rank_id = r.id 
+        LEFT JOIN unit u ON s.unit_id = u.unit_id 
+        WHERE 1=1";
         // Count query for pagination
-        $count_sql = "SELECT COUNT(*) FROM staff s\n                      LEFT JOIN ranks r ON s.rank_id = r.id\n                      LEFT JOIN unit u ON s.unit_id = u.unit_id\n                      WHERE 1=1";
+    $count_sql = "SELECT COUNT(DISTINCT s.id) FROM staff s\n                      LEFT JOIN ranks r ON s.rank_id = r.id\n                      LEFT JOIN unit u ON s.unit_id = u.unit_id\n                      WHERE 1=1";
         $params = [];
         $count_params = [];
         // Search condition
@@ -1373,7 +1373,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                     $stmt->execute([$newSvcNo]);
                     $staff = $stmt->fetch(PDO::FETCH_OBJ);
                 } catch (Exception $e) {
-                    $pdo->rollBack();
+                    // Only roll back if a transaction is active to avoid "There is no active transaction" errors
+                    if ($pdo->inTransaction()) {
+                        try {
+                            $pdo->rollBack();
+                        } catch (Exception $rbE) {
+                            error_log('rollBack failed: ' . $rbE->getMessage());
+                        }
+                    }
                     error_log("Edit error by user {$user->data()->id}: " . $e->getMessage());
                     
                     // More specific error messages
@@ -1712,9 +1719,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css">
 <link rel="stylesheet" href="/Armis2/admin_branch/css/form-step-styles.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
-<!-- Bootstrap JS must be loaded before any script that uses 'bootstrap' -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
+<!-- Core JS (jQuery + Bootstrap) are loaded centrally in shared/footer.php -->
 <script src="/Armis2/assets/js/edit_staff_support.js"></script>
 <div class="content-wrapper with-sidebar">
     <div class="container-fluid">
@@ -2200,6 +2205,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Add server-side pagination parameters
                     const url = new URL(window.location.origin + window.location.pathname + '?' + queryString);
                     url.searchParams.append('exclude_inactive', '1');
+                    // Ensure server-side AJAX handler is invoked
+                    url.searchParams.append('ajax', '1');
                     url.searchParams.append('page', currentPage);
                     url.searchParams.append('per_page', itemsPerPage);
                     

@@ -58,22 +58,82 @@ if ($id <= 0) {
 // ==================== FETCH COMPREHENSIVE STAFF DATA ====================
 
 // Main staff data with calculated fields
-$stmt = $pdo->prepare("
-    SELECT 
-        s.*, 
-        r.name AS rankName,
-        r.abbreviation AS rankAbbr,
-        u.name AS unitName,
-        c.name AS corpsName,
-        TIMESTAMPDIFF(YEAR, s.attestDate, CURDATE()) as years_of_service,
-        TIMESTAMPDIFF(YEAR, s.DOB, CURDATE()) as age
-    FROM staff s 
-    LEFT JOIN ranks r ON s.rank_id = r.id 
-    LEFT JOIN units u ON s.unit_id = u.id 
-    LEFT JOIN corps c ON s.corps_id = c.id
-    WHERE s.id = ? 
-    LIMIT 1
-");
+// helper: check if a table exists and return its columns
+function tableColumns(PDO $pdo, string $tableName): array {
+    try {
+        // Some environments don't allow parameterized SHOW TABLES; use direct query
+        $checkSql = "SHOW TABLES LIKE '" . addslashes($tableName) . "'";
+        $stmt = $pdo->query($checkSql);
+        if ($stmt === false || $stmt->rowCount() === 0) return [];
+
+        $cols = [];
+        $desc = $pdo->query("DESCRIBE `" . $tableName . "`");
+        foreach ($desc->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $cols[] = $row['Field'];
+        }
+        return $cols;
+    } catch (Exception $e) {
+        return [];
+    }
+}
+
+// Determine unit table and useful columns
+$unitTable = '';
+$unitCols = [];
+foreach (['unit', 'units'] as $t) {
+    $cols = tableColumns($pdo, $t);
+    if (!empty($cols)) {
+        $unitTable = $t;
+        $unitCols = $cols;
+        break;
+    }
+}
+
+// pick a sensible column for display name and id
+$unitNameCol = null;
+$unitIdCol = null;
+if (!empty($unitCols)) {
+    // possible name columns
+    foreach (['name', 'unit_name', 'unitName', 'unitName', 'unitName'] as $cand) {
+        if (in_array($cand, $unitCols)) { $unitNameCol = $cand; break; }
+    }
+    // fallback to any sensible column
+    if ($unitNameCol === null) {
+        foreach ($unitCols as $c) {
+            if (stripos($c, 'name') !== false || stripos($c, 'title') !== false) { $unitNameCol = $c; break; }
+        }
+    }
+    // id column
+    if (in_array('unit_id', $unitCols)) $unitIdCol = 'unit_id';
+    elseif (in_array('id', $unitCols)) $unitIdCol = 'id';
+    elseif (in_array('unitID', $unitCols)) $unitIdCol = 'unitID';
+}
+
+// Build the staff query dynamically so we only reference existing columns/tables
+$selectExtras = "c.name AS corpsName,\n        TIMESTAMPDIFF(YEAR, s.attestDate, CURDATE()) as years_of_service,\n        TIMESTAMPDIFF(YEAR, s.DOB, CURDATE()) as age";
+$joinUnit = '';
+$unitSelect = "'' AS unitName";
+if ($unitTable !== '') {
+    // alias u
+    $joinUnit = " LEFT JOIN `" . $unitTable . "` u ON ";
+    if ($unitIdCol !== null) {
+        $joinUnit .= "s.unit_id = u.`" . $unitIdCol . "`";
+    } else {
+        // best-effort join; leave join condition to match s.unit_id = u.id if present
+        $joinUnit .= "s.unit_id = u.id";
+    }
+
+    if ($unitNameCol !== null) {
+        $unitSelect = "u.`" . $unitNameCol . "` AS unitName";
+    } else {
+        // fall back to id when no name column is present
+        if ($unitIdCol !== null) $unitSelect = "u.`" . $unitIdCol . "` AS unitName";
+    }
+}
+
+$sql = "SELECT s.*, r.name AS rankName, r.abbreviation AS rankAbbr, " . $unitSelect . ", " . $selectExtras . "\n    FROM staff s\n    LEFT JOIN ranks r ON s.rank_id = r.id\n    " . $joinUnit . "\n    LEFT JOIN corps c ON s.corps_id = c.id\n    WHERE s.id = ?\n    LIMIT 1";
+
+$stmt = $pdo->prepare($sql);
 $stmt->execute([$id]);
 $staff = $stmt->fetch(PDO::FETCH_OBJ);
 
@@ -179,34 +239,66 @@ $medals = $medalStmt->fetchAll(PDO::FETCH_OBJ);
 
 // ==================== FETCH COURSES DATA ====================
 $courses = [];
-$courseStmt = $pdo->prepare("
-    SELECT 
-        c.*, 
-        cc.name AS courseName
-    FROM staff_courses c 
-    LEFT JOIN courses cc ON c.course_id = cc.id 
-    WHERE c.staff_id = ? 
-    ORDER BY c.end_date DESC
-");
-$courseStmt->execute([$id]);
-$courses = $courseStmt->fetchAll(PDO::FETCH_OBJ);
+// detect course table name (course or courses)
+$courseTable = '';
+    foreach (['course', 'courses'] as $t) {
+    try {
+        $chk = $pdo->query("SHOW TABLES LIKE '" . addslashes($t) . "'");
+        if ($chk && $chk->rowCount() > 0) { $courseTable = $t; break; }
+    } catch (Exception $e) { }
+}
+
+if ($courseTable !== '') {
+    // detect a sensible course name column
+    $courseCols = tableColumns($pdo, $courseTable);
+    $courseNameCol = null;
+    foreach (['name', 'courseName', 'description', 'code', 'title', 'course_id'] as $cand) {
+        if (in_array($cand, $courseCols)) { $courseNameCol = $cand; break; }
+    }
+    if ($courseNameCol === null && !empty($courseCols)) {
+        $courseNameCol = $courseCols[0];
+    }
+
+    $courseSelect = ($courseNameCol !== null) ? "cc.`" . $courseNameCol . "` AS courseName" : "cc.id AS courseName";
+
+    $courseStmt = $pdo->prepare("\n        SELECT \n            c.*, \n            " . $courseSelect . "\n        FROM staff_courses c \n        LEFT JOIN `" . $courseTable . "` cc ON c.course_id = cc." . (in_array('id', $courseCols) ? 'id' : $courseCols[0]) . " \n        WHERE c.staff_id = ? \n        ORDER BY c.end_date DESC\n    ");
+    $courseStmt->execute([$id]);
+    $courses = $courseStmt->fetchAll(PDO::FETCH_OBJ);
+} else {
+    // no course table found; leave $courses empty
+    $courses = [];
+}
 
 // ==================== FETCH POSTING HISTORY (from staff_appointment) ====================
 $postings = [];
 try {
-    $postingStmt = $pdo->prepare("
-        SELECT 
-            sa.*,
-            u.name AS unit_name,
-            u.location AS unit_location,
-            r.name AS rank_name,
-            r.abbreviation AS rank_abbr
-        FROM staff_appointment sa
-        LEFT JOIN units u ON sa.unit_id = u.id
-        LEFT JOIN ranks r ON sa.rank_id = r.id
-        WHERE sa.staff_id = ?
-        ORDER BY sa.start_date DESC
-    ");
+    // Use previously detected $unitTable and $unitCols if available; otherwise try 'units'
+    if (empty($unitTable)) {
+        try {
+            $chk = $pdo->query("SHOW TABLES LIKE 'units'");
+            if ($chk && $chk->rowCount() > 0) {
+                $unitTable = 'units';
+                $unitCols = tableColumns($pdo, 'units');
+            }
+        } catch (Exception $e) { }
+    }
+
+    $unitNameSelect = "'' AS unit_name";
+    $unitLocationSelect = "'' AS unit_location";
+    $unitJoin = '';
+    if (!empty($unitTable) && !empty($unitCols)) {
+        $joinCol = in_array('unit_id', $unitCols) ? 'unit_id' : (in_array('id', $unitCols) ? 'id' : $unitCols[0]);
+        $unitJoin = "LEFT JOIN `" . $unitTable . "` u ON sa.unit_id = u.`" . $joinCol . "`";
+        if (in_array('name', $unitCols)) $unitNameSelect = 'u.name AS unit_name';
+        elseif (in_array('unit_name', $unitCols)) $unitNameSelect = 'u.unit_name AS unit_name';
+        elseif (in_array('unitName', $unitCols)) $unitNameSelect = 'u.unitName AS unit_name';
+
+        if (in_array('location', $unitCols)) $unitLocationSelect = 'u.location AS unit_location';
+        elseif (in_array('unit_location', $unitCols)) $unitLocationSelect = 'u.unit_location AS unit_location';
+    }
+
+    $postingSql = "\n        SELECT \n            sa.*,\n            " . $unitNameSelect . ",\n            " . $unitLocationSelect . ",\n            r.name AS rank_name,\n            r.abbreviation AS rank_abbr\n        FROM staff_appointment sa\n        " . $unitJoin . "\n        LEFT JOIN ranks r ON sa.rank_id = r.id\n        WHERE sa.staff_id = ?\n        ORDER BY sa.start_date DESC\n    ";
+    $postingStmt = $pdo->prepare($postingSql);
     $postingStmt->execute([$id]);
     $postings = $postingStmt->fetchAll(PDO::FETCH_OBJ);
 } catch (Exception $e) {
@@ -671,12 +763,21 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                 <td>
                                                     <?php
                                                     $status = $op->status ?? '';
-                                                    $statusClass = match(strtolower($status)) {
-                                                        'completed' => 'bg-success',
-                                                        'active' => 'bg-primary',
-                                                        'cancelled' => 'bg-danger',
-                                                        default => 'bg-secondary'
-                                                    };
+                                                    // Use switch for compatibility with older PHP versions
+                                                    switch (strtolower($status)) {
+                                                        case 'completed':
+                                                            $statusClass = 'bg-success';
+                                                            break;
+                                                        case 'active':
+                                                            $statusClass = 'bg-primary';
+                                                            break;
+                                                        case 'cancelled':
+                                                            $statusClass = 'bg-danger';
+                                                            break;
+                                                        default:
+                                                            $statusClass = 'bg-secondary';
+                                                            break;
+                                                    }
                                                     ?>
                                                     <span class="badge <?=$statusClass?>">
                                                         <?=htmlspecialchars($status ?: 'N/A')?>
@@ -861,12 +962,21 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                 <td>
                                                     <?php
                                                     $status = $dep->status ?? '';
-                                                    $statusClass = match(strtolower($status)) {
-                                                        'completed' => 'bg-success',
-                                                        'active', 'ongoing' => 'bg-primary',
-                                                        'cancelled' => 'bg-danger',
-                                                        default => 'bg-secondary'
-                                                    };
+                                                    switch (strtolower($status)) {
+                                                        case 'completed':
+                                                            $statusClass = 'bg-success';
+                                                            break;
+                                                        case 'active':
+                                                        case 'ongoing':
+                                                            $statusClass = 'bg-primary';
+                                                            break;
+                                                        case 'cancelled':
+                                                            $statusClass = 'bg-danger';
+                                                            break;
+                                                        default:
+                                                            $statusClass = 'bg-secondary';
+                                                            break;
+                                                    }
                                                     ?>
                                                     <span class="badge <?=$statusClass?>">
                                                         <?=htmlspecialchars($status ?: 'N/A')?>
@@ -981,13 +1091,24 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                 <td><?=$idx + 1?></td>
                                                 <td>
                                                     <?php
-                                                    $typeClass = match(strtolower($award->award_type ?? '')) {
-                                                        'commendation' => 'bg-success',
-                                                        'letter of appreciation' => 'bg-info',
-                                                        'certificate' => 'bg-primary',
-                                                        'plaque' => 'bg-warning text-dark',
-                                                        default => 'bg-secondary'
-                                                    };
+                                                    $awardType = strtolower($award->award_type ?? '');
+                                                    switch ($awardType) {
+                                                        case 'commendation':
+                                                            $typeClass = 'bg-success';
+                                                            break;
+                                                        case 'letter of appreciation':
+                                                            $typeClass = 'bg-info';
+                                                            break;
+                                                        case 'certificate':
+                                                            $typeClass = 'bg-primary';
+                                                            break;
+                                                        case 'plaque':
+                                                            $typeClass = 'bg-warning text-dark';
+                                                            break;
+                                                        default:
+                                                            $typeClass = 'bg-secondary';
+                                                            break;
+                                                    }
                                                     ?>
                                                     <span class="badge <?=$typeClass?>">
                                                         <?=htmlspecialchars($award->award_type ?? 'N/A')?>
@@ -1044,12 +1165,21 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                     <td><?=htmlspecialchars($disc->incident_type ?? 'N/A')?></td>
                                                     <td>
                                                         <?php
-                                                        $severityClass = match(strtolower($disc->severity ?? '')) {
-                                                            'minor' => 'bg-warning text-dark',
-                                                            'major' => 'bg-danger',
-                                                            'severe' => 'bg-dark',
-                                                            default => 'bg-secondary'
-                                                        };
+                                                        $sev = strtolower($disc->severity ?? '');
+                                                        switch ($sev) {
+                                                            case 'minor':
+                                                                $severityClass = 'bg-warning text-dark';
+                                                                break;
+                                                            case 'major':
+                                                                $severityClass = 'bg-danger';
+                                                                break;
+                                                            case 'severe':
+                                                                $severityClass = 'bg-dark';
+                                                                break;
+                                                            default:
+                                                                $severityClass = 'bg-secondary';
+                                                                break;
+                                                        }
                                                         ?>
                                                         <span class="badge <?=$severityClass?>">
                                                             <?=htmlspecialchars($disc->severity ?? 'N/A')?>
@@ -1063,12 +1193,21 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                     </td>
                                                     <td>
                                                         <?php
-                                                        $statusClass = match(strtolower($disc->status ?? '')) {
-                                                            'resolved' => 'bg-success',
-                                                            'pending' => 'bg-warning text-dark',
-                                                            'under investigation' => 'bg-info',
-                                                            default => 'bg-secondary'
-                                                        };
+                                                        $discStatus = strtolower($disc->status ?? '');
+                                                        switch ($discStatus) {
+                                                            case 'resolved':
+                                                                $statusClass = 'bg-success';
+                                                                break;
+                                                            case 'pending':
+                                                                $statusClass = 'bg-warning text-dark';
+                                                                break;
+                                                            case 'under investigation':
+                                                                $statusClass = 'bg-info';
+                                                                break;
+                                                            default:
+                                                                $statusClass = 'bg-secondary';
+                                                                break;
+                                                        }
                                                         ?>
                                                         <span class="badge <?=$statusClass?>">
                                                             <?=htmlspecialchars($disc->status ?? 'N/A')?>
