@@ -113,8 +113,8 @@ $resources = $manager->getAllResources();
                         <td><?= htmlspecialchars($f['name']) ?></td>
                         <td><?= htmlspecialchars($f['status']) ?></td>
                         <td><?= htmlspecialchars($f['location']) ?></td>
-                        <td><?= htmlspecialchars($f['start_date']) ?></td>
-                        <td><?= htmlspecialchars($f['end_date']) ?></td>
+                        <td><?= htmlspecialchars($f['startDate']) ?></td>
+                        <td><?= htmlspecialchars($f['endDate']) ?></td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -136,8 +136,8 @@ $resources = $manager->getAllResources();
                         <td><?= htmlspecialchars($d['name']) ?></td>
                         <td><?= htmlspecialchars($d['status']) ?></td>
                         <td><?= htmlspecialchars($d['location']) ?></td>
-                        <td><?= htmlspecialchars($d['start_date']) ?></td>
-                        <td><?= htmlspecialchars($d['end_date']) ?></td>
+                        <td><?= htmlspecialchars($d['startDate']) ?></td>
+                        <td><?= htmlspecialchars($d['endDate']) ?></td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>

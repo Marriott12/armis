@@ -76,12 +76,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_medals']) && T
             $data = array_combine($header, $row);
             if (empty($data['name'])) continue;
             try {
-                $stmt = $pdo->prepare("INSERT INTO medals (name, description, image_path, created_at) VALUES (?, ?, ?, ?)");
+                $stmt = $pdo->prepare("INSERT INTO medals (name, description, imagePath, createdAt) VALUES (?, ?, ?, ?)");
                 $stmt->execute([
                     $data['name'],
                     $data['description'] ?? '',
-                    $data['image_path'] ?? '',
-                    $data['created_at'] ?? date('Y-m-d H:i:s')
+                    $data['imagePath'] ?? '',
+                    $data['createdAt'] ?? date('Y-m-d H:i:s')
                 ]);
                 $imported++;
             } catch (Exception $e) {
@@ -101,8 +101,8 @@ if (isset($_GET['export_medals']) && Token::check($_GET['csrf'] ?? '')) {
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment; filename="'.$filename.'"');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['id','name','description','image_path','created_at']);
-    $stmt = $pdo->query("SELECT id, name, description, image_path, created_at FROM medals ORDER BY name ASC");
+    fputcsv($out, ['id','name','description','imagePath','createdAt']);
+    $stmt = $pdo->query("SELECT id, name, description, imagePath, createdAt FROM medals ORDER BY name ASC");
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
         fputcsv($out, $row);
     }
@@ -115,10 +115,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_medal']) && Toke
     $medalId = intval($_POST['medal_id']);
     $name = trim($_POST['name'] ?? '');
     $desc = trim($_POST['description'] ?? '');
-    $image_path = trim($_POST['image_path'] ?? '');
+    $imagePath = trim($_POST['imagePath'] ?? '');
 
     if ($name === '') $errors[] = "Medal name cannot be empty.";
-    if ($image_path && !preg_match('/^.+\.(jpg|jpeg|png|gif)$/i', $image_path)) $errors[] = "Invalid image file path.";
+    if ($imagePath && !preg_match('/^.+\.(jpg|jpeg|png|gif)$/i', $imagePath)) $errors[] = "Invalid image file path.";
 
     if (empty($errors)) {
         try {
@@ -126,16 +126,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_medal']) && Toke
             $stmt->execute([$medalId]);
             $old = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            $stmt = $pdo->prepare("UPDATE medals SET name=?, description=?, image_path=? WHERE id=?");
-            $stmt->execute([$name, $desc, $image_path, $medalId]);
+            $stmt = $pdo->prepare("UPDATE medals SET name=?, description=?, imagePath=? WHERE id=?");
+            $stmt->execute([$name, $desc, $imagePath, $medalId]);
             $success = "Medal updated successfully!";
 
             // Log audit trail
             $user = $_SESSION['username'] ?? 'admin';
-            $stmt = $pdo->prepare("INSERT INTO medals_audit (medal_id, action, changed_by, before_json, after_json, changed_at) VALUES (?, 'update', ?, ?, ?, NOW())");
+            $stmt = $pdo->prepare("INSERT INTO medals_audit (medal_id, action, changed_by, beforeJson, after_json, changed_at) VALUES (?, 'update', ?, ?, ?, NOW())");
             $stmt->execute([
                 $medalId, $user, json_encode($old), json_encode([
-                    'name'=>$name, 'description'=>$desc, 'image_path'=>$image_path
+                    'name'=>$name, 'description'=>$desc, 'imagePath'=>$imagePath
                 ])
             ]);
         } catch (Exception $e) {
@@ -164,7 +164,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_delete']) && Tok
                 $old = $stmt->fetch(PDO::FETCH_ASSOC);
                 if ($old) {
                     $user = $_SESSION['username'] ?? 'admin';
-                    $stmt2 = $pdo->prepare("INSERT INTO medals_audit (medal_id, action, changed_by, before_json, after_json, changed_at) VALUES (?, 'delete', ?, ?, '{}', NOW())");
+                    $stmt2 = $pdo->prepare("INSERT INTO medals_audit (medal_id, action, changed_by, beforeJson, after_json, changed_at) VALUES (?, 'delete', ?, ?, '{}', NOW())");
                     $stmt2->execute([$id, $user, json_encode($old)]);
                 }
             }
@@ -196,7 +196,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['audit_medal_id']) && ct
 
 // --- Search/filter/sort logic ---
 $search = trim($_GET['search'] ?? '');
-$sort = in_array($_GET['sort'] ?? '', ['name', 'created_at', 'awarded_count', 'last_awarded']) ? $_GET['sort'] : 'name';
+$sort = in_array($_GET['sort'] ?? '', ['name', 'createdAt', 'awarded_count', 'last_awarded']) ? $_GET['sort'] : 'name';
 $order = ($_GET['order'] ?? '') === 'desc' ? 'DESC' : 'ASC';
 
 $where = [];
@@ -216,8 +216,8 @@ switch($sort) {
     case "last_awarded":
         $orderSQL = "ORDER BY last_awarded $order";
         break;
-    case "created_at":
-        $orderSQL = "ORDER BY m.created_at $order";
+    case "createdAt":
+        $orderSQL = "ORDER BY m.createdAt $order";
         break;
     default:
         $orderSQL = "ORDER BY m.name $order";
@@ -264,7 +264,7 @@ $medals = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         </div>
                         <div class="modal-body">
                             <input type="file" name="import_file" accept=".csv" class="form-control" required>
-                            <div class="form-text">CSV columns: name,description,image_path,created_at</div>
+                            <div class="form-text">CSV columns: name,description,imagePath,createdAt</div>
                         </div>
                         <div class="modal-footer">
                             <button type="submit" name="import_medals" value="1" class="btn btn-primary">Import</button>
@@ -281,7 +281,7 @@ $medals = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <div class="col-md-2">
                 <select name="sort" class="form-select" onchange="document.getElementById('filterForm').submit();">
                     <option value="name" <?=$sort==='name'?'selected':''?>>Sort: Name</option>
-                    <option value="created_at" <?=$sort==='created_at'?'selected':''?>>Sort: Created At</option>
+                    <option value="createdAt" <?=$sort==='createdAt'?'selected':''?>>Sort: Created At</option>
                     <option value="awarded_count" <?=$sort==='awarded_count'?'selected':''?>>Sort: Awarded Count</option>
                     <option value="last_awarded" <?=$sort==='last_awarded'?'selected':''?>>Sort: Last Awarded</option>
                 </select>
@@ -332,12 +332,12 @@ $medals = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <tr data-medal-id="<?=$medal['id']?>" class="medal-row">
                                 <td><input type="checkbox" class="select-medal" value="<?=$medal['id']?>"></td>
                                 <td>
-                                    <?php if(!empty($medal['image_path'])): ?>
-                                        <img src="<?=htmlspecialchars($medal['image_path'])?>" alt="Medal Image" style="height:40px;max-width:70px;">
+                                    <?php if(!empty($medal['imagePath'])): ?>
+                                        <img src="<?=htmlspecialchars($medal['imagePath'])?>" alt="Medal Image" style="height:40px;max-width:70px;">
                                     <?php else: ?>
                                         <span class="text-muted">No Image</span>
                                     <?php endif; ?>
-                                    <input type="text" class="form-control form-control-sm d-none medal-image-edit mt-2" value="<?=htmlspecialchars($medal['image_path'] ?? '')?>" placeholder="Image file (jpg/png/gif)">
+                                    <input type="text" class="form-control form-control-sm d-none medal-image-edit mt-2" value="<?=htmlspecialchars($medal['imagePath'] ?? '')?>" placeholder="Image file (jpg/png/gif)">
                                     <small class="d-none text-muted medal-image-label">Image Path</small>
                                 </td>
                                 <td>
@@ -417,7 +417,7 @@ $(function(){
         let medalId = $tr.data('medal-id');
         let name = $tr.find('.medal-name-edit').val();
         let desc = $tr.find('.medal-desc-edit').val();
-        let image_path = $tr.find('.medal-image-edit').val();
+        let imagePath = $tr.find('.medal-image-edit').val();
         let $btn = $(this);
         $btn.prop('disabled', true);
         $.post('medals.php', {
@@ -425,7 +425,7 @@ $(function(){
             medal_id: medalId,
             name: name,
             description: desc,
-            image_path: image_path,
+            imagePath: imagePath,
             csrf: <?=json_encode($csrfToken)?>,
             ajax: 1
         }, function(resp){
@@ -433,11 +433,11 @@ $(function(){
             if(resp.success){
                 $tr.find('.medal-name').text(name);
                 $tr.find('.medal-desc').text(desc);
-                if(image_path){
+                if(imagePath){
                     if($tr.find('img').length){
-                        $tr.find('img').attr('src', image_path);
+                        $tr.find('img').attr('src', imagePath);
                     } else {
-                        $tr.find('td:eq(1)').html('<img src="'+image_path+'" alt="Medal Image" style="height:40px;max-width:70px;">');
+                        $tr.find('td:eq(1)').html('<img src="'+imagePath+'" alt="Medal Image" style="height:40px;max-width:70px;">');
                     }
                 } else {
                     $tr.find('td:eq(1)').html('<span class="text-muted">No Image</span>');
@@ -493,7 +493,7 @@ $(function(){
                 html += '<td>'+row.changed_at+'</td>';
                 html += '<td>'+row.changed_by+'</td>';
                 html += '<td>'+row.action+'</td>';
-                html += '<td><pre style="max-width:220px;white-space:pre-wrap;word-break:break-all;">'+escapeHtml(row.before_json)+'</pre></td>';
+                html += '<td><pre style="max-width:220px;white-space:pre-wrap;word-break:break-all;">'+escapeHtml(row.beforeJson)+'</pre></td>';
                 html += '<td><pre style="max-width:220px;white-space:pre-wrap;word-break:break-all;">'+escapeHtml(row.after_json)+'</pre></td>';
                 html += '</tr>';
             });

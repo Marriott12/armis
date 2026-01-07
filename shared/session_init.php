@@ -23,7 +23,7 @@ function initializeUserSession($userId = null) {
             'corps' => 'Army Corps of Engineers',
             'corps_name' => 'Army Corps of Engineers',
             'corps_abbr' => 'ACE',
-            'last_login' => date('Y-m-d H:i:s')
+            'lastLogin' => date('Y-m-d H:i:s')
         ],
         2 => [
             'user_id' => 2,
@@ -40,7 +40,7 @@ function initializeUserSession($userId = null) {
             'corps' => 'Infantry Corps',
             'corps_name' => 'Infantry Corps',
             'corps_abbr' => 'INF',
-            'last_login' => date('Y-m-d H:i:s')
+            'lastLogin' => date('Y-m-d H:i:s')
         ],
         3 => [
             'user_id' => 3,
@@ -57,7 +57,7 @@ function initializeUserSession($userId = null) {
             'corps' => 'Armoured Corps',
             'corps_name' => 'Armoured Corps',
             'corps_abbr' => 'ARM',
-            'last_login' => date('Y-m-d H:i:s')
+            'lastLogin' => date('Y-m-d H:i:s')
         ]
     ];
     
@@ -71,9 +71,9 @@ function initializeUserSession($userId = null) {
     
     // Set additional commonly used session variables
     $_SESSION['name'] = $userData['fname'] . ' ' . $userData['lname'];
-    $_SESSION['first_name'] = $userData['fname'];
-    $_SESSION['last_name'] = $userData['lname'];
-    $_SESSION['service_number'] = $userData['svcNo'];
+    $_SESSION['fName'] = $userData['fname'];
+    $_SESSION['lName'] = $userData['lname'];
+    $_SESSION['svcNo'] = $userData['svcNo'];
     
     return true;
 }

@@ -10,7 +10,7 @@ function sendNotification($userId, $message, $type = 'info') {
 
 function getNotifications($userId) {
     $db = getDbConnection();
-    $stmt = $db->prepare('SELECT * FROM operations_notifications WHERE user_id = ? ORDER BY created_at DESC');
+    $stmt = $db->prepare('SELECT * FROM operations_notifications WHERE user_id = ? ORDER BY createdAt DESC');
     $stmt->execute([$userId]);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }

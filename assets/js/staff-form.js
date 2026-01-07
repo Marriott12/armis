@@ -315,7 +315,9 @@ document.addEventListener('DOMContentLoaded', function() {
         setupAutoSave();
         setupValidation();
         setupNavigation();
-        setupDraftManagement();
+        if (typeof setupDraftManagement === 'function') {
+            setupDraftManagement();
+        }
         setupTimeTracking();
         setupAdvancedFeatures();
         updateFormStatistics();
@@ -341,13 +343,26 @@ document.addEventListener('DOMContentLoaded', function() {
         updateTimeSpent();
     }
 
+    // Stub for saveDraft function (to be implemented)
+    function saveDraft() {
+        // Draft saving functionality would go here
+        // For now, just a placeholder to prevent errors
+        console.log('Draft save requested (not implemented)');
+    }
+
     function setupAutoSave() {
         const form = document.getElementById('createStaffForm');
         if (!form) return;
         // Auto-save every 30 seconds (debounced)
         autoSaveInterval = setInterval(() => {
             if (hasFormChanged()) {
-                try { saveDraft(); } catch (e) { console.error('Auto-save error', e); }
+                try { 
+                    if (typeof saveDraft === 'function') {
+                        saveDraft(); 
+                    }
+                } catch (e) { 
+                    console.error('Auto-save error', e); 
+                }
             }
         }, 30000);
         // Save on input change (debounced, 3s)
@@ -355,7 +370,14 @@ document.addEventListener('DOMContentLoaded', function() {
         form.addEventListener('input', function(e) {
             clearTimeout(saveTimeout);
             saveTimeout = setTimeout(() => {
-                try { saveDraft(); updateFormStatistics(); } catch (e) { console.error('Draft save error', e); }
+                try { 
+                    if (typeof saveDraft === 'function') {
+                        saveDraft(); 
+                    }
+                    updateFormStatistics(); 
+                } catch (e) { 
+                    console.error('Draft save error', e); 
+                }
             }, 3000);
         });
     }

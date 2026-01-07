@@ -14,7 +14,7 @@ require_once dirname(__DIR__) . '/shared/auth.php';
 requireAuth();
 
 // Sanitize input
-$serviceNumber = isset($_GET['service_number']) ? trim($_GET['service_number']) : '';
+$serviceNumber = isset($_GET['svcNo']) ? trim($_GET['svcNo']) : '';
 
 // Validate service number
 if (empty($serviceNumber)) {
@@ -25,15 +25,15 @@ if (empty($serviceNumber)) {
 try {
     // Fetch staff information
     $stmt = $pdo->prepare("
-        SELECT s.*, 
-               r.name AS rank_name, 
-               u.name AS unit_name,
-               p.name AS position_name
-        FROM staff s
-        LEFT JOIN ranks r ON s.rank_id = r.id
-        LEFT JOIN units u ON s.unit_id = u.id
-        LEFT JOIN positions p ON s.position_id = p.id
-        WHERE s.service_number = ?
+     SELECT s.*, 
+         r.rankId AS rank_name, 
+         u.name AS unit_name,
+         p.name AS position_name
+     FROM staff s
+     LEFT JOIN `rank` r ON s.rankId = r.rankId
+     LEFT JOIN unit u ON s.unitId = u.unitId
+     LEFT JOIN positions p ON s.position_id = p.id
+     WHERE s.svcNo = ?
     ");
     $stmt->execute([$serviceNumber]);
     $staff = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -49,16 +49,16 @@ try {
             ph.id,
             ph.from_rank_id,
             ph.to_rank_id,
-            fr.name AS from_rank_name,
-            tr.name AS to_rank_name,
+            fr.rankId AS from_rank_name,
+            tr.rankId AS to_rank_name,
             ph.effective_date,
             ph.promotion_type,
             ph.authority,
             ph.remarks
         FROM promotion_history ph
-        LEFT JOIN ranks fr ON ph.from_rank_id = fr.id
-        LEFT JOIN ranks tr ON ph.to_rank_id = tr.id
-        WHERE ph.service_number = ?
+        LEFT JOIN `rank` fr ON ph.from_rank_id = fr.rankId
+        LEFT JOIN `rank` tr ON ph.to_rank_id = tr.rankId
+        WHERE ph.svcNo = ?
         ORDER BY ph.effective_date DESC
         LIMIT 5
     ");
@@ -76,8 +76,8 @@ try {
     <div class="row">
         <div class="col-md-4 text-center">
             <img src="<?php echo htmlspecialchars($photoUrl); ?>" alt="Staff Photo" class="img-fluid rounded mb-3" style="max-height:200px;">
-            <h4><?php echo htmlspecialchars($staff['rank_name'] . ' ' . $staff['first_name'] . ' ' . $staff['last_name']); ?></h4>
-            <p class="text-muted"><?php echo htmlspecialchars($staff['service_number']); ?></p>
+            <h4><?php echo htmlspecialchars($staff['rank_name'] . ' ' . $staff['fName'] . ' ' . $staff['lName']); ?></h4>
+            <p class="text-muted"><?php echo htmlspecialchars($staff['svcNo']); ?></p>
         </div>
         <div class="col-md-8">
             <h5>Personal Information</h5>

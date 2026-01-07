@@ -12,78 +12,108 @@ if (!defined('ARMIS_ADMIN_BRANCH')) {
 /**
  * Execute a query and return the statement
  */
-function executeQuery($sql, $params = []) {
-    try {
-        $pdo = getDbConnection(); // Use the modern connection
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute($params);
-        return $stmt;
-    } catch (PDOException $e) {
-        error_log("Query execution failed: " . $e->getMessage());
-        throw new Exception("Database query failed: " . $e->getMessage());
+if (!function_exists('executeQuery')) {
+    function executeQuery($sql, $params = []) {
+        try {
+            $pdo = getDbConnection(); // Use the modern connection
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            return $stmt;
+        } catch (PDOException $e) {
+            error_log("Query execution failed: " . $e->getMessage());
+            throw new Exception("Database query failed: " . $e->getMessage());
+        }
     }
 }
 
 /**
  * Fetch all results from a query
  */
-function fetchAll($sql, $params = []) {
-    $stmt = executeQuery($sql, $params);
-    return $stmt->fetchAll(PDO::FETCH_OBJ);
+if (!function_exists('fetchAll')) {
+    function fetchAll($sql, $params = []) {
+        try {
+            $pdo = getDbConnection();
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            return $stmt->fetchAll(PDO::FETCH_OBJ);
+        } catch (PDOException $e) {
+            error_log("fetchAll failed: " . $e->getMessage());
+            return [];
+        }
+    }
 }
 
 /**
  * Fetch single result from a query
  */
-function fetchOne($sql, $params = []) {
-    $stmt = executeQuery($sql, $params);
-    return $stmt->fetch(PDO::FETCH_OBJ);
+if (!function_exists('fetchOne')) {
+    function fetchOne($sql, $params = []) {
+        try {
+            $pdo = getDbConnection();
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            return $stmt->fetch(PDO::FETCH_OBJ);
+        } catch (PDOException $e) {
+            error_log("fetchOne failed: " . $e->getMessage());
+            return null;
+        }
+    }
 }
 
 /**
  * Get the last inserted ID
  */
-function getLastInsertId() {
-    $pdo = getDbConnection();
-    return $pdo->lastInsertId();
+if (!function_exists('getLastInsertId')) {
+    function getLastInsertId() {
+        $pdo = getDbConnection();
+        return $pdo->lastInsertId();
+    }
 }
 
 /**
  * Begin transaction
  */
-function beginTransaction() {
-    $pdo = getDbConnection();
-    return $pdo->beginTransaction();
+if (!function_exists('beginTransaction')) {
+    function beginTransaction() {
+        $pdo = getDbConnection();
+        return $pdo->beginTransaction();
+    }
 }
 
 /**
  * Commit transaction
  */
-function commitTransaction() {
-    $pdo = getDbConnection();
-    return $pdo->commit();
+if (!function_exists('commitTransaction')) {
+    function commitTransaction() {
+        $pdo = getDbConnection();
+        return $pdo->commit();
+    }
 }
 
 /**
  * Rollback transaction
  */
-function rollbackTransaction() {
-    $pdo = getDbConnection();
-    return $pdo->rollback();
+if (!function_exists('rollbackTransaction')) {
+    function rollbackTransaction() {
+        $pdo = getDbConnection();
+        return $pdo->rollback();
+    }
 }
 
 /**
  * Check if table exists
  */
-function tableExists($tableName) {
-    try {
-        $pdo = getDbConnection();
-        $stmt = $pdo->prepare("SHOW TABLES LIKE ?");
-        $stmt->execute([$tableName]);
-        return $stmt->rowCount() > 0;
-    } catch (PDOException $e) {
-        error_log("Table check failed: " . $e->getMessage());
-        return false;
+if (!function_exists('tableExists')) {
+    function tableExists($tableName) {
+        try {
+            $pdo = getDbConnection();
+            $stmt = $pdo->prepare("SHOW TABLES LIKE ?");
+            $stmt->execute([$tableName]);
+            return $stmt->rowCount() > 0;
+        } catch (PDOException $e) {
+            error_log("Table check failed: " . $e->getMessage());
+            return false;
+        }
     }
 }
 ?>

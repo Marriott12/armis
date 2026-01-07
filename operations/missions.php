@@ -44,8 +44,8 @@ try {
         $status = $_POST['status'] ?? 'planned';
         $priority = $_POST['priority'] ?? 'medium';
         $locationId = $_POST['location_id'] ?? null;
-        $startDate = $_POST['start_date'] ?? null;
-        $endDate = $_POST['end_date'] ?? null;
+        $startDate = $_POST['startDate'] ?? null;
+        $endDate = $_POST['endDate'] ?? null;
 
         // Validation
         if ($missionName === '' || $missionCode === '') {
@@ -59,9 +59,9 @@ try {
                     'status' => $status,
                     'priority' => $priority,
                     'location_id' => $locationId,
-                    'start_date' => $startDate,
-                    'end_date' => $endDate,
-                    'created_by' => $_SESSION['user_id']
+                    'startDate' => $startDate,
+                    'endDate' => $endDate,
+                    'createdBy' => $_SESSION['user_id']
                 ]);
                 sendNotification($_SESSION['user_id'], "Mission '$missionName' created successfully.", 'success');
                 $success = 'Mission created successfully.';
@@ -138,8 +138,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             <td><?= htmlspecialchars($mission['priority']) ?></td>
                             <td>
                                 <small>
-                                    <?= date('M d, Y', strtotime($mission['start_date'])) ?> -
-                                    <?= date('M d, Y', strtotime($mission['end_date'])) ?>
+                                    <?= date('M d, Y', strtotime($mission['startDate'])) ?> -
+                                    <?= date('M d, Y', strtotime($mission['endDate'])) ?>
                                 </small>
                             </td>
                             <td>
@@ -209,12 +209,12 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                 </div>
                 <div class="row mt-3">
                     <div class="col-md-6">
-                        <label for="start_date" class="form-label">Start Date</label>
-                        <input type="date" name="start_date" id="start_date" class="form-control" required>
+                        <label for="startDate" class="form-label">Start Date</label>
+                        <input type="date" name="startDate" id="startDate" class="form-control" required>
                     </div>
                     <div class="col-md-6">
-                        <label for="end_date" class="form-label">End Date</label>
-                        <input type="date" name="end_date" id="end_date" class="form-control" required>
+                        <label for="endDate" class="form-label">End Date</label>
+                        <input type="date" name="endDate" id="endDate" class="form-control" required>
                     </div>
                 </div>
                 <div class="mt-3 text-end">
@@ -284,11 +284,11 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                 <div class="row mt-3">
                     <div class="col-md-6">
                         <label for="edit_start_date" class="form-label">Start Date</label>
-                        <input type="date" name="start_date" id="edit_start_date" class="form-control" value="<?= htmlspecialchars($editMission['start_date']) ?>" required>
+                        <input type="date" name="startDate" id="edit_start_date" class="form-control" value="<?= htmlspecialchars($editMission['startDate']) ?>" required>
                     </div>
                     <div class="col-md-6">
                         <label for="edit_end_date" class="form-label">End Date</label>
-                        <input type="date" name="end_date" id="edit_end_date" class="form-control" value="<?= htmlspecialchars($editMission['end_date']) ?>" required>
+                        <input type="date" name="endDate" id="edit_end_date" class="form-control" value="<?= htmlspecialchars($editMission['endDate']) ?>" required>
                     </div>
                 </div>
                 <div class="mt-3 text-end">
@@ -320,9 +320,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                 <dt class="col-sm-3">Location</dt>
                 <dd class="col-sm-9"><?= htmlspecialchars($viewMission['location_name'] . ' (' . $viewMission['country'] . ')') ?></dd>
                 <dt class="col-sm-3">Start Date</dt>
-                <dd class="col-sm-9"><?= htmlspecialchars($viewMission['start_date']) ?></dd>
+                <dd class="col-sm-9"><?= htmlspecialchars($viewMission['startDate']) ?></dd>
                 <dt class="col-sm-3">End Date</dt>
-                <dd class="col-sm-9"><?= htmlspecialchars($viewMission['end_date']) ?></dd>
+                <dd class="col-sm-9"><?= htmlspecialchars($viewMission['endDate']) ?></dd>
             </dl>
             <div class="mt-3 text-end">
                 <a href="missions.php?action=edit&id=<?= $viewMission['mission_id'] ?>" class="btn btn-primary">Edit</a>
@@ -365,7 +365,7 @@ $(document).ready(function() {
     }
     
     // Automatically set end date based on start date (3 months later)
-    $('#start_date').on('change', function() {
+    $('#startDate').on('change', function() {
         if ($(this).val()) {
             var startDate = new Date($(this).val());
             var endDate = new Date(startDate);
@@ -376,7 +376,7 @@ $(document).ready(function() {
             var day = ('0' + endDate.getDate()).slice(-2);
             var formattedDate = endDate.getFullYear() + '-' + month + '-' + day;
             
-            $('#end_date').val(formattedDate);
+            $('#endDate').val(formattedDate);
         }
     });
     

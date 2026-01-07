@@ -35,11 +35,15 @@ const TABLES = [
     'promotions' => 'promotions'
 ];
 
-// Rank Categories
+// Rank Categories - Updated to match new rank level system
+// See: /shared/rank_levels.php for helper functions
+// See: /RANK_LEVELS_DOCUMENTATION.md for complete documentation
 const RANK_CATEGORIES = [
-    'Officer' => [1, 13],      // rankIndex 1-13
-    'NCO' => [15, 26],         // rankIndex 15-26
-    'Enlisted' => [27, 35]     // rankIndex 27-35
+    'Officer' => [1, 13],           // Levels 1-13: Commissioned Officers
+    'Officer Cadet' => [14, 14],    // Level 14: Officer Cadets
+    'NCO' => [15, 26],              // Levels 15-26: Non-Commissioned Officers
+    'Recruit' => [27, 27],          // Level 27: Recruits
+    'Civilian Employee' => [28, 28] // Level 28: Civilian Employees/CE
 ];
 
 // Excluded Ranks (not shown in normal lists)
@@ -216,18 +220,6 @@ function getConfig($key, $default = null) {
  */
 function isRankExcluded($rankName) {
     return in_array($rankName, EXCLUDED_RANKS);
-}
-
-/**
- * Get rank category from rank index
- */
-function getRankCategory($rankIndex) {
-    foreach (RANK_CATEGORIES as $category => $range) {
-        if ($rankIndex >= $range[0] && $rankIndex <= $range[1]) {
-            return $category;
-        }
-    }
-    return 'Unknown';
 }
 
 /**

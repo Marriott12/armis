@@ -12,6 +12,8 @@ require_once dirname(__DIR__) . '/shared/rbac.php';
 
 // Include database connection
 require_once dirname(__DIR__) . '/shared/database_connection.php';
+require_once dirname(__DIR__) . '/shared/rank_levels.php';
+require_once dirname(__DIR__) . '/shared/rank_levels.php';
 
 // Require authentication and admin privileges
 requireAuth();
@@ -175,9 +177,9 @@ function validateDOB($dob) {
     return null;
 }
 
-function logStaffChange($svcNo, $oldData, $newData, $userId, $userIP) {
+function logStaffChange($svcNo, $oldData, $newData, $userId, $userIP, $pdo = null) {
     $changes = [];
-    $fields = ['first_name', 'last_name', 'rank_id', 'unit_id', 'corps_id', 'NRC', 'DOB', 'gender', 'svcStatus'];
+    $fields = ['fName', 'lName', 'rankId', 'unitId', 'corpsId', 'NRC', 'DOB', 'gender', 'svcStatus'];
     foreach ($fields as $field) {
         $oldValue = isset($oldData->$field) ? $oldData->$field : null;
         $newValue = isset($newData[$field]) ? $newData[$field] : null;
@@ -191,27 +193,13 @@ function logStaffChange($svcNo, $oldData, $newData, $userId, $userIP) {
     }
     if (!empty($changes)) {
         try {
-            $pdo = getDbConnection();
-            
-            // Check if staff_edit_log table exists, create if not
-            $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_edit_log'")->rowCount() > 0;
-            if (!$tableExists) {
-                $createSql = "
-                    CREATE TABLE staff_edit_log (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        service_number VARCHAR(50) NOT NULL,
-                        edited_by INT NOT NULL,
-                        edited_at DATETIME NOT NULL,
-                        user_ip VARCHAR(45),
-                        changes JSON,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                ";
-                $pdo->exec($createSql);
-                error_log("Created staff_edit_log table");
+            // Use provided PDO connection or get a new one
+            if ($pdo === null) {
+                $pdo = getDbConnection();
             }
             
-            $stmt = $pdo->prepare("INSERT INTO staff_edit_log (service_number, edited_by, edited_at, user_ip, changes) VALUES (?, ?, ?, ?, ?)");
+            // Insert log record (table should already exist - created before transaction)
+            $stmt = $pdo->prepare("INSERT INTO staff_edit_log (svcNo, edited_by, edited_at, user_ip, changes) VALUES (?, ?, ?, ?, ?)");
             $stmt->execute([
                 $svcNo,
                 $userId,
@@ -237,12 +225,12 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     
     // Build query for export (similar to AJAX search but with more fields)
     $pdo = getDbConnection();
-    $sql = "SELECT s.service_number, s.first_name, s.last_name, r.name as rank_name, u.name as unit_name, 
-                   s.svcStatus, s.DOB, s.attestDate, s.category 
-            FROM staff s
-            LEFT JOIN ranks r ON s.rank_id = r.id
-            LEFT JOIN unit u ON s.unit_id = u.unit_id
-            WHERE 1=1";
+    $sql = "SELECT s.svcNo, s.fName, s.lName, r.rankId as rank_name, u.code as unit_name, 
+             s.svcStatus, s.DOB, s.attestDate, s.category 
+         FROM staff s
+         LEFT JOIN `rank` r ON s.rankId = r.rankId
+         LEFT JOIN unit u ON s.unitId = u.unitId
+         WHERE 1=1";
     
     $params = [];
     
@@ -253,12 +241,12 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     $search = trim($_GET['search'] ?? '');
     
     if ($rankFilter !== '') {
-        $sql .= " AND s.rank_id = ?";
+        $sql .= " AND s.rankId = ?";
         $params[] = $rankFilter;
     }
     
     if ($unitFilter !== '') {
-        $sql .= " AND s.unit_id = ?";
+        $sql .= " AND s.unitId = ?";
         $params[] = $unitFilter;
     }
     
@@ -268,7 +256,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     }
     
     if ($search !== '') {
-        $sql .= " AND (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)";
+        $sql .= " AND (s.svcNo LIKE ? OR s.fName LIKE ? OR s.lName LIKE ?)";
         $searchParam = '%' . $search . '%';
         $params = array_merge($params, [$searchParam, $searchParam, $searchParam]);
     }
@@ -306,12 +294,12 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
             COALESCE(s.actingWef, '9999-12-31'),
             COALESCE(s.appointedWef, '9999-12-31')
         ) ASC,
-        s.service_number ASC,
+        s.svcNo ASC,
         s.DOB ASC
     ";
 
     // Log missing/inconsistent data for audit
-    $auditStmt = $pdo->query("SELECT service_number, subWef, tempWef, attestDate FROM staff WHERE (subWef IS NULL OR subWef = '' OR subWef < '1900-01-01') OR (temWef IS NULL OR temWef = '' OR temWef < '1900-01-01') OR (attestDate IS NULL OR attestDate = '' OR attestDate < '1900-01-01')");
+    $auditStmt = $pdo->query("SELECT svcNo, subWef, tempWef, attestDate FROM staff WHERE (subWef IS NULL OR subWef = '' OR subWef < '1900-01-01') OR (temWef IS NULL OR temWef = '' OR temWef < '1900-01-01') OR (attestDate IS NULL OR attestDate = '' OR attestDate < '1900-01-01')");
     $auditRows = $auditStmt->fetchAll(PDO::FETCH_ASSOC);
     if (!empty($auditRows)) {
         error_log('Staff seniority audit: Missing/inconsistent date fields: ' . json_encode($auditRows));
@@ -323,9 +311,9 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     // Export all rows
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
         fputcsv($output, [
-            $row['service_number'],
-            $row['first_name'],
-            $row['last_name'],
+            $row['svcNo'],
+            $row['fName'],
+            $row['lName'],
             $row['rank_name'],
             $row['unit_name'],
             $row['svcStatus'],
@@ -367,11 +355,11 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                 'action' => 'staff_search',
                 'search_terms' => json_encode($requestData),
                 'ip_address' => $_SERVER['REMOTE_ADDR'] ?? '',
-                'created_at' => date('Y-m-d H:i:s')
+                'createdAt' => date('Y-m-d H:i:s')
             ];
             try {
-                $stmt = $pdo->prepare("INSERT INTO activity_log (user_id, action, details, ip_address, created_at) VALUES (?, ?, ?, ?, ?)");
-                $stmt->execute([$logData['user_id'], $logData['action'], $logData['search_terms'], $logData['ip_address'], $logData['created_at']]);
+                $stmt = $pdo->prepare("INSERT INTO activity_log (user_id, action, details, ip_address, createdAt) VALUES (?, ?, ?, ?, ?)");
+                $stmt->execute([$logData['user_id'], $logData['action'], $logData['search_terms'], $logData['ip_address'], $logData['createdAt']]);
             } catch (Exception $e) {
                 error_log("Failed to log search activity: " . $e->getMessage());
             }
@@ -379,19 +367,19 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             exit;
         }
         // Handle audit logging for viewing staff
-        if (isset($_GET['audit_view']) && $_GET['audit_view'] === '1' && isset($_GET['staff_id'])) {
+        if (isset($_GET['audit_view']) && $_GET['audit_view'] === '1' && isset($_GET['svcNo'])) {
             $debug[] = 'audit_view branch entered';
-            $staffId = $_GET['staff_id'];
+            $staffId = $_GET['svcNo'];
             $logData = [
                 'user_id' => $user->data()->id ?? 0,
                 'action' => 'staff_view',
-                'details' => json_encode(['staff_id' => $staffId]),
+                'details' => json_encode(['svcNo' => $staffId]),
                 'ip_address' => $_SERVER['REMOTE_ADDR'] ?? '',
-                'created_at' => date('Y-m-d H:i:s')
+                'createdAt' => date('Y-m-d H:i:s')
             ];
             try {
-                $stmt = $pdo->prepare("INSERT INTO activity_log (user_id, action, details, ip_address, created_at) VALUES (?, ?, ?, ?, ?)");
-                $stmt->execute([$logData['user_id'], $logData['action'], $logData['details'], $logData['ip_address'], $logData['created_at']]);
+                $stmt = $pdo->prepare("INSERT INTO activity_log (user_id, action, details, ip_address, createdAt) VALUES (?, ?, ?, ?, ?)");
+                $stmt->execute([$logData['user_id'], $logData['action'], $logData['details'], $logData['ip_address'], $logData['createdAt']]);
             } catch (Exception $e) {
                 error_log("Failed to log view activity: " . $e->getMessage());
             }
@@ -400,10 +388,10 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         }
         // Perform staff search with pagination and sorting like reports_seniority.php
         $debug[] = 'staff search branch entered';
-        $ranks = $pdo->query("SELECT id as rankID, name as rankName, level FROM ranks ORDER BY level ASC")->fetchAll(PDO::FETCH_OBJ);
-        $rankMap = [];
-        foreach ($ranks as $r) $rankMap[$r->rankID] = $r->rankName;
-        $units = $pdo->query("SELECT unit_id as unitID, code as unitName FROM unit ORDER BY code ASC")->fetchAll(PDO::FETCH_OBJ);
+    $ranks = $pdo->query("SELECT rankId as rankID, rankId as rankName, level FROM `rank` ORDER BY level ASC")->fetchAll(PDO::FETCH_OBJ);
+    $rankMap = [];
+    foreach ($ranks as $r) $rankMap[$r->rankID] = $r->rankName;
+        $units = $pdo->query("SELECT unitId as unitID, code as unitName FROM unit ORDER BY code ASC")->fetchAll(PDO::FETCH_OBJ);
         $unitMap = [];
         foreach ($units as $u) $unitMap[$u->unitID] = $u->unitName;
         $search = trim($_GET['search'] ?? '');
@@ -417,10 +405,10 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         $offset = ($page - 1) * $per_page;
         // Sorting parameters (matching reports_seniority.php)
         $sortable_columns = [
-            'service_number' => 's.service_number',
+            'svcNo' => 's.svcNo',
             'rank' => 'r.level',
-            'surname' => 's.last_name',
-            'first_name' => 's.first_name',
+            'surname' => 's.lName',
+            'fName' => 's.fName',
             'unit' => 'u.code',
             'category' => 's.category',
             'DOB' => 's.DOB',
@@ -432,39 +420,39 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         $sort_col = $_GET['sort_col'] ?? '';
         $sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
         // Main query with JOINs
-    $sql = "SELECT DISTINCT s.id, s.service_number, s.first_name, s.last_name, s.rank_id, s.unit_id, s.svcStatus, 
-               r.name as rankName, r.abbreviation as rankAbbr, r.level as rankLevel, 
+    $sql = "SELECT DISTINCT s.svcNo, s.fName, s.lName, s.rankId, s.unitId, s.svcStatus, 
+               r.rankId as rankName, r.rankId as rankAbbr, r.level as rankLevel, 
                u.code as unitName, u.code as unitCode, 
                s.subWef, s.tempWef, s.attestDate 
         FROM staff s 
-        LEFT JOIN ranks r ON s.rank_id = r.id 
-        LEFT JOIN unit u ON s.unit_id = u.unit_id 
+        LEFT JOIN `rank` r ON s.rankId = r.rankId 
+        LEFT JOIN unit u ON s.unitId = u.unitId 
         WHERE 1=1";
         // Count query for pagination
-    $count_sql = "SELECT COUNT(DISTINCT s.id) FROM staff s\n                      LEFT JOIN ranks r ON s.rank_id = r.id\n                      LEFT JOIN unit u ON s.unit_id = u.unit_id\n                      WHERE 1=1";
+    $count_sql = "SELECT COUNT(DISTINCT s.svcNo) FROM staff s\n                      LEFT JOIN `rank` r ON s.rankId = r.rankId\n                      LEFT JOIN unit u ON s.unitId = u.unitId\n                      WHERE 1=1";
         $params = [];
         $count_params = [];
         // Search condition
         if ($search !== '') {
-            $searchCondition = " AND (s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ? OR r.name LIKE ? OR u.code LIKE ?)";
+            $searchCondition = " AND (s.svcNo LIKE ? OR s.fName LIKE ? OR s.lName LIKE ? OR r.rankId LIKE ? OR r.rankId LIKE ? OR u.code LIKE ?)";
             $sql .= $searchCondition;
             $count_sql .= $searchCondition;
             $searchParam = '%' . $search . '%';
-            for ($i = 0; $i < 5; $i++) {
+            for ($i = 0; $i < 6; $i++) {
                 $params[] = $searchParam;
                 $count_params[] = $searchParam;
             }
         }
         // Filter conditions
         if ($rankFilter !== '') {
-            $sql .= " AND s.rank_id = ?";
-            $count_sql .= " AND s.rank_id = ?";
+            $sql .= " AND s.rankId = ?";
+            $count_sql .= " AND s.rankId = ?";
             $params[] = $rankFilter;
             $count_params[] = $rankFilter;
         }
         if ($unitFilter !== '') {
-            $sql .= " AND s.unit_id = ?";
-            $count_sql .= " AND s.unit_id = ?";
+            $sql .= " AND s.unitId = ?";
+            $count_sql .= " AND s.unitId = ?";
             $params[] = $unitFilter;
             $count_params[] = $unitFilter;
         }
@@ -489,7 +477,14 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             $sql .= " ORDER BY " . $sortable_columns[$sort_col] . " $sort_dir";
         } else {
             // Default seniority sorting: rank level, then subWef, then tempWef, then attestDate, then service number
-            $sql .= " ORDER BY \n                r.level ASC,\n                s.subWef ASC,\n                s.tempWef ASC,\n                s.attestDate ASC,\n                s.service_number ASC";
+            // Personnel without ranks (NULL rankId) are listed last
+            $sql .= " ORDER BY 
+                CASE WHEN s.rankId IS NULL THEN 1 ELSE 0 END,
+                r.level ASC,
+                s.subWef ASC,
+                s.tempWef ASC,
+                s.attestDate ASC,
+                s.svcNo ASC";
         }
         // Apply pagination
         $sql .= " LIMIT $per_page OFFSET $offset";
@@ -498,11 +493,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         $staffList = $stmt->fetchAll(PDO::FETCH_OBJ);
         $result = [];
         foreach ($staffList as $s) {
+            // Some installations do not have a numeric `id` column on staff and use svcNo as the primary identifier.
+            // Return `id` as svcNo for backward compatibility with UI code that expects an `id` field.
             $result[] = [
-                'id' => $s->id,
-                'svcNo' => $s->service_number,
-                'rank' => $s->rankAbbr ?? $s->rankName ?? ('ID:' . $s->rank_id),
-                'name' => $s->last_name . ' ' . $s->first_name,
+                'id' => $s->svcNo,
+                'svcNo' => $s->svcNo,
+                'rank' => $s->rankAbbr ?? $s->rankName ?? 'N/A',
+                'name' => $s->lName . ' ' . $s->fName,
                 'unit' => $s->unitCode ?? $s->unitName ?? '',
                 'status' => $s->svcStatus
             ];
@@ -534,15 +531,15 @@ if (!isset($_SESSION['csrf_token'])) {
 }
 function csrf_token() { return $_SESSION['csrf_token']; }
 
-// --- Lookup for ranks, units, corps ---
 $pdo = getDbConnection();
-$ranks = $pdo->query("SELECT id as rankID, name as rankName FROM ranks")->fetchAll(PDO::FETCH_OBJ);
+// Lookup ranks using the `rank` table and its rankId identifier
+$ranks = $pdo->query("SELECT rankId as rankID, rankId as rankName FROM `rank`")->fetchAll(PDO::FETCH_OBJ);
 $rankMap = [];
 foreach ($ranks as $r) $rankMap[$r->rankID] = $r->rankName;
-$units = $pdo->query("SELECT unit_id as unitID, code as unitName FROM unit")->fetchAll(PDO::FETCH_OBJ);
+$units = $pdo->query("SELECT unitId as unitID, code as unitName FROM unit")->fetchAll(PDO::FETCH_OBJ);
 $unitMap = [];
 foreach ($units as $u) $unitMap[$u->unitID] = $u->unitName;
-$corps = $pdo->query("SELECT id, name FROM corps ORDER BY name ASC")->fetchAll(PDO::FETCH_OBJ);
+$corps = $pdo->query("SELECT corpsId as id, abbreviation as name FROM corps ORDER BY abbreviation ASC")->fetchAll(PDO::FETCH_OBJ);
 
 $errors = [];
 $success = false;
@@ -559,13 +556,108 @@ function normalizeServiceNumber($svcNo) {
     return $clean;
 }
 
+/**
+ * Calculate retirement dates and remaining time
+ */
+function calculateRetirementInfo($dateOfBirth, $dateOfEnlistment) {
+
+        $result = [
+            'runout' => [
+                'date' => null,
+                'formatted' => null,
+                'isPast' => null,
+                'remaining' => null,
+                'yearsRemaining' => null
+            ],
+            'earlyRetirement' => [
+                'date' => null,
+                'formatted' => null,
+                'isPast' => null,
+                'remaining' => null,
+                'yearsRemaining' => null
+            ]
+        ];
+    
+    // Expected Runout Date (Age 65)
+    if (!empty($dateOfBirth)) {
+        try {
+            $dob = new DateTime($dateOfBirth);
+            $runoutDate = clone $dob;
+            $runoutDate->modify('+65 years');
+            $now = new DateTime();
+            
+            $result['runout'] = [
+                'date' => $runoutDate,
+                'formatted' => $runoutDate->format('d M Y'),
+                'isPast' => $runoutDate < $now,
+            ];
+            
+            if ($runoutDate >= $now) {
+                $interval = $now->diff($runoutDate);
+                $years = $interval->y;
+                $months = $interval->m;
+                $result['runout']['remaining'] = "$years years, $months months";
+                $result['runout']['yearsRemaining'] = $years;
+            } else {
+                $result['runout']['remaining'] = 'Past retirement age';
+                $result['runout']['yearsRemaining'] = -1;
+            }
+        } catch (Exception $e) {
+            // Invalid date
+        }
+    }
+    
+    // Expected Early Retirement (20 Years Service)
+    if (!empty($dateOfEnlistment)) {
+        try {
+            $enlistment = new DateTime($dateOfEnlistment);
+            $earlyRetireDate = clone $enlistment;
+            $earlyRetireDate->modify('+20 years');
+            $now = new DateTime();
+            
+            $result['earlyRetirement'] = [
+                'date' => $earlyRetireDate,
+                'formatted' => $earlyRetireDate->format('d M Y'),
+                'isPast' => $earlyRetireDate < $now,
+            ];
+            
+            if ($earlyRetireDate >= $now) {
+                $interval = $now->diff($earlyRetireDate);
+                $years = $interval->y;
+                $months = $interval->m;
+                $result['earlyRetirement']['remaining'] = "$years years, $months months";
+                $result['earlyRetirement']['yearsRemaining'] = $years;
+            } else {
+                $result['earlyRetirement']['remaining'] = 'Eligible now';
+                $result['earlyRetirement']['yearsRemaining'] = -1;
+            }
+        } catch (Exception $e) {
+            // Invalid date
+        }
+    }
+    
+    return $result;
+}
+
+/**
+ * Get CSS class for retirement urgency color coding
+ */
+function getRetirementUrgencyClass($yearsRemaining) {
+    if ($yearsRemaining < 0) return 'text-danger'; // Past or eligible
+    if ($yearsRemaining < 1) return 'text-danger';
+    if ($yearsRemaining <= 5) return 'text-warning';
+    if ($yearsRemaining <= 10) return 'text-info';
+    return 'text-success';
+}
+
+
 // --- Staff selection ---
 if (isset($_GET['svcNo'])) {
     $svcNo = $_GET['svcNo'];
     $normalizedSvcNo = normalizeServiceNumber($svcNo);
     
     // Try exact match first
-    $stmt = $pdo->prepare("SELECT * FROM staff WHERE service_number = ?");
+    $stmt = $pdo->prepare("SELECT * FROM staff WHERE svcNo = ?");
     $stmt->execute([$svcNo]);
     $staff = $stmt->fetch(PDO::FETCH_OBJ);
     
@@ -587,7 +679,7 @@ if (isset($_GET['svcNo'])) {
     }
     
     if ($staff) {
-        error_log("Found staff member: " . $staff->first_name . " " . $staff->last_name . " with service number: " . $staff->service_number);
+        error_log("Found staff member: " . $staff->fName . " " . $staff->lName . " with service number: " . $staff->svcNo);
     } else {
         error_log("Staff member not found with any variation of service number: " . $svcNo);
     }
@@ -610,14 +702,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
     if (!isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csrf)) {
         $errors[] = "Invalid CSRF token. Please reload the page and try again.";
     } else {
-        $stmt = $pdo->prepare("SELECT * FROM staff WHERE service_number = ?");
+        $stmt = $pdo->prepare("SELECT * FROM staff WHERE svcNo = ?");
         $stmt->execute([$svcNo]);
         $originalStaff = $stmt->fetch(PDO::FETCH_OBJ);
         if (!$originalStaff) {
             $errors[] = "Staff member not found with service number: " . $svcNo . ". Please check the service number and try again.";
             error_log("Staff member not found with service number: " . $svcNo);
         } else {
-            error_log("Found staff member: " . $originalStaff->first_name . " " . $originalStaff->last_name . " (ID: " . $originalStaff->id . ")");
+            error_log("Found staff member: " . $originalStaff->fName . " " . $originalStaff->lName . " (SvcNo: " . $originalStaff->svcNo . ")");
             // Get and sanitize form data
             $fname = trim($_POST['fname'] ?? '');
             $lname = trim($_POST['lname'] ?? '');
@@ -672,12 +764,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                 foreach ($validationErrors as $error) $errors[] = $error;
             } else {
                 $updateData = [
-                    'service_number' => $newSvcNo,
-                    'first_name' => $fname,
-                    'last_name' => $lname,
-                    'rank_id' => $rankID,
-                    'unit_id' => $unitID,
-                    'corps_id' => $corpsID,
+                    'svcNo' => $newSvcNo,
+                    'fName' => $fname,
+                    'lName' => $lname,
+                    'rankId' => $rankID,
+                    'unitId' => $unitID,
+                    'corpsId' => $corpsID,
                     'NRC' => $NRC,
                     'DOB' => $DOB,
                     'gender' => $gender,
@@ -702,19 +794,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                     'awards' => $awards,
                     'disciplinaryRecord' => $disciplinaryRecord
                 ];
-                    // --- Advanced rank logic: update tempWef/subWef/category ---
-                    // Get rank details
-                    $rankStmt = $pdo->prepare("SELECT name, category FROM ranks WHERE id = ? LIMIT 1");
+                    // --- Advanced rank logic: update tempWef/subWef based on rank type ---
+                    // Get rank details to determine if temporal or substantive
+                    $rankStmt = $pdo->prepare("SELECT rankId as name FROM `rank` WHERE rankId = ? LIMIT 1");
                     $rankStmt->execute([$rankID]);
                     $rankDetails = $rankStmt->fetch(PDO::FETCH_ASSOC);
                     if ($rankDetails) {
                         $rankName = $rankDetails['name'] ?? '';
-                        $category = $rankDetails['category'] ?? '';
                         $lastPromotionDate = $lastPromotion;
-                        // Always update staff category from selected rank
-                        $updateData['category'] = $category;
-                        // Check if rank name contains 'Temporal' (case-insensitive)
-                        $isTemporal = stripos($rankName, 'Temporal') !== false;
+                        // Check if rank name contains 'Temporal' or starts with 'T' (case-insensitive)
+                        $isTemporal = stripos($rankName, 'Temporal') !== false || (strlen($rankName) > 1 && $rankName[0] === 'T' && ctype_upper($rankName[1]));
                         if ($isTemporal) {
                             $updateData['tempWef'] = $lastPromotionDate;
                             $updateData['subWef'] = null;
@@ -724,13 +813,175 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                         }
                     }
                 try {
+                    // IMPORTANT: Ensure all tables exist BEFORE starting transaction
+                    // (CREATE TABLE causes implicit commit in MySQL, which would break our transaction)
+                    
+                    // Create staff_edit_log table if needed
+                    try {
+                        $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_edit_log'")->rowCount() > 0;
+                        if (!$tableExists) {
+                            $createSql = "
+                                CREATE TABLE staff_edit_log (
+                                    id INT AUTO_INCREMENT PRIMARY KEY,
+                                    svcNo VARCHAR(50) NOT NULL,
+                                    edited_by INT NOT NULL,
+                                    edited_at DATETIME NOT NULL,
+                                    user_ip VARCHAR(45),
+                                    changes JSON,
+                                    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                )
+                            ";
+                            $pdo->exec($createSql);
+                            error_log("Created staff_edit_log table before transaction");
+                        }
+                    } catch (Exception $tableCheckE) {
+                        error_log("Error checking/creating log table: " . $tableCheckE->getMessage());
+                    }
+                    
+                    // Create staff_operation table if needed
+                    try {
+                        $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_operation'")->rowCount() > 0;
+                        if (!$tableExists) {
+                            $createSql = "
+                                CREATE TABLE staff_operation (
+                                    id INT AUTO_INCREMENT PRIMARY KEY,
+                                    svcNo VARCHAR(10) NOT NULL,
+                                    opId VARCHAR(100) NOT NULL,
+                                    apptId VARCHAR(100),
+                                    startDate DATE,
+                                    endDate DATE,
+                                    reasonLeft VARCHAR(50),
+                                    remarks TEXT,
+                                    authorityId VARCHAR(10) NOT NULL,
+                                    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                    INDEX idx_svcNo (svcNo),
+                                    INDEX idx_opId (opId)
+                                )
+                            ";
+                            $pdo->exec($createSql);
+                            error_log("Created staff_operation table before transaction");
+                        }
+                    } catch (Exception $tableCheckE) {
+                        error_log("Error checking/creating staff_operation table: " . $tableCheckE->getMessage());
+                    }
+                    
+                    // Add missing columns to staff table if they don't exist
+                    try {
+                        $columns = $pdo->query('DESCRIBE staff')->fetchAll(PDO::FETCH_ASSOC);
+                        $existingCols = array_column($columns, 'Field');
+                        
+                        // Add specialization column if it doesn't exist
+                        if (!in_array('specialization', $existingCols)) {
+                            $pdo->exec("ALTER TABLE staff ADD COLUMN specialization VARCHAR(100) NULL AFTER trade");
+                            error_log("Added specialization column to staff table");
+                        }
+                    } catch (Exception $alterE) {
+                        error_log("Error adding specialization column to staff table: " . $alterE->getMessage());
+                    }
+                    
+                    // Create staff_deployments table if needed
+                    try {
+                        $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_deployments'")->rowCount() > 0;
+                        if (!$tableExists) {
+                            $createSql = "
+                                CREATE TABLE staff_deployments (
+                                    id INT AUTO_INCREMENT PRIMARY KEY,
+                                    svcNo VARCHAR(20) NOT NULL,
+                                    deployment_name VARCHAR(200),
+                                    mission_type VARCHAR(100),
+                                    location VARCHAR(100),
+                                    country VARCHAR(100),
+                                    startDate DATE,
+                                    endDate DATE,
+                                    durationMonths INT,
+                                    deployment_status VARCHAR(50),
+                                    rank_during_deployment VARCHAR(50),
+                                    role_during_deployment VARCHAR(100),
+                                    commanding_officer VARCHAR(100),
+                                    deployment_allowance DECIMAL(10,2),
+                                    notes TEXT,
+                                    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                                    INDEX idx_svcNo (svcNo)
+                                )
+                            ";
+                            $pdo->exec($createSql);
+                            error_log("Created staff_deployments table before transaction");
+                        }
+                    } catch (Exception $tableCheckE) {
+                        error_log("Error checking/creating staff_deployments table: " . $tableCheckE->getMessage());
+                    }
+                    
+                    // Create staff_course table if needed (for education/courses)
+                    try {
+                        $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_course'")->rowCount() > 0;
+                        if (!$tableExists) {
+                            $createSql = "
+                                CREATE TABLE staff_course (
+                                    id INT AUTO_INCREMENT PRIMARY KEY,
+                                    svcNo VARCHAR(20) NOT NULL,
+                                    instId INT,
+                                    cseId INT,
+                                    qualification VARCHAR(200),
+                                    yearStarted INT,
+                                    yearCompleted INT,
+                                    grade VARCHAR(20),
+                                    result VARCHAR(100),
+                                    certificate VARCHAR(200),
+                                    isHighest TINYINT(1) DEFAULT 0,
+                                    authorityId INT,
+                                    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                                    INDEX idx_svcNo (svcNo)
+                                )
+                            ";
+                            $pdo->exec($createSql);
+                            error_log("Created staff_course table before transaction");
+                        }
+                    } catch (Exception $tableCheckE) {
+                        error_log("Error checking/creating staff_course table: " . $tableCheckE->getMessage());
+                    }
+                    
+                    // Create staff_skills table if needed
+                    try {
+                        $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_skills'")->rowCount() > 0;
+                        if (!$tableExists) {
+                            $createSql = "
+                                CREATE TABLE staff_skills (
+                                    id INT AUTO_INCREMENT PRIMARY KEY,
+                                    svcNo VARCHAR(20) NOT NULL,
+                                    course_name VARCHAR(200),
+                                    course_type VARCHAR(100),
+                                    institution VARCHAR(200),
+                                    startDate DATE,
+                                    endDate DATE,
+                                    duration_days INT,
+                                    certificateNumber VARCHAR(100),
+                                    grade_obtained VARCHAR(20),
+                                    location VARCHAR(100),
+                                    cost DECIMAL(10,2),
+                                    sponsored_by VARCHAR(100),
+                                    certification_status VARCHAR(50),
+                                    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                                    INDEX idx_svcNo (svcNo)
+                                )
+                            ";
+                            $pdo->exec($createSql);
+                            error_log("Created staff_skills table before transaction");
+                        }
+                    } catch (Exception $tableCheckE) {
+                        error_log("Error checking/creating staff_skills table: " . $tableCheckE->getMessage());
+                    }
+                    
+                    // NOW start the transaction (after ALL DDL operations)
                     $pdo->beginTransaction();
                     
                     // Debug: Log the update operation
                     error_log("Starting staff update for service number: " . $svcNo);
                     
-                    // Log staff changes (this won't throw exceptions now)
-                    logStaffChange($svcNo, $originalStaff, $updateData, $user->data()->id ?? 0, $_SERVER['REMOTE_ADDR'] ?? '');
+                    // Log staff changes (pass PDO connection to avoid transaction issues)
+                    logStaffChange($svcNo, $originalStaff, $updateData, $user->data()->id ?? 0, $_SERVER['REMOTE_ADDR'] ?? '', $pdo);
                     
                     // Get current staff table structure to build dynamic update query
                     $columns = $pdo->query('DESCRIBE staff')->fetchAll(PDO::FETCH_ASSOC);
@@ -738,13 +989,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                     
                     // Map form fields to database columns
                     $fieldMap = [
-                        'first_name' => $fname,
-                        'last_name' => $lname,
-                        'rank_id' => $rankID,
-                        'unit_id' => $unitID,
-                        'corps_id' => $corpsID,
+                        'fName' => $fname,
+                        'lName' => $lname,
+                        'rankId' => $rankID,
+                        'unitId' => $unitID,
+                        'corpsId' => $corpsID,
                         'category' => $category,
-                        'service_number' => $newSvcNo,
+                        'svcNo' => $newSvcNo,
                         'NRC' => $NRC,
                         'DOB' => $DOB,
                         'gender' => $gender,
@@ -760,14 +1011,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                         'trade' => $trade,
                         'specialization' => $specialization,
                         'combatSize' => $combatSize,
-                        'bsize' => $bsize,
-                        'ssize' => $ssize,
-                        'hdress' => $hdress,
+                        'bootSize' => $bsize, 
+                        'shoeSize' => $ssize, 
+                        'hDress' => $hdress, 
                         'attestDate' => $attestDate,
                         'lastPromotion' => $lastPromotion,
                         'postingHistory' => $postingHistory,
                         'awards' => $awards,
                         'disciplinaryRecord' => $disciplinaryRecord,
+                        'marital' => $_POST['maritalStatus'] ?? null,
                         'maritalStatus' => $_POST['maritalStatus'] ?? null,
                         'marital_status' => $_POST['maritalStatus'] ?? null, // Handle both column names
                         'religion' => $_POST['religion'] ?? null,
@@ -779,12 +1031,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                     // Build dynamic update query with only existing columns
                     $updateFields = [];
                     $updateParams = [];
+                    
+                    error_log("Specialization value from POST: '" . ($specialization ?? 'NULL') . "'");
+                    error_log("Existing staff table columns: " . implode(", ", $existingColumns));
+                    
                     foreach ($fieldMap as $column => $value) {
                         if (in_array($column, $existingColumns)) {
-                            // Only allow service_number update if changed
-                            if ($column === 'service_number' && $newSvcNo !== $svcNo) {
+                            // Only allow svcNo update if changed
+                            if ($column === 'svcNo' && $newSvcNo !== $svcNo) {
                                 // Check for duplicate service number
-                                $dupStmt = $pdo->prepare("SELECT COUNT(*) FROM staff WHERE service_number = ?");
+                                $dupStmt = $pdo->prepare("SELECT COUNT(*) FROM staff WHERE svcNo = ?");
                                 $dupStmt->execute([$newSvcNo]);
                                 if ($dupStmt->fetchColumn() > 0) {
                                     throw new Exception("Service number already exists. Please choose a unique service number.");
@@ -792,13 +1048,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                             }
                             $updateFields[] = "$column = ?";
                             $updateParams[] = $value;
+                            if ($column === 'specialization') {
+                                error_log("Specialization WILL BE UPDATED to: '" . $value . "'");
+                            }
                         } else {
                             error_log("Skipping missing column: $column");
                         }
                     }
-                    // Add service_number for WHERE clause
+                    // Add svcNo for WHERE clause
                     $updateParams[] = $svcNo;
-                    $updateSql = "UPDATE staff SET " . implode(', ', $updateFields) . " WHERE service_number = ?";
+                    $updateSql = "UPDATE staff SET " . implode(', ', $updateFields) . " WHERE svcNo = ?";
                     
                     // Debug: Log the SQL and parameters
                     error_log("Dynamic Update SQL: " . $updateSql);
@@ -814,7 +1073,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                     
                     if ($rowsAffected === 0) {
                         // Additional debugging: Check if the record exists
-                        $checkStmt = $pdo->prepare("SELECT COUNT(*) FROM staff WHERE service_number = ?");
+                        $checkStmt = $pdo->prepare("SELECT COUNT(*) FROM staff WHERE svcNo = ?");
                         $checkStmt->execute([$svcNo]);
                         $recordExists = $checkStmt->fetchColumn();
                         
@@ -832,94 +1091,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                         }
                     }
                     
-                    // Get staff_id for child tables using the new service number
-                    $stmtStaffId = $pdo->prepare("SELECT id FROM staff WHERE service_number = ?");
-                    $stmtStaffId->execute([$newSvcNo]);
-                    $staffId = $stmtStaffId->fetchColumn();
+                    // Use svcNo directly for child tables (staff table uses svcNo as primary key, not id)
+                    $staffSvcNo = $newSvcNo;
                     
-                    // If not found with new service number, try with original service number
-                    if (!$staffId && $newSvcNo !== $svcNo) {
-                        error_log("Staff not found with new service number '$newSvcNo', trying original '$svcNo'");
-                        $stmtStaffId->execute([$svcNo]);
-                        $staffId = $stmtStaffId->fetchColumn();
-                    }
-                    
-                    // If still not found, try to get from the original staff object
-                    if (!$staffId && isset($originalStaff->id)) {
-                        $staffId = $originalStaff->id;
-                        error_log("Using staff ID from original staff object: " . $staffId);
-                    }
-                    
-                    if (!$staffId) {
-                        throw new Exception("Could not retrieve staff ID for service number: " . $newSvcNo . " or original: " . $svcNo);
-                    }
-                    
-                    error_log("Using staff ID: " . $staffId . " for processing dynamic fields");
+                    error_log("Using staff svcNo: " . $staffSvcNo . " for processing dynamic fields");
 
                     // --- Operations (with error handling) ---
                     try {
-                        error_log("Processing operations for staff ID: " . $staffId);
+                        error_log("Processing operations for staff svcNo: " . $staffSvcNo);
                         error_log("POST operations data: " . json_encode($_POST['operations'] ?? []));
                         error_log("Number of operations in POST: " . count($_POST['operations'] ?? []));
                         
-                        // Check if table exists
-                        $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_operations'")->rowCount() > 0;
-                        if (!$tableExists) {
-                            $createSql = "
-                                CREATE TABLE staff_operations (
-                                    id INT AUTO_INCREMENT PRIMARY KEY,
-                                    staff_id INT NOT NULL,
-                                    operation_name VARCHAR(200),
-                                    operation_id VARCHAR(100),
-                                    role VARCHAR(100),
-                                    location VARCHAR(200),
-                                    start_date DATE,
-                                    end_date DATE,
-                                    status VARCHAR(50),
-                                    performance_rating VARCHAR(50),
-                                    remarks TEXT,
-                                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                    FOREIGN KEY (staff_id) REFERENCES staff(id) ON DELETE CASCADE
-                                )
-                            ";
-                            $pdo->exec($createSql);
-                            error_log("Created staff_operations table");
-                        } else {
-                            // Update table structure to match new fields
-                            try {
-                                $pdo->exec("ALTER TABLE staff_operations 
-                                           ADD COLUMN IF NOT EXISTS operation_name VARCHAR(200),
-                                           ADD COLUMN IF NOT EXISTS location VARCHAR(200),
-                                           ADD COLUMN IF NOT EXISTS status VARCHAR(50)");
-                            } catch (Exception $alterEx) {
-                                error_log("Note: Could not alter staff_operations table (may already have columns): " . $alterEx->getMessage());
-                            }
-                        }
-                        
+                        // Table already ensured to exist before transaction
                         // Only process if operations data was submitted
                         if (isset($_POST['operations']) && is_array($_POST['operations'])) {
                             // Delete existing operations for this staff member
-                            $deleteStmt = $pdo->prepare("DELETE FROM staff_operations WHERE staff_id = ?");
-                            $deleteStmt->execute([$staffId]);
-                            error_log("Deleted existing operations for staff_id: $staffId");
+                            $deleteStmt = $pdo->prepare("DELETE FROM staff_operation WHERE svcNo = ?");
+                            $deleteStmt->execute([$staffSvcNo]);
+                            error_log("Deleted existing operations for svcNo: $staffSvcNo");
                             
                             // Insert new operations
-                            $opStmt = $pdo->prepare("INSERT INTO staff_operations (staff_id, operation_name, operation_id, role, location, start_date, end_date, status, remarks, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+                            $opStmt = $pdo->prepare("INSERT INTO staff_operation (svcNo, opId, apptId, startDate, endDate, reasonLeft, remarks, authorityId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
                             $insertCount = 0;
                             foreach ($_POST['operations'] as $index => $op) {
                             error_log("Processing operation #$index: " . json_encode($op));
-                            if (!empty($op['operation_name']) || !empty($op['operation_id'])) {
+                            // Check if there's meaningful data (either opId or apptId should be present)
+                            if (!empty($op['opID']) || !empty($op['opId']) || !empty($op['apptID']) || !empty($op['apptId']) || !empty($op['operation_id'])) {
                                 try {
                                     $opStmt->execute([
-                                        $staffId,
-                                        $op['operation_name'] ?? '',
-                                        $op['operation_id'] ?? $op['operation_name'] ?? '', // Use name as ID if no ID provided
-                                        $op['role'] ?? '',
-                                        $op['location'] ?? '',
-                                        !empty($op['start_date']) ? $op['start_date'] : null,
-                                        !empty($op['end_date']) ? $op['end_date'] : null,
-                                        $op['status'] ?? '',
-                                        $op['remarks'] ?? ''
+                                        $staffSvcNo,
+                                        !empty($op['opId']) ? $op['opId'] : (!empty($op['opID']) ? $op['opID'] : (!empty($op['operation_id']) ? $op['operation_id'] : '')),
+                                        !empty($op['apptId']) ? $op['apptId'] : (!empty($op['apptID']) ? $op['apptID'] : ''),
+                                        !empty($op['startDate']) ? $op['startDate'] : null,
+                                        !empty($op['endDate']) ? $op['endDate'] : null,
+                                        $op['reasonLeft'] ?? $op['reason_left'] ?? '',
+                                        $op['remarks'] ?? '',
+                                        $op['authorityId'] ?? $op['authority_id'] ?? ''
                                     ]);
                                     $insertCount++;
                                     error_log("Successfully inserted operation #$index");
@@ -930,9 +1137,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                                 error_log("Skipping empty operation #$index");
                             }
                         }
-                        error_log("Successfully inserted $insertCount operations for staff_id: $staffId");
+                        error_log("Successfully inserted $insertCount operations for svcNo: $staffSvcNo");
                         } else {
-                            error_log("No operations data submitted - preserving existing operations for staff_id: $staffId");
+                            error_log("No operations data submitted - preserving existing operations for svcNo: $staffSvcNo");
                         }
                     } catch (Exception $e) {
                         error_log("Error processing operations: " . $e->getMessage());
@@ -943,62 +1150,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
 
                     // --- Deployments (with error handling) ---
                     try {
-                        error_log("Processing deployments for staff ID: " . $staffId);
+                        error_log("Processing deployments for staff svcNo: " . $staffSvcNo);
                         error_log("POST deployments data: " . json_encode($_POST['deployments'] ?? []));
                         error_log("Number of deployments in POST: " . count($_POST['deployments'] ?? []));
                         
-                        // Check if table exists
-                        $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_deployments'")->rowCount() > 0;
-                        if (!$tableExists) {
-                            $createSql = "
-                                CREATE TABLE staff_deployments (
-                                    id INT AUTO_INCREMENT PRIMARY KEY,
-                                    staff_id INT NOT NULL,
-                                    deployment_name VARCHAR(200),
-                                    mission_type VARCHAR(100),
-                                    location VARCHAR(100),
-                                    country VARCHAR(100),
-                                    start_date DATE,
-                                    end_date DATE,
-                                    duration_months INT,
-                                    deployment_status VARCHAR(50),
-                                    rank_during_deployment VARCHAR(50),
-                                    role_during_deployment VARCHAR(100),
-                                    commanding_officer VARCHAR(100),
-                                    deployment_allowance DECIMAL(10,2),
-                                    notes TEXT,
-                                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                                    FOREIGN KEY (staff_id) REFERENCES staff(id) ON DELETE CASCADE
-                                )
-                            ";
-                            $pdo->exec($createSql);
-                            error_log("Created staff_deployments table");
-                        }
-                        
+                        // Table already ensured to exist before transaction
                         // Only process if deployments data was submitted
                         if (isset($_POST['deployments']) && is_array($_POST['deployments'])) {
                             // Delete existing deployments for this staff member
-                            $deleteStmt = $pdo->prepare("DELETE FROM staff_deployments WHERE staff_id = ?");
-                            $deleteStmt->execute([$staffId]);
-                            error_log("Deleted existing deployments for staff_id: $staffId");
+                            $deleteStmt = $pdo->prepare("DELETE FROM staff_deployments WHERE svcNo = ?");
+                            $deleteStmt->execute([$staffSvcNo]);
+                            error_log("Deleted existing deployments for svcNo: $staffSvcNo");
                             
                             // Insert new deployments
-                            $depStmt = $pdo->prepare("INSERT INTO staff_deployments (staff_id, deployment_name, mission_type, location, country, start_date, end_date, duration_months, deployment_status, rank_during_deployment, role_during_deployment, commanding_officer, deployment_allowance, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+                            $depStmt = $pdo->prepare("INSERT INTO staff_deployments (svcNo, deployment_name, mission_type, location, country, startDate, endDate, durationMonths, deployment_status, rank_during_deployment, role_during_deployment, commanding_officer, deployment_allowance, notes, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
                             $insertCount = 0;
                             foreach ($_POST['deployments'] as $index => $dep) {
                             error_log("Processing deployment #$index: " . json_encode($dep));
                             if (!empty($dep['deployment_name'])) {
                                 try {
                                     $depStmt->execute([
-                                        $staffId,
+                                        $staffSvcNo,
                                         $dep['deployment_name'] ?? '',
                                         $dep['mission_type'] ?? '',
                                         $dep['location'] ?? '',
                                         $dep['country'] ?? '',
-                                        !empty($dep['start_date']) ? $dep['start_date'] : null,
-                                        !empty($dep['end_date']) ? $dep['end_date'] : null,
-                                        !empty($dep['duration_months']) ? intval($dep['duration_months']) : null,
+                                        !empty($dep['startDate']) ? $dep['startDate'] : null,
+                                        !empty($dep['endDate']) ? $dep['endDate'] : null,
+                                        !empty($dep['durationMonths']) ? intval($dep['durationMonths']) : null,
                                         $dep['deployment_status'] ?? $dep['status'] ?? '', // Use the correct field name
                                         $dep['rank_during_deployment'] ?? '',
                                         $dep['role_during_deployment'] ?? $dep['role'] ?? '', // Use the correct field name
@@ -1015,9 +1194,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                                 error_log("Skipping empty deployment #$index");
                             }
                         }
-                        error_log("Successfully inserted $insertCount deployments for staff_id: $staffId");
+                        error_log("Successfully inserted $insertCount deployments for svcNo: $staffSvcNo");
                         } else {
-                            error_log("No deployments data submitted - preserving existing deployments for staff_id: $staffId");
+                            error_log("No deployments data submitted - preserving existing deployments for svcNo: $staffSvcNo");
                         }
                     } catch (Exception $e) {
                         error_log("Error processing deployments: " . $e->getMessage());
@@ -1026,59 +1205,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                         // Continue processing
                     }
 
-                    // --- Education (with error handling) ---
+                    // --- Education/Courses (with error handling) ---
                     try {
-                        error_log("Processing education for staff ID: " . $staffId);
+                        error_log("Processing education/courses for staff svcNo: " . $staffSvcNo);
                         error_log("POST education data: " . json_encode($_POST['education'] ?? []));
                         error_log("Number of education records in POST: " . count($_POST['education'] ?? []));
                         
-                        // Check if table exists
-                        $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_education'")->rowCount() > 0;
-                        if (!$tableExists) {
-                            $createSql = "
-                                CREATE TABLE staff_education (
-                                    id INT AUTO_INCREMENT PRIMARY KEY,
-                                    staff_id INT NOT NULL,
-                                    institution VARCHAR(200),
-                                    qualification VARCHAR(100),
-                                    level VARCHAR(50),
-                                    field_of_study VARCHAR(100),
-                                    year_started YEAR,
-                                    year_completed YEAR,
-                                    grade_obtained VARCHAR(20),
-                                    is_highest_qualification BOOLEAN DEFAULT FALSE,
-                                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                                    FOREIGN KEY (staff_id) REFERENCES staff(id) ON DELETE CASCADE
-                                )
-                            ";
-                            $pdo->exec($createSql);
-                            error_log("Created staff_education table");
-                        }
-                        
+                        // Table already ensured to exist before transaction (staff_course)
                         // Only process if education data was submitted
                         if (isset($_POST['education']) && is_array($_POST['education'])) {
-                            // Delete existing education records
-                            $deleteStmt = $pdo->prepare("DELETE FROM staff_education WHERE staff_id = ?");
-                            $deleteStmt->execute([$staffId]);
-                            error_log("Deleted existing education for staff_id: $staffId");
+                            // Delete existing education/course records
+                            $deleteStmt = $pdo->prepare("DELETE FROM staff_course WHERE svcNo = ?");
+                            $deleteStmt->execute([$staffSvcNo]);
+                            error_log("Deleted existing courses for svcNo: $staffSvcNo");
                             
-                            // Insert new education records
-                            $eduStmt = $pdo->prepare("INSERT INTO staff_education (staff_id, institution, qualification, level, field_of_study, year_started, year_completed, is_highest_qualification, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+                            // Insert new education/course records
+                            $eduStmt = $pdo->prepare("INSERT INTO staff_course (svcNo, instId, cseId, qualification, yearStarted, yearCompleted, grade, result, certificate, isHighest, authorityId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                             $insertCount = 0;
                             foreach ($_POST['education'] as $index => $edu) {
                             error_log("Processing education #$index: " . json_encode($edu));
-                            if (!empty($edu['institution'])) {
+                            // Check if there's meaningful data (instId or cseId should be present)
+                            if (!empty($edu['instId']) || !empty($edu['cseId']) || !empty($edu['institution'])) {
                                 try {
                                     $eduStmt->execute([
-                                        $staffId,
-                                        $edu['institution'] ?? '',
+                                        $staffSvcNo,
+                                        !empty($edu['instId']) ? $edu['instId'] : (!empty($edu['institution']) ? $edu['institution'] : ''),
+                                        !empty($edu['cseId']) ? $edu['cseId'] : '',
                                         $edu['qualification'] ?? '',
-                                        $edu['level'] ?? '',
-                                        $edu['field_of_study'] ?? '',
-                                        !empty($edu['year_started']) ? intval($edu['year_started']) : null,
-                                        !empty($edu['year_completed']) ? intval($edu['year_completed']) : null,
-                                        !empty($edu['is_highest_qualification']) ? 1 : 0
+                                        !empty($edu['yearStarted']) ? intval($edu['yearStarted']) : (!empty($edu['year_started']) ? intval($edu['year_started']) : null),
+                                        !empty($edu['yearCompleted']) ? intval($edu['yearCompleted']) : (!empty($edu['year_completed']) ? intval($edu['year_completed']) : null),
+                                        $edu['grade'] ?? $edu['grade_obtained'] ?? '',
+                                        $edu['result'] ?? '',
+                                        $edu['certificate'] ?? '',
+                                        !empty($edu['isHighest']) ? 1 : (!empty($edu['is_highest_qualification']) ? 1 : 0),
+                                        $edu['authorityId'] ?? $edu['authority_id'] ?? ''
                                     ]);
                                     $insertCount++;
                                     error_log("Successfully inserted education #$index");
@@ -1089,9 +1249,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                                 error_log("Skipping empty education #$index");
                             }
                         }
-                        error_log("Successfully inserted $insertCount education records for staff_id: $staffId");
+                        error_log("Successfully inserted $insertCount course records for svcNo: $staffSvcNo");
                         } else {
-                            error_log("No education data submitted - preserving existing education for staff_id: $staffId");
+                            error_log("No education data submitted - preserving existing courses for svcNo: $staffSvcNo");
                         }
                     } catch (Exception $e) {
                         error_log("Error processing education: " . $e->getMessage());
@@ -1102,73 +1262,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                     
                     // --- Skills (with error handling) ---
                     try {
-                        error_log("Processing skills for staff ID: " . $staffId);
+                        error_log("Processing skills for staff svcNo: " . $staffSvcNo);
                         error_log("POST skills data: " . json_encode($_POST['skills'] ?? []));
                         error_log("Number of skills in POST: " . count($_POST['skills'] ?? []));
                         
-                        // Check if table exists
-                        $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_skills'")->rowCount() > 0;
-                        if (!$tableExists) {
-                            $createSql = "
-                                CREATE TABLE staff_skills (
-                                    id INT AUTO_INCREMENT PRIMARY KEY,
-                                    staff_id INT NOT NULL,
-                                    course_name VARCHAR(200),
-                                    course_type VARCHAR(100),
-                                    institution VARCHAR(200),
-                                    start_date DATE,
-                                    end_date DATE,
-                                    duration_days INT,
-                                    certificate_number VARCHAR(100),
-                                    grade_obtained VARCHAR(20),
-                                    location VARCHAR(100),
-                                    cost DECIMAL(10,2),
-                                    sponsored_by VARCHAR(100),
-                                    certification_status VARCHAR(50),
-                                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                                    FOREIGN KEY (staff_id) REFERENCES staff(id) ON DELETE CASCADE
-                                )
-                            ";
-                            $pdo->exec($createSql);
-                            error_log("Created staff_skills table");
-                        } else {
-                            // Add certification_status column if not exists
-                            try {
-                                $pdo->exec("ALTER TABLE staff_skills ADD COLUMN IF NOT EXISTS certification_status VARCHAR(50)");
-                            } catch (Exception $alterEx) {
-                                error_log("Note: Could not alter staff_skills table (may already have column): " . $alterEx->getMessage());
-                            }
-                        }
-                        
+                        // Table already ensured to exist before transaction
                         // Only process if skills data was submitted
                         if (isset($_POST['skills']) && is_array($_POST['skills'])) {
                             // Delete existing skills
-                            $deleteStmt = $pdo->prepare("DELETE FROM staff_skills WHERE staff_id = ?");
-                            $deleteStmt->execute([$staffId]);
-                            error_log("Deleted existing skills for staff_id: $staffId");
+                            $deleteStmt = $pdo->prepare("DELETE FROM staff_skills WHERE svcNo = ?");
+                            $deleteStmt->execute([$staffSvcNo]);
+                            error_log("Deleted existing skills for svcNo: $staffSvcNo");
                             
                             // Insert new skills
-                            $skillStmt = $pdo->prepare("INSERT INTO staff_skills (staff_id, course_name, course_type, institution, start_date, end_date, duration_days, certificate_number, grade_obtained, location, cost, sponsored_by, certification_status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+                            $skillStmt = $pdo->prepare("INSERT INTO staff_skills (svcNo, skillName, skillLevel, skillCategory, yearsOfExperience, certified, certificationBody, certificationDate, certificationExpiry) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
                             $insertCount = 0;
                             foreach ($_POST['skills'] as $index => $skill) {
                             error_log("Processing skill #$index: " . json_encode($skill));
-                            if (!empty($skill['course_name'])) {
+                            if (!empty($skill['skillName']) || !empty($skill['skill_name'])) {
                                 try {
                                     $skillStmt->execute([
-                                        $staffId,
-                                        $skill['course_name'] ?? '',
-                                        $skill['course_type'] ?? '',
-                                        $skill['institution'] ?? '',
-                                        !empty($skill['start_date']) ? $skill['start_date'] : null,
-                                        !empty($skill['end_date']) ? $skill['end_date'] : null,
-                                        !empty($skill['duration_days']) ? intval($skill['duration_days']) : null,
-                                        $skill['certificate_number'] ?? '',
-                                        $skill['grade_obtained'] ?? '',
-                                        $skill['location'] ?? '',
-                                        !empty($skill['cost']) ? floatval($skill['cost']) : null,
-                                        $skill['sponsored_by'] ?? '',
-                                        $skill['certification_status'] ?? ''
+                                        $staffSvcNo,
+                                        $skill['skillName'] ?? $skill['skill_name'] ?? '',
+                                        $skill['skillLevel'] ?? $skill['skill_level'] ?? null,
+                                        $skill['skillCategory'] ?? $skill['skill_category'] ?? null,
+                                        !empty($skill['yearsOfExperience']) ? intval($skill['yearsOfExperience']) : (!empty($skill['years_of_experience']) ? intval($skill['years_of_experience']) : null),
+                                        !empty($skill['certified']) ? 1 : 0,
+                                        $skill['certificationBody'] ?? $skill['certification_body'] ?? null,
+                                        !empty($skill['certificationDate']) ? $skill['certificationDate'] : (!empty($skill['certification_date']) ? $skill['certification_date'] : null),
+                                        !empty($skill['certificationExpiry']) ? $skill['certificationExpiry'] : (!empty($skill['certification_expiry']) ? $skill['certification_expiry'] : null)
                                     ]);
                                     $insertCount++;
                                     error_log("Successfully inserted skill #$index");
@@ -1179,9 +1301,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                                 error_log("Skipping empty skill #$index");
                             }
                         }
-                        error_log("Successfully inserted $insertCount skills for staff_id: $staffId");
+                        error_log("Successfully inserted $insertCount skills for svcNo: $staffSvcNo");
                         } else {
-                            error_log("No skills data submitted - preserving existing skills for staff_id: $staffId");
+                            error_log("No skills data submitted - preserving existing skills for svcNo: $staffSvcNo");
                         }
                     } catch (Exception $e) {
                         error_log("Error processing skills: " . $e->getMessage());
@@ -1197,47 +1319,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                         if ($tableCheck->rowCount() > 0) {
                             
                         if (isset($_POST['postings']) && is_array($_POST['postings'])) {
-                            error_log("Processing postings for staff_id: $staffId");
+                            error_log("Processing postings for svcNo: $staffSvcNo");
                             
                             // Delete existing postings for this staff member from staff_appointment
-                            $deletePostings = $pdo->prepare("DELETE FROM staff_appointment WHERE staff_id = ?");
-                            $deletePostings->execute([$staffId]);
-                            error_log("Deleted existing postings from staff_appointment for staff_id: $staffId");
+                            $deletePostings = $pdo->prepare("DELETE FROM staff_appointment WHERE svcNo = ?");
+                            $deletePostings->execute([$staffSvcNo]);
+                            error_log("Deleted existing postings from staff_appointment for svcNo: $staffSvcNo");
                             
                             // Insert new postings into staff_appointment table
                             $insertPosting = $pdo->prepare("
                                 INSERT INTO staff_appointment 
-                                (staff_id, service_number, unit_id, location, rank_id, appointment_id, 
-                                 start_date, end_date, posting_order_reference, remarks, created_by)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                (svcNo, apptId, apptType, unitId, apptWef, powers, endDate, authorityId, remarks, createdBy)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             ");
                             
                             $insertCount = 0;
                             foreach ($_POST['postings'] as $index => $posting) {
                                 // Skip if missing required fields
-                                if (empty($posting['unit_id']) || empty($posting['start_date'])) {
-                                    error_log("Skipping empty posting #$index");
+                                if (empty($posting['apptId']) && empty($posting['appointment_id'])) {
+                                    error_log("Skipping posting #$index - missing apptId");
                                     continue;
                                 }
                                 
                                 $insertPosting->execute([
-                                    $staffId,
-                                    $_POST['newSvcNo'] ?? $_POST['svcNo'],
-                                    $posting['unit_id'],
-                                    $posting['location'] ?? null,
-                                    !empty($posting['rank_id']) ? $posting['rank_id'] : null,
-                                    $posting['appointment_role'] ?? '',
-                                    $posting['start_date'],
-                                    !empty($posting['end_date']) ? $posting['end_date'] : null,
-                                    $posting['posting_order_reference'] ?? null,
+                                    $staffSvcNo,
+                                    $posting['apptId'] ?? $posting['appointment_id'] ?? '',
+                                    $posting['appointment_type'] ?? $posting['apptType'] ?? null,
+                                    $posting['unitId'] ?? null,
+                                    $posting['startDate'] ?? $posting['apptWef'] ?? null,
+                                    $posting['powers'] ?? '',
+                                    !empty($posting['endDate']) ? $posting['endDate'] : null,
+                                    $posting['authorityId'] ?? $posting['authority_id'] ?? null,
                                     $posting['remarks'] ?? null,
                                     $_SESSION['username'] ?? 'system'
                                 ]);
                                 $insertCount++;
                             }
-                            error_log("Successfully inserted $insertCount postings into staff_appointment for staff_id: $staffId");
+                            error_log("Successfully inserted $insertCount postings into staff_appointment for svcNo: $staffSvcNo");
                         } else {
-                            error_log("No postings data submitted - preserving existing postings for staff_id: $staffId");
+                            error_log("No postings data submitted - preserving existing postings for svcNo: $staffSvcNo");
                         }
                         
                         }
@@ -1255,18 +1375,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                         if ($tableCheck->rowCount() > 0) {
                             
                         if (isset($_POST['awards']) && is_array($_POST['awards'])) {
-                            error_log("Processing awards for staff_id: $staffId");
+                            error_log("Processing awards for svcNo: $staffSvcNo");
                             
                             // Delete existing awards for this staff member
-                            $deleteAwards = $pdo->prepare("DELETE FROM staff_awards WHERE staff_id = ?");
-                            $deleteAwards->execute([$staffId]);
-                            error_log("Deleted existing awards for staff_id: $staffId");
+                            $deleteAwards = $pdo->prepare("DELETE FROM staff_awards WHERE svcNo = ?");
+                            $deleteAwards->execute([$staffSvcNo]);
+                            error_log("Deleted existing awards for svcNo: $staffSvcNo");
                             
                             // Insert new awards
                             $insertAward = $pdo->prepare("
                                 INSERT INTO staff_awards 
-                                (staff_id, award_type, award_name, award_date, awarded_by, 
-                                 citation, certificate_number, gazette_reference, remarks)
+                                (svcNo, award_type, award_name, award_date, awarded_by, 
+                                 citation, certificateNumber, gazette_reference, remarks)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                             ");
                             
@@ -1279,21 +1399,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                                 }
                                 
                                 $insertAward->execute([
-                                    $staffId,
+                                    $staffSvcNo,
                                     $award['award_type'],
                                     $award['award_name'],
                                     $award['award_date'],
                                     $award['awarded_by'] ?? null,
                                     $award['citation'] ?? null,
-                                    $award['certificate_number'] ?? null,
+                                    $award['certificateNumber'] ?? null,
                                     $award['gazette_reference'] ?? null,
                                     $award['remarks'] ?? null
                                 ]);
                                 $insertCount++;
                             }
-                            error_log("Successfully inserted $insertCount awards for staff_id: $staffId");
+                            error_log("Successfully inserted $insertCount awards for svcNo: $staffSvcNo");
                         } else {
-                            error_log("No awards data submitted - preserving existing awards for staff_id: $staffId");
+                            error_log("No awards data submitted - preserving existing awards for svcNo: $staffSvcNo");
                         }
                         
                         }
@@ -1311,18 +1431,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                         if ($tableCheck->rowCount() > 0) {
                             
                         if (isset($_POST['disciplinary']) && is_array($_POST['disciplinary'])) {
-                            error_log("Processing disciplinary records for staff_id: $staffId");
+                            error_log("Processing disciplinary records for svcNo: $staffSvcNo");
                             
                             // Delete existing disciplinary records for this staff member
-                            $deleteDisciplinary = $pdo->prepare("DELETE FROM staff_disciplinary WHERE staff_id = ?");
-                            $deleteDisciplinary->execute([$staffId]);
-                            error_log("Deleted existing disciplinary records for staff_id: $staffId");
+                            $deleteDisciplinary = $pdo->prepare("DELETE FROM staff_disciplinary WHERE svcNo = ?");
+                            $deleteDisciplinary->execute([$staffSvcNo]);
+                            error_log("Deleted existing disciplinary records for svcNo: $staffSvcNo");
                             
                             // Insert new disciplinary records
                             $insertDisciplinary = $pdo->prepare("
                                 INSERT INTO staff_disciplinary 
-                                (staff_id, incident_type, incident_date, description, action_taken, 
-                                 disciplinary_authority, start_date, end_date, case_reference, 
+                                (svcNo, incident_type, incident_date, description, action_taken, 
+                                 disciplinary_authority, startDate, endDate, case_reference, 
                                  outcome, appeal_details, clearance_date, confidential, remarks)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             ");
@@ -1336,14 +1456,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                                 }
                                 
                                 $insertDisciplinary->execute([
-                                    $staffId,
+                                    $staffSvcNo,
                                     $disc['incident_type'],
                                     $disc['incident_date'],
                                     $disc['description'],
                                     $disc['action_taken'] ?? null,
                                     $disc['disciplinary_authority'] ?? null,
-                                    !empty($disc['start_date']) ? $disc['start_date'] : null,
-                                    !empty($disc['end_date']) ? $disc['end_date'] : null,
+                                    !empty($disc['startDate']) ? $disc['startDate'] : null,
+                                    !empty($disc['endDate']) ? $disc['endDate'] : null,
                                     $disc['case_reference'] ?? null,
                                     $disc['outcome'] ?? null,
                                     $disc['appeal_details'] ?? null,
@@ -1353,9 +1473,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                                 ]);
                                 $insertCount++;
                             }
-                            error_log("Successfully inserted $insertCount disciplinary records for staff_id: $staffId");
+                            error_log("Successfully inserted $insertCount disciplinary records for svcNo: $staffSvcNo");
                         } else {
-                            error_log("No disciplinary data submitted - preserving existing records for staff_id: $staffId");
+                            error_log("No disciplinary data submitted - preserving existing records for svcNo: $staffSvcNo");
                         }
                         
                         }
@@ -1369,7 +1489,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                     $pdo->commit();
                     $success = true;
                     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-                    $stmt = $pdo->prepare("SELECT * FROM staff WHERE service_number = ?");
+                    $stmt = $pdo->prepare("SELECT * FROM staff WHERE svcNo = ?");
                     $stmt->execute([$newSvcNo]);
                     $staff = $stmt->fetch(PDO::FETCH_OBJ);
                 } catch (Exception $e) {
@@ -1414,10 +1534,10 @@ function getStaffStatistics() {
         $stats['gender'][$gender->gender] = $gender->count;
     }
     // Staff by rank
-    $stmt = $pdo->query("SELECT r.name as rankName, COUNT(s.service_number) as count FROM ranks r LEFT JOIN staff s ON r.id = s.rank_id GROUP BY r.id, r.name ORDER BY count DESC");
+    $stmt = $pdo->query("SELECT r.rankId as rankName, COUNT(s.svcNo) as count FROM `rank` r LEFT JOIN staff s ON r.rankId = s.rankId GROUP BY r.rankId ORDER BY count DESC");
     $stats['ranks'] = $stmt->fetchAll(PDO::FETCH_OBJ);
     // Staff by unit
-    $stmt = $pdo->query("SELECT u.code as unitName, COUNT(s.service_number) as count FROM unit u LEFT JOIN staff s ON u.unit_id = s.unit_id GROUP BY u.unit_id, u.code ORDER BY count DESC");
+    $stmt = $pdo->query("SELECT u.code as unitName, COUNT(s.svcNo) as count FROM unit u LEFT JOIN staff s ON u.unitId = s.unitId GROUP BY u.unitId, u.code ORDER BY count DESC");
     $stats['units'] = $stmt->fetchAll(PDO::FETCH_OBJ);
     return $stats;
 }
@@ -1430,15 +1550,15 @@ function getRecentActivity($limit = 10) {
     try {
         $stmt = $pdo->prepare("
             SELECT 
-                sel.service_number,
-                s.first_name,
-                s.last_name,
+                sel.svcNo,
+                s.fName,
+                s.lName,
                 sel.edited_by,
                 sel.edited_at,
                 sel.changes,
                 u.username as edited_by_username
             FROM staff_edit_log sel
-            LEFT JOIN staff s ON sel.service_number = s.service_number
+            LEFT JOIN staff s ON sel.svcNo = s.svcNo
             LEFT JOIN users u ON sel.edited_by = u.id
             ORDER BY sel.edited_at DESC
             LIMIT ?
@@ -1475,25 +1595,25 @@ $staffAwards = [];
 $staffDisciplinary = [];
 
 if (!empty($staff)) {
-    error_log("Loading dynamic data for staff ID: " . $staff->id);
+    error_log("Loading dynamic data for staff svcNo: " . $staff->svcNo);
     
-    // Load operations
-    if ($pdo->query("SHOW TABLES LIKE 'staff_operations'")->rowCount()) {
-        error_log("Staff operations table exists, loading operations");
-        $stmt = $pdo->prepare("SELECT * FROM staff_operations WHERE staff_id = ?");
-        $stmt->execute([$staff->id]);
+    // Load operations (correct table name is staff_operation, singular)
+    if ($pdo->query("SHOW TABLES LIKE 'staff_operation'")->rowCount()) {
+        error_log("Staff operation table exists, loading operations");
+        $stmt = $pdo->prepare("SELECT * FROM staff_operation WHERE svcNo = ?");
+        $stmt->execute([$staff->svcNo]);
         $staffOperations = $stmt->fetchAll(PDO::FETCH_ASSOC);
         error_log("Loaded operations: " . count($staffOperations));
         error_log("Operations data: " . json_encode($staffOperations));
     } else {
-        error_log("Staff operations table does not exist");
+        error_log("Staff operation table does not exist");
     }
 
     // Load deployments
     if ($pdo->query("SHOW TABLES LIKE 'staff_deployments'")->rowCount()) {
         error_log("Staff deployments table exists, loading deployments");
-        $stmt = $pdo->prepare("SELECT * FROM staff_deployments WHERE staff_id = ?");
-        $stmt->execute([$staff->id]);
+        $stmt = $pdo->prepare("SELECT * FROM staff_deployments WHERE svcNo = ?");
+        $stmt->execute([$staff->svcNo]);
         $staffDeployments = $stmt->fetchAll(PDO::FETCH_ASSOC);
         error_log("Loaded deployments: " . count($staffDeployments));
         error_log("Deployments data: " . json_encode($staffDeployments));
@@ -1501,23 +1621,23 @@ if (!empty($staff)) {
         error_log("Staff deployments table does not exist");
     }
 
-    // Load education
-    if ($pdo->query("SHOW TABLES LIKE 'staff_education'")->rowCount()) {
-        error_log("Staff education table exists, loading education");
-        $stmt = $pdo->prepare("SELECT * FROM staff_education WHERE staff_id = ?");
-        $stmt->execute([$staff->id]);
+    // Load education/courses
+    if ($pdo->query("SHOW TABLES LIKE 'staff_course'")->rowCount()) {
+        error_log("Staff course table exists, loading courses");
+        $stmt = $pdo->prepare("SELECT * FROM staff_course WHERE svcNo = ?");
+        $stmt->execute([$staff->svcNo]);
         $staffEducation = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        error_log("Loaded education: " . count($staffEducation));
-        error_log("Education data: " . json_encode($staffEducation));
+        error_log("Loaded courses: " . count($staffEducation));
+        error_log("Courses data: " . json_encode($staffEducation));
     } else {
-        error_log("Staff education table does not exist");
+        error_log("Staff course table does not exist");
     }
 
     // Load skills/courses if you have such table, e.g. staff_skills
     if ($pdo->query("SHOW TABLES LIKE 'staff_skills'")->rowCount()) {
         error_log("Staff skills table exists, loading skills");
-        $stmt = $pdo->prepare("SELECT * FROM staff_skills WHERE staff_id = ?");
-        $stmt->execute([$staff->id]);
+        $stmt = $pdo->prepare("SELECT * FROM staff_skills WHERE svcNo = ?");
+        $stmt->execute([$staff->svcNo]);
         $staffSkills = $stmt->fetchAll(PDO::FETCH_ASSOC);
         error_log("Loaded skills: " . count($staffSkills));
         error_log("Skills data: " . json_encode($staffSkills));
@@ -1529,15 +1649,15 @@ if (!empty($staff)) {
     try {
         if ($pdo->query("SHOW TABLES LIKE 'staff_appointment'")->rowCount()) {
             error_log("Staff appointment table exists, loading postings");
+            // Load from staff_appointment - this table does NOT have rankId column
             $stmt = $pdo->prepare("
-                SELECT sa.*, u.name as unit_name, r.abbreviation as rank_abbr, r.name as rank_name
+                SELECT sa.*, COALESCE(u.code, '') as unit_name
                 FROM staff_appointment sa
-                LEFT JOIN unit u ON sa.unit_id = u.unit_id
-                LEFT JOIN ranks r ON sa.rank_id = r.id
-                WHERE sa.staff_id = ? 
-                ORDER BY sa.start_date DESC
+                LEFT JOIN unit u ON sa.unitId = u.unitId
+                WHERE sa.svcNo = ? 
+                ORDER BY sa.apptWef DESC
             ");
-            $stmt->execute([$staff->id]);
+            $stmt->execute([$staff->svcNo]);
             $staffPostings = $stmt->fetchAll(PDO::FETCH_ASSOC);
             error_log("Loaded postings from staff_appointment: " . count($staffPostings));
             error_log("Postings data: " . json_encode($staffPostings));
@@ -1558,8 +1678,8 @@ if (!empty($staff)) {
             $columnCheck = $pdo->query("SHOW COLUMNS FROM staff_awards LIKE 'award_date'")->rowCount();
             $orderBy = $columnCheck ? "award_date DESC" : "id DESC";
             
-            $stmt = $pdo->prepare("SELECT * FROM staff_awards WHERE staff_id = ? ORDER BY $orderBy");
-            $stmt->execute([$staff->id]);
+            $stmt = $pdo->prepare("SELECT * FROM staff_awards WHERE svcNo = ? ORDER BY $orderBy");
+            $stmt->execute([$staff->svcNo]);
             $staffAwards = $stmt->fetchAll(PDO::FETCH_ASSOC);
             error_log("Loaded awards: " . count($staffAwards));
             error_log("Awards data: " . json_encode($staffAwards));
@@ -1575,8 +1695,8 @@ if (!empty($staff)) {
     try {
         if ($pdo->query("SHOW TABLES LIKE 'staff_disciplinary'")->rowCount()) {
             error_log("Staff disciplinary table exists, loading disciplinary records");
-            $stmt = $pdo->prepare("SELECT * FROM staff_disciplinary WHERE staff_id = ? ORDER BY incident_date DESC");
-            $stmt->execute([$staff->id]);
+            $stmt = $pdo->prepare("SELECT * FROM staff_disciplinary WHERE svcNo = ? ORDER BY incident_date DESC");
+            $stmt->execute([$staff->svcNo]);
             $staffDisciplinary = $stmt->fetchAll(PDO::FETCH_ASSOC);
             error_log("Loaded disciplinary records: " . count($staffDisciplinary));
             error_log("Disciplinary data: " . json_encode($staffDisciplinary));
@@ -1594,37 +1714,60 @@ if (!empty($staff)) {
 <!-- Dynamically load initial data for dynamic sections -->
 <script>
 window.operationsOptions = <?php
-    // You must provide the operations/codes from your DB if needed
-    $ops = $pdo->query("SELECT id, name, code FROM operations ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+    // Defensive: operations table may not exist in all environments. Try/catch and return empty array if missing.
+    try {
+        $ops = [];
+        $res = $pdo->query("SHOW TABLES LIKE 'operations'");
+        if ($res && $res->rowCount()) {
+            $ops = $pdo->query("SELECT id, name, code FROM operations ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+        }
+    } catch (Exception $e) {
+        error_log("Could not load operations for edit_staff: " . $e->getMessage());
+        $ops = [];
+    }
     echo json_encode($ops);
 ?>;
 
 // Fetch distinct units (case-insensitive) for JavaScript dropdowns
 window.unitsOptions = <?php
-    $unitsForDropdown = $pdo->query("SELECT DISTINCT unit_id, code, location FROM unit ORDER BY code ASC")->fetchAll(PDO::FETCH_ASSOC);
+    try {
+        $unitsForDropdown = [];
+        $res = $pdo->query("SHOW TABLES LIKE 'unit'");
+        if ($res && $res->rowCount()) {
+            $unitsForDropdown = $pdo->query("SELECT DISTINCT unitId, code, location FROM unit ORDER BY code ASC")->fetchAll(PDO::FETCH_ASSOC);
+        }
+    } catch (Exception $e) {
+        error_log("Could not load units for edit_staff: " . $e->getMessage());
+        $unitsForDropdown = [];
+    }
     echo json_encode($unitsForDropdown);
 ?>;
 
 // Fetch ranks for the staff member's category for JavaScript dropdowns
 window.ranksOptions = <?php
-    $rankCategory = '';
-    if (isset($staff) && !empty($staff->rank)) {
-        // Get the rank category for this staff member
-        $stmtRank = $pdo->prepare("SELECT category FROM ranks WHERE abbreviation = ? OR name = ? LIMIT 1");
-        $stmtRank->execute([$staff->rank, $staff->rank]);
-        $rankCat = $stmtRank->fetch(PDO::FETCH_OBJ);
-        if ($rankCat) {
-            $rankCategory = $rankCat->category;
+    try {
+        $rankCategory = '';
+        if (isset($staff) && !empty($staff->rank)) {
+            // Get the rank category for this staff member from `rank` table
+            $stmtRank = $pdo->prepare("SELECT category FROM `rank` WHERE rankId = ? LIMIT 1");
+            $stmtRank->execute([$staff->rank]);
+            $rankCat = $stmtRank->fetch(PDO::FETCH_OBJ);
+            if ($rankCat) {
+                $rankCategory = $rankCat->category;
+            }
         }
-    }
-    
-    // Get all ranks in the same category, or all if category not found
-    if (!empty($rankCategory)) {
-        $ranks = $pdo->prepare("SELECT id, name, abbreviation, level FROM ranks WHERE category = ? ORDER BY level DESC");
-        $ranks->execute([$rankCategory]);
-        $ranksData = $ranks->fetchAll(PDO::FETCH_ASSOC);
-    } else {
-        $ranksData = $pdo->query("SELECT id, name, abbreviation, level FROM ranks ORDER BY level DESC")->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Get all ranks in the same category, or all if category not found
+        if (!empty($rankCategory)) {
+            $ranks = $pdo->prepare("SELECT rankId as id, rankId as name, rankId as abbreviation, level FROM `rank` WHERE category = ? ORDER BY level DESC");
+            $ranks->execute([$rankCategory]);
+            $ranksData = $ranks->fetchAll(PDO::FETCH_ASSOC);
+        } else {
+            $ranksData = $pdo->query("SELECT rankId as id, rankId as name, rankId as abbreviation, level FROM `rank` ORDER BY level DESC")->fetchAll(PDO::FETCH_ASSOC);
+        }
+    } catch (Exception $e) {
+        error_log("Could not load ranks for edit_staff: " . $e->getMessage());
+        $ranksData = [];
     }
     echo json_encode($ranksData);
 ?>;
@@ -1750,7 +1893,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <i class="fa fa-check-circle"></i> 
                     <strong>Success!</strong> Staff member information has been updated successfully.
                     <div class="mt-2">
-                        <a href="view_staff.php?id=<?= $staff->id ?? 0 ?>" class="btn btn-sm btn-primary">
+                        <a href="view_staff.php?svcNo=<?= urlencode($staff->svcNo ?? '') ?>" class="btn btn-sm btn-primary">
                             <i class="fa fa-user"></i> View Profile
                         </a>
                         <a href="edit_staff.php" class="btn btn-sm btn-secondary">
@@ -1974,8 +2117,8 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <div class="timeline-marker"></div>
                                     <div class="timeline-content">
                                         <h6 class="mb-1">
-                                            <?=htmlspecialchars(($activity->first_name ?? 'Unknown') . ' ' . ($activity->last_name ?? 'Staff'))?>
-                                            <small class="text-muted">(<?=htmlspecialchars($activity->service_number ?? 'N/A')?>)</small>
+                                            <?=htmlspecialchars(($activity->fName ?? 'Unknown') . ' ' . ($activity->lName ?? 'Staff'))?>
+                                            <small class="text-muted">(<?=htmlspecialchars($activity->svcNo ?? 'N/A')?>)</small>
                                         </h6>
                                         <p class="mb-1">
                                             Updated by: <?=htmlspecialchars($activity->edited_by_username ?? 'Unknown')?>
@@ -2163,9 +2306,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         const tr = document.createElement('tr');
                         tr.ondblclick = function() {
                             // Log audit view action
-                            fetch('?ajax=1&audit_view=1&staff_id=' + encodeURIComponent(staff.id));
-                            // Redirect to view page
-                            window.location.href = 'view_staff.php?id=' + encodeURIComponent(staff.id);
+                            fetch('?ajax=1&audit_view=1&svcNo=' + encodeURIComponent(staff.svcNo));
+                            // Redirect to view page using svcNo
+                            window.location.href = 'view_staff.php?svcNo=' + encodeURIComponent(staff.svcNo);
                         };
                         
                         tr.innerHTML =
@@ -2177,7 +2320,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 '<a href="?svcNo=' + encodeURIComponent(staff.svcNo) + '" class="btn btn-primary btn-sm me-1" title="Edit ' + escapeHtml(titleCase(staff.name)) + '">' +
                                     '<i class="fa fa-edit"></i> Edit' +
                                 '</a>' +
-                                '<a href="view_staff.php?id=' + encodeURIComponent(staff.id) + '" class="btn btn-info btn-sm" title="View ' + escapeHtml(titleCase(staff.name)) + '">' +
+                                '<a href="view_staff.php?svcNo=' + encodeURIComponent(staff.svcNo) + '" class="btn btn-info btn-sm" title="View ' + escapeHtml(titleCase(staff.name)) + '">' +
                                     '<i class="fa fa-eye"></i> View' +
                                 '</a>' +
                             '</td>';
@@ -2460,8 +2603,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <?php else: ?>
                 <form method="post" id="editStaffForm" autocomplete="off" aria-label="Edit Staff Member" enctype="multipart/form-data">
     <input type="hidden" name="edit_staff" value="1">
-    <input type="hidden" name="staff_id" value="<?= htmlspecialchars($staff->id ?? '') ?>">
-    <input type="hidden" name="svcNo" value="<?= htmlspecialchars($staff->service_number ?? '') ?>">
+    <input type="hidden" name="svcNo" value="<?= htmlspecialchars($staff->svcNo ?? '') ?>">
     <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
 
     <?php if (!empty($_SESSION['is_admin']) && $_SESSION['is_admin']): ?>
@@ -2479,8 +2621,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <div class="card-body d-none" id="debugInfo">
             <div class="alert alert-info">
                 <p><strong>Form ID:</strong> <?= htmlspecialchars('editStaffForm') ?></p>
-                <p><strong>Service Number:</strong> <?= htmlspecialchars($staff->service_number ?? 'Not set') ?></p>
-                <p><strong>Staff ID:</strong> <?= htmlspecialchars($staff->id ?? 'Not set') ?></p>
+                <p><strong>Service Number:</strong> <?= htmlspecialchars($staff->svcNo ?? 'Not set') ?></p>
                 <p><strong>CSRF Token:</strong> <?= htmlspecialchars(substr(csrf_token(), 0, 10)) ?>...</p>
                 <p><strong>Dynamic Data:</strong></p>
                 <ul>
@@ -2562,7 +2703,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <input type="text"
                                class="form-control"
                                name="newSvcNo" id="newSvcNo"
-                               value="<?= htmlspecialchars($staff->service_number ?? '') ?>"
+                               value="<?= htmlspecialchars($staff->svcNo ?? '') ?>"
                                required pattern="\d+" maxlength="50"
                                aria-describedby="svcNo-help">
                         <small id="svcNo-help" class="form-text text-muted">Unique integer service number</small>
@@ -2573,7 +2714,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <input type="text"
                                class="form-control <?= isset($validationErrors['fname']) ? 'is-invalid' : '' ?>"
                                name="fname" id="fname"
-                               value="<?= htmlspecialchars($staff->first_name ?? '') ?>"
+                               value="<?= htmlspecialchars($staff->fName ?? '') ?>"
                                required
                                maxlength="<?= MAX_NAME_LENGTH ?>"
                                minlength="<?= MIN_NAME_LENGTH ?>"
@@ -2590,7 +2731,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <input type="text"
                                class="form-control <?= isset($validationErrors['lname']) ? 'is-invalid' : '' ?>"
                                name="lname" id="lname"
-                               value="<?= htmlspecialchars($staff->last_name ?? '') ?>"
+                               value="<?= htmlspecialchars($staff->lName ?? '') ?>"
                                required
                                maxlength="<?= MAX_NAME_LENGTH ?>"
                                minlength="<?= MIN_NAME_LENGTH ?>"
@@ -2612,13 +2753,13 @@ document.addEventListener('DOMContentLoaded', function() {
                             <option value="">Select Rank</option>
                             <?php foreach ($ranks as $rank): ?>
                                 <option value="<?= htmlspecialchars($rank->rankID) ?>"
-                                        <?= (!empty($staff) && $staff->rank_id == $rank->rankID) ? 'selected' : '' ?>>
+                                        <?= (!empty($staff) && $staff->rankId == $rank->rankID) ? 'selected' : '' ?>>
                                     <?= htmlspecialchars($rank->rankName) ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
                         <small id="rankID-help" class="form-text text-muted">
-                            Current: <strong><?= htmlspecialchars(!empty($staff) ? ($rankMap[$staff->rank_id] ?? 'Unknown') : 'Unknown') ?></strong>
+                            Current: <strong><?= htmlspecialchars(!empty($staff) ? ($rankMap[$staff->rankId] ?? 'Unknown') : 'Unknown') ?></strong>
                         </small>
                         <div class="invalid-feedback" id="rankID-error"><?= $validationErrors['rankID'] ?? '' ?></div>
                     </div>
@@ -2630,13 +2771,13 @@ document.addEventListener('DOMContentLoaded', function() {
                             <option value="">Select Unit</option>
                             <?php foreach ($units as $unit): ?>
                                 <option value="<?= htmlspecialchars($unit->unitID) ?>"
-                                        <?= (!empty($staff) && $staff->unit_id == $unit->unitID) ? 'selected' : '' ?>>
+                                        <?= (!empty($staff) && $staff->unitId == $unit->unitID) ? 'selected' : '' ?>>
                                     <?= htmlspecialchars($unit->unitName) ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
                         <small id="unitID-help" class="form-text text-muted">
-                            Current: <strong><?= htmlspecialchars(!empty($staff) ? ($unitMap[$staff->unit_id] ?? 'Unknown') : 'Unknown') ?></strong>
+                            Current: <strong><?= htmlspecialchars(!empty($staff) ? ($unitMap[$staff->unitId] ?? 'Unknown') : 'Unknown') ?></strong>
                         </small>
                         <div class="invalid-feedback" id="unitID-error"><?= $validationErrors['unitID'] ?? '' ?></div>
                     </div>
@@ -2650,7 +2791,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <option value="">Select Corps</option>
                             <?php foreach ($corps as $corpsItem): ?>
                                 <option value="<?= htmlspecialchars($corpsItem->id) ?>"
-                                        <?= (!empty($staff) && isset($staff->corps_id) && $staff->corps_id == $corpsItem->id) ? 'selected' : '' ?>>
+                                        <?= (!empty($staff) && isset($staff->corpsId) && $staff->corpsId == $corpsItem->id) ? 'selected' : '' ?>>
                                     <?= htmlspecialchars($corpsItem->name) ?>
                                 </option>
                             <?php endforeach; ?>
@@ -2705,7 +2846,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             $maritalStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                             foreach ($maritalStatuses as $status): ?>
                                 <option value="<?= htmlspecialchars($status) ?>" 
-                                        <?= (!empty($staff) && ($staff->maritalStatus ?? $staff->marital_status ?? '') === $status) ? 'selected' : '' ?>>
+                                        <?= (!empty($staff) && ($staff->marital ?? $staff->maritalStatus ?? $staff->marital_status ?? '') === $status) ? 'selected' : '' ?>>
                                     <?= htmlspecialchars($status) ?>
                                 </option>
                             <?php endforeach; ?>
@@ -2992,7 +3133,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                         <?php 
                                         for ($i = 4; $i <= 15; $i++): ?>
                                             <option value="<?= $i ?>" 
-                                                    <?= (!empty($staff) && ($staff->bsize ?? '') == $i) ? 'selected' : '' ?>>
+                                                    <?= (!empty($staff) && ($staff->bootSize ?? $staff->bsize ?? '') == $i) ? 'selected' : '' ?>>
                                                 <?= $i ?>
                                             </option>
                                         <?php endfor; ?>
@@ -3006,7 +3147,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                         <?php 
                                         for ($i = 4; $i <= 15; $i++): ?>
                                             <option value="<?= $i ?>" 
-                                                    <?= (!empty($staff) && ($staff->ssize ?? '') == $i) ? 'selected' : '' ?>>
+                                                    <?= (!empty($staff) && ($staff->shoeSize ?? $staff->ssize ?? '') == $i) ? 'selected' : '' ?>>
                                                 <?= $i ?>
                                             </option>
                                         <?php endfor; ?>
@@ -3020,7 +3161,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                         <?php 
                                         for ($i = 52; $i <= 65; $i++): ?>
                                             <option value="<?= $i ?>" 
-                                                    <?= (!empty($staff) && ($staff->hdress ?? '') == $i) ? 'selected' : '' ?>>
+                                                    <?= (!empty($staff) && ($staff->hDress ?? $staff->hdress ?? '') == $i) ? 'selected' : '' ?>>
                                                 <?= $i ?>
                                             </option>
                                         <?php endfor; ?>
@@ -3040,6 +3181,70 @@ document.addEventListener('DOMContentLoaded', function() {
                                         value="<?=htmlspecialchars($staff->lastPromotion ?? '')?>">
                                 </div>
                             </div>
+
+                            <?php if (isset($staff) && $staff): ?>
+                                <?php 
+                                    $retirementInfo = calculateRetirementInfo($staff->DOB ?? null, $staff->attestDate ?? null);
+                                ?>
+                                
+                                <!-- Retirement Information Display -->
+                                <div class="row mb-3">
+                                    <div class="col-12">
+                                        <div class="card bg-light">
+                                            <div class="card-body">
+                                                <h6 class="card-title text-primary mb-3">
+                                                    <i class="fa fa-calendar-times"></i> Retirement Information
+                                                </h6>
+                                                
+                                                <div class="row">
+                                                    <!-- Expected Runout Date (Age 65) -->
+                                                    <div class="col-md-6 mb-2">
+                                                        <strong><i class="fa fa-hourglass-end text-primary"></i> Expected Runout Date (Age 65):</strong>
+                                                        <div class="mt-1" data-retirement="runout">
+                                                            <?php if ($retirementInfo['runout']): ?>
+                                                                <?php 
+                                                                    $runout = $retirementInfo['runout'];
+                                                                    $urgencyClass = getRetirementUrgencyClass($runout['yearsRemaining']);
+                                                                ?>
+                                                                <div><?=$runout['formatted']?></div>
+                                                                <small class="<?=$urgencyClass?>">
+                                                                    <i class="fa fa-clock"></i> <?=$runout['remaining']?> remaining
+                                                                </small>
+                                                            <?php else: ?>
+                                                                <span class="text-muted">N/A (Date of birth not recorded)</span>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <!-- Expected Early Retirement (20 Years Service) -->
+                                                    <div class="col-md-6 mb-2">
+                                                        <strong><i class="fa fa-calendar-alt text-primary"></i> Expected Early Retirement (20 Years Service):</strong>
+                                                        <div class="mt-1" data-retirement="earlyRetirement">
+                                                            <?php if ($retirementInfo['earlyRetirement']): ?>
+                                                                <?php 
+                                                                    $earlyRet = $retirementInfo['earlyRetirement'];
+                                                                    $urgencyClass = getRetirementUrgencyClass($earlyRet['yearsRemaining']);
+                                                                ?>
+                                                                <div><?=$earlyRet['formatted']?></div>
+                                                                <small class="<?=$urgencyClass?>">
+                                                                    <i class="fa fa-clock"></i> <?=$earlyRet['remaining']?> 
+                                                                    <?=$earlyRet['isPast'] ? '' : 'remaining'?>
+                                                                </small>
+                                                            <?php else: ?>
+                                                                <span class="text-muted">N/A (Enlistment date not recorded)</span>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                
+                                                <small class="text-muted d-block mt-2">
+                                                    <i class="fa fa-info-circle"></i> These dates are automatically calculated and update when DOB or Attestation Date changes.
+                                                </small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
 
                             <div class="alert alert-info mt-3">
                                 <i class="fa fa-info-circle"></i> <strong>Note:</strong> Posting History, Awards & Commendations, and Disciplinary Records are now managed in dedicated sections (Steps 6-8) for better organization and tracking.
@@ -3304,46 +3509,39 @@ document.addEventListener('DOMContentLoaded', function() {
             <div class="card mb-3 operation-item" data-index="${index}">
                 <div class="card-body">
                     <div class="row g-3">
-                        <div class="col-md-4">
-                            <label class="form-label">Operation Name</label>
-                            <input type="text" name="operations[${index}][operation_name]" class="form-control" 
-                                   placeholder="Operation name" value="${data.operation_name || ''}" required>
+                        <div class="col-md-6">
+                            <label class="form-label">Operation ID</label>
+                            <input type="number" name="operations[${index}][opID]" class="form-control" 
+                                   placeholder="Operation ID" value="${data.opID || data.operation_id || ''}" required>
                         </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Role</label>
-                            <input type="text" name="operations[${index}][role]" class="form-control" 
-                                   placeholder="Your role" value="${data.role || ''}">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Location</label>
-                            <input type="text" name="operations[${index}][location]" class="form-control" 
-                                   placeholder="Operation location" value="${data.location || ''}">
+                        <div class="col-md-6">
+                            <label class="form-label">Appointment ID</label>
+                            <input type="number" name="operations[${index}][apptID]" class="form-control" 
+                                   placeholder="Appointment ID" value="${data.apptID || ''}">
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
-                        <div class="col-md-3">
+                        <div class="col-md-4">
                             <label class="form-label">Start Date</label>
-                            <input type="date" name="operations[${index}][start_date]" class="form-control" 
-                                   value="${data.start_date || ''}">
+                            <input type="date" name="operations[${index}][startDate]" class="form-control" 
+                                   value="${data.startDate || ''}">
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-4">
                             <label class="form-label">End Date</label>
-                            <input type="date" name="operations[${index}][end_date]" class="form-control" 
-                                   value="${data.end_date || ''}">
+                            <input type="date" name="operations[${index}][endDate]" class="form-control" 
+                                   value="${data.endDate || ''}">
                         </div>
-                        <div class="col-md-3">
-                            <label class="form-label">Status</label>
-                            <select name="operations[${index}][status]" class="form-select">
-                                <option value="">Select Status</option>
-                                <option value="Active" ${data.status === 'Active' ? 'selected' : ''}>Active</option>
-                                <option value="Completed" ${data.status === 'Completed' ? 'selected' : ''}>Completed</option>
-                                <option value="Pending" ${data.status === 'Pending' ? 'selected' : ''}>Pending</option>
-                            </select>
-                        </div>
-                        <div class="col-md-3 d-flex align-items-end">
+                        <div class="col-md-4 d-flex align-items-end">
                             <button type="button" class="btn btn-danger w-100" onclick="removeOperationRow(${index})">
                                 <i class="fa fa-trash"></i> Remove
                             </button>
+                        </div>
+                    </div>
+                    <div class="row g-3 mt-2">
+                        <div class="col-md-12">
+                            <label class="form-label">Reason Left</label>
+                            <textarea name="operations[${index}][reasonLeft]" class="form-control" rows="2" 
+                                      placeholder="Reason for leaving this operation">${data.reasonLeft || data.reason_left || ''}</textarea>
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
@@ -3397,18 +3595,18 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="row g-3 mt-2">
                         <div class="col-md-3">
                             <label class="form-label">Start Date</label>
-                            <input type="date" name="deployments[${index}][start_date]" class="form-control" 
-                                   value="${data.start_date || ''}">
+                            <input type="date" name="deployments[${index}][startDate]" class="form-control" 
+                                   value="${data.startDate || ''}">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">End Date</label>
-                            <input type="date" name="deployments[${index}][end_date]" class="form-control" 
-                                   value="${data.end_date || ''}">
+                            <input type="date" name="deployments[${index}][endDate]" class="form-control" 
+                                   value="${data.endDate || ''}">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Duration (Months) <small class="text-muted">Auto-calculated</small></label>
-                            <input type="number" name="deployments[${index}][duration_months]" class="form-control" 
-                                   placeholder="Auto-calculated" value="${data.duration_months || ''}" min="0" readonly>
+                            <input type="number" name="deployments[${index}][durationMonths]" class="form-control" 
+                                   placeholder="Auto-calculated" value="${data.durationMonths || ''}" min="0" readonly>
                         </div>
                         <div class="col-md-3 d-flex align-items-end">
                             <button type="button" class="btn btn-danger w-100" onclick="removeDeploymentRow(${index})">
@@ -3460,9 +3658,9 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Add event listeners for auto-calculating duration
         const deploymentCard = container.lastElementChild;
-        const startDateInput = deploymentCard.querySelector(`input[name="deployments[${index}][start_date]"]`);
-        const endDateInput = deploymentCard.querySelector(`input[name="deployments[${index}][end_date]"]`);
-        const durationInput = deploymentCard.querySelector(`input[name="deployments[${index}][duration_months]"]`);
+        const startDateInput = deploymentCard.querySelector(`input[name="deployments[${index}][startDate]"]`);
+        const endDateInput = deploymentCard.querySelector(`input[name="deployments[${index}][endDate]"]`);
+        const durationInput = deploymentCard.querySelector(`input[name="deployments[${index}][durationMonths]"]`);
         
         function calculateDeploymentDuration() {
             if (startDateInput.value && endDateInput.value) {
@@ -3492,80 +3690,66 @@ document.addEventListener('DOMContentLoaded', function() {
             <div class="card mb-3 education-item" data-index="${index}">
                 <div class="card-body">
                     <div class="row g-3">
-                        <div class="col-md-4">
-                            <label class="form-label">Institution</label>
-                            <input type="text" name="education[${index}][institution]" class="form-control" 
-                                   placeholder="Educational institution" value="${data.institution || ''}" required>
+                        <div class="col-md-3">
+                            <label class="form-label">Institution ID</label>
+                            <input type="number" name="education[${index}][instId]" class="form-control" 
+                                   placeholder="Institution ID" value="${data.instId || data.institution || ''}" required>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
+                            <label class="form-label">Course ID</label>
+                            <input type="number" name="education[${index}][cseId]" class="form-control" 
+                                   placeholder="Course ID" value="${data.cseId || ''}">
+                        </div>
+                        <div class="col-md-3">
                             <label class="form-label">Qualification</label>
-                            <select name="education[${index}][qualification]" class="form-select">
-                                <option value="">Select Qualification</option>
-                                <option value="Certificate" ${data.qualification === 'Certificate' ? 'selected' : ''}>Certificate</option>
-                                <option value="Diploma" ${data.qualification === 'Diploma' ? 'selected' : ''}>Diploma</option>
-                                <option value="Associate Degree" ${data.qualification === 'Associate Degree' ? 'selected' : ''}>Associate Degree</option>
-                                <option value="Bachelor's Degree" ${data.qualification === 'Bachelor\'s Degree' ? 'selected' : ''}>Bachelor's Degree</option>
-                                <option value="Master's Degree" ${data.qualification === 'Master\'s Degree' ? 'selected' : ''}>Master's Degree</option>
-                                <option value="Doctorate/PhD" ${data.qualification === 'Doctorate/PhD' ? 'selected' : ''}>Doctorate/PhD</option>
-                                <option value="Professional Certification" ${data.qualification === 'Professional Certification' ? 'selected' : ''}>Professional Certification</option>
-                                <option value="Military Training" ${data.qualification === 'Military Training' ? 'selected' : ''}>Military Training</option>
-                                <option value="Other" ${data.qualification === 'Other' ? 'selected' : ''}>Other</option>
-                            </select>
+                            <input type="text" name="education[${index}][qualification]" class="form-control" 
+                                   placeholder="e.g., Bachelor's Degree" value="${data.qualification || ''}">
                         </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Field of Study</label>
-                            <select name="education[${index}][field_of_study]" class="form-select">
-                                <option value="">Select Field of Study</option>
-                                <option value="Engineering" ${data.field_of_study === 'Engineering' ? 'selected' : ''}>Engineering</option>
-                                <option value="Computer Science" ${data.field_of_study === 'Computer Science' ? 'selected' : ''}>Computer Science</option>
-                                <option value="Information Technology" ${data.field_of_study === 'Information Technology' ? 'selected' : ''}>Information Technology</option>
-                                <option value="Business Administration" ${data.field_of_study === 'Business Administration' ? 'selected' : ''}>Business Administration</option>
-                                <option value="Management" ${data.field_of_study === 'Management' ? 'selected' : ''}>Management</option>
-                                <option value="Finance" ${data.field_of_study === 'Finance' ? 'selected' : ''}>Finance</option>
-                                <option value="Accounting" ${data.field_of_study === 'Accounting' ? 'selected' : ''}>Accounting</option>
-                                <option value="Law" ${data.field_of_study === 'Law' ? 'selected' : ''}>Law</option>
-                                <option value="Medicine" ${data.field_of_study === 'Medicine' ? 'selected' : ''}>Medicine</option>
-                                <option value="Nursing" ${data.field_of_study === 'Nursing' ? 'selected' : ''}>Nursing</option>
-                                <option value="Education" ${data.field_of_study === 'Education' ? 'selected' : ''}>Education</option>
-                                <option value="Psychology" ${data.field_of_study === 'Psychology' ? 'selected' : ''}>Psychology</option>
-                                <option value="Military Science" ${data.field_of_study === 'Military Science' ? 'selected' : ''}>Military Science</option>
-                                <option value="International Relations" ${data.field_of_study === 'International Relations' ? 'selected' : ''}>International Relations</option>
-                                <option value="Security Studies" ${data.field_of_study === 'Security Studies' ? 'selected' : ''}>Security Studies</option>
-                                <option value="Communications" ${data.field_of_study === 'Communications' ? 'selected' : ''}>Communications</option>
-                                <option value="Languages" ${data.field_of_study === 'Languages' ? 'selected' : ''}>Languages</option>
-                                <option value="Mathematics" ${data.field_of_study === 'Mathematics' ? 'selected' : ''}>Mathematics</option>
-                                <option value="Physics" ${data.field_of_study === 'Physics' ? 'selected' : ''}>Physics</option>
-                                <option value="Chemistry" ${data.field_of_study === 'Chemistry' ? 'selected' : ''}>Chemistry</option>
-                                <option value="Biology" ${data.field_of_study === 'Biology' ? 'selected' : ''}>Biology</option>
-                                <option value="Social Sciences" ${data.field_of_study === 'Social Sciences' ? 'selected' : ''}>Social Sciences</option>
-                                <option value="Other" ${data.field_of_study === 'Other' ? 'selected' : ''}>Other</option>
-                            </select>
+                        <div class="col-md-3">
+                            <label class="form-label">Authority ID</label>
+                            <input type="number" name="education[${index}][authorityId]" class="form-control" 
+                                   placeholder="Authority ID" value="${data.authorityId || ''}">
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
-                        <div class="col-md-4">
+                        <div class="col-md-2">
                             <label class="form-label">Start Year</label>
-                            <input type="number" name="education[${index}][year_started]" class="form-control" 
-                                   placeholder="2020" value="${data.year_started || ''}" min="1900" max="2030">
+                            <input type="number" name="education[${index}][yearStarted]" class="form-control" 
+                                   placeholder="2020" value="${data.yearStarted || data.year_started || ''}" min="1900" max="2030">
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-2">
                             <label class="form-label">End Year</label>
-                            <input type="number" name="education[${index}][year_completed]" class="form-control" 
-                                   placeholder="2024" value="${data.year_completed || ''}" min="1900" max="2030">
+                            <input type="number" name="education[${index}][yearCompleted]" class="form-control" 
+                                   placeholder="2024" value="${data.yearCompleted || data.year_completed || ''}" min="1900" max="2030">
                         </div>
-                        <div class="col-md-4 d-flex align-items-end">
+                        <div class="col-md-2">
+                            <label class="form-label">Grade</label>
+                            <input type="text" name="education[${index}][grade]" class="form-control" 
+                                   placeholder="A, B+, etc." value="${data.grade || data.grade_obtained || ''}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Result</label>
+                            <input type="text" name="education[${index}][result]" class="form-control" 
+                                   placeholder="Pass, Distinction, etc." value="${data.result || ''}">
+                        </div>
+                        <div class="col-md-3 d-flex align-items-end">
                             <button type="button" class="btn btn-danger w-100" onclick="removeEducationRow(${index})">
                                 <i class="fa fa-trash"></i> Remove
                             </button>
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
-                        <div class="col-md-10">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="education[${index}][is_highest_qualification]" 
-                                       value="1" id="highest_${index}" ${data.is_highest_qualification ? 'checked' : ''}>
+                        <div class="col-md-8">
+                            <label class="form-label">Certificate Number</label>
+                            <input type="text" name="education[${index}][certificate]" class="form-control" 
+                                   placeholder="Certificate number or reference" value="${data.certificate || ''}">
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check mt-4">
+                                <input class="form-check-input" type="checkbox" name="education[${index}][isHighest]" 
+                                       value="1" id="highest_${index}" ${data.isHighest || data.is_highest_qualification ? 'checked' : ''}>
                                 <label class="form-check-label" for="highest_${index}">
-                                    This is my highest qualification
+                                    Highest qualification
                                 </label>
                             </div>
                         </div>
@@ -3614,20 +3798,20 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Start Date</label>
-                            <input type="date" name="skills[${index}][start_date]" class="form-control" 
-                                   value="${data.start_date || ''}">
+                            <input type="date" name="skills[${index}][startDate]" class="form-control" 
+                                   value="${data.startDate || ''}">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">End Date</label>
-                            <input type="date" name="skills[${index}][end_date]" class="form-control" 
-                                   value="${data.end_date || ''}">
+                            <input type="date" name="skills[${index}][endDate]" class="form-control" 
+                                   value="${data.endDate || ''}">
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
                         <div class="col-md-3">
                             <label class="form-label">Certificate Number</label>
-                            <input type="text" name="skills[${index}][certificate_number]" class="form-control" 
-                                   placeholder="Certificate #" value="${data.certificate_number || ''}">
+                            <input type="text" name="skills[${index}][certificateNumber]" class="form-control" 
+                                   placeholder="Certificate #" value="${data.certificateNumber || ''}">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Grade Obtained</label>
@@ -3673,8 +3857,8 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Add event listeners for auto-calculating duration
         const skillCard = container.lastElementChild;
-        const startDateInput = skillCard.querySelector(`input[name="skills[${index}][start_date]"]`);
-        const endDateInput = skillCard.querySelector(`input[name="skills[${index}][end_date]"]`);
+        const startDateInput = skillCard.querySelector(`input[name="skills[${index}][startDate]"]`);
+        const endDateInput = skillCard.querySelector(`input[name="skills[${index}][endDate]"]`);
         const durationInput = skillCard.querySelector(`input[name="skills[${index}][duration_days]"]`);
         
         function calculateSkillDuration() {
@@ -3705,6 +3889,7 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('🗑️ Removed operation row #' + index);
         }
     }
+    window.removeOperationRow = removeOperationRow;
 
     function removeDeploymentRow(index) {
         const item = document.querySelector(`.deployment-item[data-index="${index}"]`);
@@ -3713,6 +3898,7 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('🗑️ Removed deployment row #' + index);
         }
     }
+    window.removeDeploymentRow = removeDeploymentRow;
 
     function removeEducationRow(index) {
         const item = document.querySelector(`.education-item[data-index="${index}"]`);
@@ -3721,6 +3907,8 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('🗑️ Removed education row #' + index);
         }
     }
+    // Make function globally accessible
+    window.removeEducationRow = removeEducationRow;
 
     function removeSkillRow(index) {
         const item = document.querySelector(`.skill-item[data-index="${index}"]`);
@@ -3729,6 +3917,7 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('🗑️ Removed skill row #' + index);
         }
     }
+    window.removeSkillRow = removeSkillRow;
 
     // Helper function to build ranks dropdown
     function buildRanksDropdown(selectedValue = '') {
@@ -3752,7 +3941,7 @@ document.addEventListener('DOMContentLoaded', function() {
         let unitsOptionsHTML = '<option value="">Select Unit</option>';
         if (window.unitsOptions && window.unitsOptions.length > 0) {
             window.unitsOptions.forEach(unit => {
-                const selected = (data.unit_id && data.unit_id == unit.id) ? 'selected' : '';
+                const selected = (data.unitId && data.unitId == unit.id) ? 'selected' : '';
                 unitsOptionsHTML += `<option value="${unit.id}" ${selected}>${unit.name}${unit.location ? ' - ' + unit.location : ''}</option>`;
             });
         }
@@ -3761,7 +3950,7 @@ document.addEventListener('DOMContentLoaded', function() {
         let ranksOptionsHTML = '<option value="">Select Rank</option>';
         if (window.ranksOptions && window.ranksOptions.length > 0) {
             window.ranksOptions.forEach(rank => {
-                const selected = (data.rank_id && data.rank_id == rank.id) ? 'selected' : '';
+                const selected = (data.rankId && data.rankId == rank.id) ? 'selected' : '';
                 ranksOptionsHTML += `<option value="${rank.id}" ${selected}>${rank.abbreviation} - ${rank.name}</option>`;
             });
         }
@@ -3772,7 +3961,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="row g-3">
                         <div class="col-md-4">
                             <label class="form-label">Unit <span class="text-danger">*</span></label>
-                            <select name="postings[${index}][unit_id]" class="form-select" required>
+                            <select name="postings[${index}][unitId]" class="form-select" required>
                                 ${unitsOptionsHTML}
                             </select>
                             <small class="text-muted">Assigned unit/formation</small>
@@ -3791,26 +3980,26 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="row g-3 mt-2">
                         <div class="col-md-3">
                             <label class="form-label">Rank at Posting</label>
-                            <select name="postings[${index}][rank_id]" class="form-select">
+                            <select name="postings[${index}][rankId]" class="form-select">
                                 ${ranksOptionsHTML}
                             </select>
                             <small class="text-muted">Rank held (${window.staffRankCategory || 'All'})</small>
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Start Date <span class="text-danger">*</span></label>
-                            <input type="date" name="postings[${index}][start_date]" class="form-control posting-start-date" 
-                                   value="${data.start_date || ''}" required onchange="calculatePostingDuration(${index})">
+                            <input type="date" name="postings[${index}][startDate]" class="form-control posting-start-date" 
+                                   value="${data.startDate || ''}" required onchange="calculatePostingDuration(${index})">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">End Date</label>
-                            <input type="date" name="postings[${index}][end_date]" class="form-control posting-end-date" 
-                                   value="${data.end_date || ''}" onchange="calculatePostingDuration(${index})">
+                            <input type="date" name="postings[${index}][endDate]" class="form-control posting-end-date" 
+                                   value="${data.endDate || ''}" onchange="calculatePostingDuration(${index})">
                             <small class="text-muted">Leave blank if current</small>
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Duration (Months)</label>
-                            <input type="number" name="postings[${index}][duration_months]" class="form-control posting-duration" 
-                                   value="${data.duration_months || ''}" readonly>
+                            <input type="number" name="postings[${index}][durationMonths]" class="form-control posting-duration" 
+                                   value="${data.durationMonths || ''}" readonly>
                             <small class="text-muted">Auto-calculated</small>
                         </div>
                     </div>
@@ -3839,7 +4028,7 @@ document.addEventListener('DOMContentLoaded', function() {
         container.insertAdjacentHTML('beforeend', html);
         
         // Calculate duration if dates exist
-        if (data.start_date) {
+        if (data.startDate) {
             setTimeout(() => calculatePostingDuration(index), 100);
         }
         
@@ -3853,6 +4042,7 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('🗑️ Removed posting row #' + index);
         }
     }
+    window.removePostingRow = removePostingRow;
 
     function calculatePostingDuration(index) {
         const posting = document.querySelector(`.posting-item[data-index="${index}"]`);
@@ -3908,8 +4098,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Certificate Number</label>
-                            <input type="text" name="awards[${index}][certificate_number]" class="form-control" 
-                                   placeholder="Certificate/document number" value="${data.certificate_number || ''}">
+                            <input type="text" name="awards[${index}][certificateNumber]" class="form-control" 
+                                   placeholder="Certificate/document number" value="${data.certificateNumber || ''}">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Gazette Reference</label>
@@ -3952,6 +4142,7 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('🗑️ Removed award row #' + index);
         }
     }
+    window.removeAwardRow = removeAwardRow;
 
     // ==================== DISCIPLINARY RECORD FUNCTIONS ====================
     function addDisciplinaryRow(data = {}) {
@@ -4014,13 +4205,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="row g-3 mt-2">
                         <div class="col-md-3">
                             <label class="form-label">Start Date</label>
-                            <input type="date" name="disciplinary[${index}][start_date]" class="form-control disciplinary-start-date" 
-                                   value="${data.start_date || ''}" onchange="calculateDisciplinaryDuration(${index})">
+                            <input type="date" name="disciplinary[${index}][startDate]" class="form-control disciplinary-start-date" 
+                                   value="${data.startDate || ''}" onchange="calculateDisciplinaryDuration(${index})">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">End Date</label>
-                            <input type="date" name="disciplinary[${index}][end_date]" class="form-control disciplinary-end-date" 
-                                   value="${data.end_date || ''}" onchange="calculateDisciplinaryDuration(${index})">
+                            <input type="date" name="disciplinary[${index}][endDate]" class="form-control disciplinary-end-date" 
+                                   value="${data.endDate || ''}" onchange="calculateDisciplinaryDuration(${index})">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Duration (Days)</label>
@@ -4084,6 +4275,7 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('🗑️ Removed disciplinary row #' + index);
         }
     }
+    window.removeDisciplinaryRow = removeDisciplinaryRow;
 
     function calculateDisciplinaryDuration(index) {
         const disciplinary = document.querySelector(`.disciplinary-item[data-index="${index}"]`);
@@ -4102,7 +4294,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Function to load existing data when editing a staff member
     function loadExistingData() {
-        const svcNo = '<?= htmlspecialchars($staff->service_number ?? '') ?>';
+        const svcNo = '<?= htmlspecialchars($staff->svcNo ?? '') ?>';
         if (svcNo) {
             // Load existing operations, deployments, education, and skills
             console.log('🔄 Loading existing data for service number:', svcNo);
@@ -4122,13 +4314,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const operations = document.querySelectorAll('#operationsList .operation-item');
         console.log(`📋 Validating ${operations.length} operations...`);
         operations.forEach((op, index) => {
-            const nameField = op.querySelector('input[name*="[operation_name]"]');
-            if (nameField && !nameField.value.trim()) {
-                nameField.classList.add('is-invalid');
-                errors.push(`Operation #${index + 1}: Name is required`);
+            const opIDField = op.querySelector('input[name*="[opID]"]');
+            if (opIDField && !opIDField.value.trim()) {
+                opIDField.classList.add('is-invalid');
+                errors.push(`Operation #${index + 1}: Operation ID is required`);
                 isValid = false;
-            } else if (nameField) {
-                nameField.classList.remove('is-invalid');
+            } else if (opIDField) {
+                opIDField.classList.remove('is-invalid');
             }
         });
 
@@ -4150,13 +4342,17 @@ document.addEventListener('DOMContentLoaded', function() {
         const education = document.querySelectorAll('#educationList .education-item');
         console.log(`🎓 Validating ${education.length} education records...`);
         education.forEach((edu, index) => {
-            const institutionField = edu.querySelector('input[name*="[institution]"]');
-            if (institutionField && !institutionField.value.trim()) {
-                institutionField.classList.add('is-invalid');
-                errors.push(`Education #${index + 1}: Institution is required`);
+            const instIdField = edu.querySelector('input[name*="[instId]"]');
+            const cseIdField = edu.querySelector('input[name*="[cseId]"]');
+            // Require either instId or cseId (at least one identifier)
+            if ((!instIdField || !instIdField.value.trim()) && (!cseIdField || !cseIdField.value.trim())) {
+                if (instIdField) instIdField.classList.add('is-invalid');
+                if (cseIdField) cseIdField.classList.add('is-invalid');
+                errors.push(`Education #${index + 1}: Institution ID or Course ID is required`);
                 isValid = false;
-            } else if (institutionField) {
-                institutionField.classList.remove('is-invalid');
+            } else {
+                if (instIdField) instIdField.classList.remove('is-invalid');
+                if (cseIdField) cseIdField.classList.remove('is-invalid');
             }
         });
 
@@ -4226,6 +4422,54 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Handle optional contact fields - clear if invalid
+    // NRC auto-formatting
+    function autoFormatNRC(nrc) {
+        nrc = nrc.replace(/[^\d]/g, '');
+        if (nrc.length >= 6) {
+            nrc = nrc.slice(0, 6) + '/' + nrc.slice(6);
+        }
+        if (nrc.length >= 9) {
+            nrc = nrc.slice(0, 9) + '/' + nrc.slice(9, 10);
+        }
+        return nrc.slice(0, 12);
+    }
+
+    ['NRC', 'nokNrc'].forEach(function(fieldId) {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            field.addEventListener('input', function() {
+                let formatted = autoFormatNRC(this.value);
+                if (this.value !== formatted) {
+                    this.value = formatted;
+                }
+            });
+        }
+    });
+
+    // Phone auto-formatting
+    function autoFormatPhone(phone) {
+        phone = phone.replace(/[^\d+]/g, '');
+        if (phone.startsWith('0')) {
+            phone = '+260' + phone.slice(1);
+        } else if (!phone.startsWith('+260') && phone.length === 9) {
+            phone = '+260' + phone;
+        }
+        return phone;
+    }
+
+    ['tel', 'nokTel'].forEach(function(fieldId) {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            field.addEventListener('blur', function() {
+                let formatted = autoFormatPhone(this.value);
+                if (this.value !== formatted) {
+                    this.value = formatted;
+                }
+            });
+        }
+    });
+
+    // Handle optional contact fields - clear if invalid
     const contactFields = ['email', 'tel', 'nokTel'];
     contactFields.forEach(fieldId => {
         const field = document.getElementById(fieldId);
@@ -4267,7 +4511,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             
             // Check if we have a valid staff member selected
-            const staffId = document.querySelector('input[name="staff_id"]');
+            const staffId = document.querySelector('input[name="svcNo"]');
             if (!staffId || !staffId.value) {
                 e.preventDefault();
                 console.error('❌ No staff member selected');
@@ -4511,6 +4755,120 @@ Are you sure you want to proceed?`;
             field.addEventListener('change', validateSizeConsistency);
         }
     });
+
+    // ==================== RETIREMENT DATE CALCULATOR ====================
+    /**
+     * Calculate and display retirement dates dynamically when DOB or attestDate changes
+     */
+    function updateRetirementInfo() {
+        const dobField = document.getElementById('DOB');
+        const attestDateField = document.getElementById('attestDate');
+        
+        if (!dobField || !attestDateField) return;
+        
+        const dob = dobField.value;
+        const attestDate = attestDateField.value;
+        
+        // Calculate runout date (age 65)
+        let runoutHtml = '<span class="text-muted">N/A (Date of birth not recorded)</span>';
+        if (dob) {
+            try {
+                const dobDate = new Date(dob);
+                const runoutDate = new Date(dobDate);
+                runoutDate.setFullYear(dobDate.getFullYear() + 65);
+                
+                const now = new Date();
+                const isPast = runoutDate < now;
+                
+                if (!isPast) {
+                    const diff = runoutDate - now;
+                    const years = Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
+                    const months = Math.floor((diff % (1000 * 60 * 60 * 24 * 365.25)) / (1000 * 60 * 60 * 24 * 30.44));
+                    
+                    const urgencyClass = years < 1 ? 'text-danger' : 
+                                       years <= 5 ? 'text-warning' : 
+                                       years <= 10 ? 'text-info' : 'text-success';
+                    
+                    runoutHtml = `
+                        <div>${runoutDate.toLocaleDateString('en-GB', {day: 'numeric', month: 'short', year: 'numeric'})}</div>
+                        <small class="${urgencyClass}">
+                            <i class="fa fa-clock"></i> ${years} years, ${months} months remaining
+                        </small>
+                    `;
+                } else {
+                    runoutHtml = `
+                        <div>${runoutDate.toLocaleDateString('en-GB', {day: 'numeric', month: 'short', year: 'numeric'})}</div>
+                        <small class="text-danger">
+                            <i class="fa fa-clock"></i> Past retirement age
+                        </small>
+                    `;
+                }
+            } catch (e) {
+                console.error('Error calculating runout date:', e);
+            }
+        }
+        
+        // Calculate early retirement date (20 years service)
+        let earlyRetHtml = '<span class="text-muted">N/A (Enlistment date not recorded)</span>';
+        if (attestDate) {
+            try {
+                const enlistDate = new Date(attestDate);
+                const earlyRetDate = new Date(enlistDate);
+                earlyRetDate.setFullYear(enlistDate.getFullYear() + 20);
+                
+                const now = new Date();
+                const isPast = earlyRetDate < now;
+                
+                if (!isPast) {
+                    const diff = earlyRetDate - now;
+                    const years = Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
+                    const months = Math.floor((diff % (1000 * 60 * 60 * 24 * 365.25)) / (1000 * 60 * 60 * 24 * 30.44));
+                    
+                    const urgencyClass = years < 1 ? 'text-danger' : 
+                                       years <= 5 ? 'text-warning' : 
+                                       years <= 10 ? 'text-info' : 'text-success';
+                    
+                    earlyRetHtml = `
+                        <div>${earlyRetDate.toLocaleDateString('en-GB', {day: 'numeric', month: 'short', year: 'numeric'})}</div>
+                        <small class="${urgencyClass}">
+                            <i class="fa fa-clock"></i> ${years} years, ${months} months remaining
+                        </small>
+                    `;
+                } else {
+                    earlyRetHtml = `
+                        <div>${earlyRetDate.toLocaleDateString('en-GB', {day: 'numeric', month: 'short', year: 'numeric'})}</div>
+                        <small class="text-danger">
+                            <i class="fa fa-clock"></i> Eligible now
+                        </small>
+                    `;
+                }
+            } catch (e) {
+                console.error('Error calculating early retirement date:', e);
+            }
+        }
+        
+        // Update the display (find the retirement info divs and update them)
+        const runoutDisplay = document.querySelector('[data-retirement="runout"]');
+        const earlyRetDisplay = document.querySelector('[data-retirement="earlyRetirement"]');
+        
+        if (runoutDisplay) runoutDisplay.innerHTML = runoutHtml;
+        if (earlyRetDisplay) earlyRetDisplay.innerHTML = earlyRetHtml;
+    }
+    
+    // Add event listeners to update retirement info when dates change
+    const dobInput = document.getElementById('DOB');
+    const attestDateInput = document.getElementById('attestDate');
+    
+    if (dobInput) {
+        dobInput.addEventListener('change', updateRetirementInfo);
+    }
+    
+    if (attestDateInput) {
+        attestDateInput.addEventListener('change', updateRetirementInfo);
+    }
+    
+    // Initial calculation on page load
+    updateRetirementInfo();
 });
 </script>
 <?php include dirname(__DIR__) . '/shared/footer.php'; ?>

@@ -7,10 +7,13 @@
     if (btn) btn.style.display = (document.documentElement.scrollTop > 100) ? "block" : "none";
   };
 
-  // Province-District dynamic dropdown
-  <?php if (isset($provinceDistricts)): ?>
-  const provinceDistricts = <?=json_encode($provinceDistricts)?>;
-  $('#province').on('change', function() {
+  // Wait for DOM and jQuery to be ready
+  document.addEventListener('DOMContentLoaded', function() {
+    // Province-District dynamic dropdown
+    <?php if (isset($provinceDistricts)): ?>
+    const provinceDistricts = <?=json_encode($provinceDistricts)?>;
+    if (typeof $ !== 'undefined') {
+      $('#province').on('change', function() {
       const selected = this.value;
       const districtSelect = $('#district');
       districtSelect.html('<option value="">Select District</option>');
@@ -23,8 +26,9 @@
               districtSelect.append('<option value="'+d+'" '+sel+'>'+d+'</option>');
           });
       }
-  });
-  <?php endif; ?>
+      });
+    } // End jQuery check
+    <?php endif; ?>
 
   // --- Dynamic add/remove for all sections ---
   window.addChild = function() {
@@ -190,27 +194,38 @@
       if (block) block.remove();
   };
 
-  // Remove handler for all dynamic sections
-  function addDynamicRemoveHandler(listId) {
-      $('#' + listId).on('click', '.btn-remove-block', function() {
-          $(this).closest('.row').remove();
-      });
+  // Remove handler for all dynamic sections (jQuery-dependent)
+  if (typeof $ !== 'undefined') {
+    function addDynamicRemoveHandler(listId) {
+        $('#' + listId).on('click', '.btn-remove-block', function() {
+            $(this).closest('.row').remove();
+        });
+    }
+    ['childrenList','academicList','profTechList','milCourseList','tradeGroupList','awardList','appointmentList','promotionList','languageList'].forEach(addDynamicRemoveHandler);
+    
+    // NRC input restrictions (jQuery)
+    $('#nrc_part1').on('input', function() {
+      this.value = this.value.replace(/\D/g, '').slice(0,6);
+      if (this.value.length === 6) {
+        $('#nrc_part2').focus();
+      }
+    });
+    $('#nrc_part2').on('input', function() {
+      this.value = this.value.replace(/\D/g, '').slice(0,2);
+    });
   }
-  ['childrenList','academicList','profTechList','milCourseList','tradeGroupList','awardList','appointmentList','promotionList','languageList'].forEach(addDynamicRemoveHandler);
 
   // Add one field by default for each dynamic section
-  window.addEventListener('DOMContentLoaded', function() {
-      if(document.getElementById('childrenList')) addChild();
-      if(document.getElementById('academicList')) addAcademic();
-      if(document.getElementById('profTechList')) addProfTech();
-      if(document.getElementById('milCourseList')) addMilCourse();
-      if(document.getElementById('tradeGroupList')) addTradeGroup();
-      if(document.getElementById('awardList')) addAward();
-      if(document.getElementById('appointmentList')) addAppointment();
-      if(document.getElementById('promotionList')) addPromotion();
-      if(document.getElementById('languageList')) addLanguage('English');
-  });
-
+  if(document.getElementById('childrenList')) addChild();
+  if(document.getElementById('academicList')) addAcademic();
+  if(document.getElementById('profTechList')) addProfTech();
+  if(document.getElementById('milCourseList')) addMilCourse();
+  if(document.getElementById('tradeGroupList')) addTradeGroup();
+  if(document.getElementById('awardList')) addAward();
+  if(document.getElementById('appointmentList')) addAppointment();
+  if(document.getElementById('promotionList')) addPromotion();
+  if(document.getElementById('languageList')) addLanguage('English');
+  
   // Marital status toggle
   var maritalStatus = document.getElementById('maritalStatus');
   if (maritalStatus) {
@@ -220,49 +235,77 @@
     });
   }
 
-  // NRC input restrictions
-  $('#nrc_part1').on('input', function() {
-    this.value = this.value.replace(/\D/g, '').slice(0,6);
-    if (this.value.length === 6) {
-      $('#nrc_part2').focus();
-    }
-  });
-  $('#nrc_part2').on('input', function() {
-    this.value = this.value.replace(/\D/g, '').slice(0,2);
-  });
-
-  // Filter ranks by category in ascending order
-  <?php if (isset($ranks)): ?>
-  const allRanks = <?=json_encode(array_map(function($r){return ['id'=>$r->rankID,'name'=>$r->rankName,'idx'=>$r->rankIndex];}, $ranks), JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
+  // Filter ranks by category using optgroups
   const rankDiv = document.getElementById('rankDiv');
   const rankSelect = document.getElementById('rankSelect');
   const categorySelect = document.getElementById('categorySelect');
-  function filterRanks() {
-    const cat = categorySelect.value;
-    let filtered = [];
-    rankSelect.innerHTML = '<option value="">Select Rank</option>';
-    if (cat === 'Officer') {
-      filtered = allRanks.filter(r => r.idx >= 1 && r.idx <= 14)
-                         .sort((a, b) => a.idx - b.idx);
-      filtered.forEach(r => {
-        rankSelect.innerHTML += `<option value="${r.id}">${r.name}</option>`;
-      });
-    } else if (cat === 'Non-Commissioned Officer') {
-      filtered = allRanks.filter(r => r.idx >= 15 && r.idx <= 27)
-                         .sort((a, b) => a.idx - b.idx);
-      filtered.forEach(r => {
-        rankSelect.innerHTML += `<option value="${r.id}">${r.name}</option>`;
-      });
-    } else if (cat === 'Civilian Employee') {
-      rankSelect.innerHTML += `<option value="mr">Mr</option><option value="ms">Ms</option>`;
+  
+  function filterRanksByCategory() {
+    if (!rankSelect || !categorySelect) return;
+    
+    const selectedCategory = categorySelect.value.trim();
+    const optgroups = rankSelect.querySelectorAll('optgroup');
+    const standaloneOptions = rankSelect.querySelectorAll('option:not([value=""]):not(optgroup option)');
+    
+    // Normalize category for matching - both values to same format
+    const normalizeCategory = (cat) => {
+      if (!cat) return '';
+      cat = cat.trim().toLowerCase();
+      if (cat === 'nco' || cat === 'non-commissioned officer' || cat === 'enlisted') return 'non-commissioned officer';
+      if (cat === 'civilian employee' || cat === 'ce' || cat === 'civilian') return 'civilian employee';
+      if (cat === 'officer') return 'officer';
+      if (cat === 'officer cadet') return 'officer cadet';
+      if (cat === 'recruit') return 'recruit';
+      return cat;
+    };
+    
+    const normalizedSelectedCategory = normalizeCategory(selectedCategory);
+    
+    // Show/hide optgroups based on category
+    optgroups.forEach(optgroup => {
+      const optgroupCategory = normalizeCategory(optgroup.dataset.category || optgroup.label);
+      const isMatch = normalizedSelectedCategory === '' || optgroupCategory === normalizedSelectedCategory;
+      const options = optgroup.querySelectorAll('option');
+      
+      if (isMatch) {
+        optgroup.style.display = '';
+        // Enable all options in this optgroup
+        options.forEach(opt => {
+          opt.disabled = false;
+          opt.style.display = '';
+        });
+      } else {
+        optgroup.style.display = 'none';
+        // Disable all options in this optgroup
+        options.forEach(opt => {
+          opt.disabled = true;
+          opt.style.display = 'none';
+        });
+      }
+    });
+    
+    // Handle standalone options (if any exist outside optgroups)
+    standaloneOptions.forEach(option => {
+      const optionCategory = normalizeCategory(option.dataset.category || '');
+      if (normalizedSelectedCategory === '' || optionCategory === normalizedSelectedCategory) {
+        option.style.display = 'block';
+        option.disabled = false;
+      } else {
+        option.style.display = 'none';
+        option.disabled = true;
+      }
+    });
+    
+    // Show/hide rank div based on category selection
+    if (rankDiv) {
+      rankDiv.style.display = (selectedCategory === '') ? 'none' : '';
     }
-    rankDiv.style.display = (cat === '') ? 'none' : '';
   }
+  
   if (categorySelect) {
-    categorySelect.addEventListener('change', filterRanks);
-    window.addEventListener('DOMContentLoaded', filterRanks);
+    categorySelect.addEventListener('change', filterRanksByCategory);
+    window.addEventListener('DOMContentLoaded', filterRanksByCategory);
   }
-  <?php endif; ?>
 
   // Tab Persistence
   const allTabs = document.querySelectorAll('[data-bs-toggle="tab"]');
@@ -340,6 +383,101 @@
       });
     }
   });
+
+  // ==================== AUTO-FORMATTING FOR NRC AND PHONE NUMBERS ====================
+  
+  // NRC Auto-formatting: 123456/78/1
+  const nrcField = document.getElementById('nrc');
+  if (nrcField) {
+    nrcField.addEventListener('input', function(e) {
+      let value = this.value.replace(/[^0-9]/g, ''); // Remove all non-digits
+      
+      if (value.length >= 6) {
+        // Add first slash after 6 digits
+        value = value.substring(0, 6) + '/' + value.substring(6);
+      }
+      if (value.length >= 9) {
+        // Add second slash after 2 more digits
+        value = value.substring(0, 9) + '/' + value.substring(9);
+      }
+      if (value.length >= 11) {
+        // Auto-append /1 if not present
+        if (!value.endsWith('/1')) {
+          value = value.substring(0, 9) + '/1';
+        }
+      }
+      
+      this.value = value.substring(0, 11); // Limit to 123456/78/1 format
+    });
+    
+    // On blur, ensure /1 is appended if we have 8 digits
+    nrcField.addEventListener('blur', function() {
+      let value = this.value.replace(/[^0-9]/g, '');
+      if (value.length === 8) {
+        this.value = value.substring(0, 6) + '/' + value.substring(6, 8) + '/1';
+      }
+    });
+  }
+  
+  // Phone Number Auto-formatting: +260976123456
+  function formatPhoneNumber(inputField) {
+    if (!inputField) return;
+    
+    inputField.addEventListener('input', function(e) {
+      let value = this.value.replace(/[^0-9+]/g, ''); // Keep only digits and +
+      let digits = value.replace(/[^0-9]/g, ''); // Get just digits
+      
+      // Auto-format based on what user types
+      if (digits.length > 0) {
+        if (digits.startsWith('260') && digits.length <= 12) {
+          // Format: 260976123456 -> +260976123456
+          this.value = '+' + digits;
+        } else if (digits.startsWith('0') && digits.length <= 10) {
+          // Keep as is while typing, will format on blur
+          this.value = digits;
+        } else if (digits.length <= 9 && ['9', '7', '5'].includes(digits[0])) {
+          // Keep as is while typing, will format on blur
+          this.value = digits;
+        } else {
+          this.value = value; // Keep whatever they typed
+        }
+      } else {
+        this.value = value;
+      }
+    });
+    
+    // On blur, auto-add +260 if needed
+    inputField.addEventListener('blur', function() {
+      let digits = this.value.replace(/[^0-9]/g, '');
+      
+      if (digits.length === 9 && ['9', '7', '5'].includes(digits[0])) {
+        // Format: 976123456 -> +260976123456
+        this.value = '+260' + digits;
+      } else if (digits.length === 10 && digits.startsWith('0') && ['9', '7', '5'].includes(digits[1])) {
+        // Format: 0976123456 -> +260976123456
+        this.value = '+260' + digits.substring(1);
+      } else if (digits.length === 12 && digits.startsWith('260')) {
+        // Format: 260976123456 -> +260976123456
+        this.value = '+' + digits;
+      }
+    });
+  }
+  
+  // Apply phone formatting to all phone fields
+  const phoneFields = [
+    document.getElementById('phone'),
+    document.querySelector('input[name="nok_tel"]'),
+    document.querySelector('input[name="alt_nok_tel"]'),
+    document.querySelector('input[name="nokTel"]'),
+    document.querySelector('input[name="nokPhone"]'),
+    document.querySelector('input[name="altNokTel"]')
+  ];
+  
+  phoneFields.forEach(field => {
+    if (field) formatPhoneNumber(field);
+  });
+
+  }); // End DOMContentLoaded handler
 
 })(); // End IIFE
 </script>

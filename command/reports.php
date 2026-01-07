@@ -33,10 +33,10 @@ $byCategory = statList($db, "SELECT s.category, COUNT(*) as total FROM staff s $
 $byGender = statList($db, "SELECT s.gender, COUNT(*) as total FROM staff s $where GROUP BY s.gender", $params);
 
 // By unit
-$byUnit = statList($db, "SELECT IFNULL(u.unitName, 'Unknown') as unitName, COUNT(*) as total FROM staff s LEFT JOIN units u ON s.unitID = u.unitID $where GROUP BY u.unitName", $params);
+$byUnit = statList($db, "SELECT IFNULL(u.code, 'Unknown') as unitName, COUNT(*) as total FROM staff s LEFT JOIN unit u ON s.unitId = u.unitId $where GROUP BY u.code", $params);
 
 // By rank
-$byRank = statList($db, "SELECT IFNULL(r.rankName, 'Unknown') as rankName, COUNT(*) as total FROM staff s LEFT JOIN ranks r ON s.rankID = r.rankID $where GROUP BY r.rankName ORDER BY COUNT(*) DESC", $params);
+$byRank = statList($db, "SELECT IFNULL(r.rankId, 'Unknown') as rankName, COUNT(*) as total FROM staff s LEFT JOIN rank r ON s.rankId = r.rankId $where GROUP BY r.rankId ORDER BY COUNT(*) DESC", $params);
 
 // By province
 $byProvince = statList($db, "SELECT s.province, COUNT(*) as total FROM staff s $where GROUP BY s.province", $params);

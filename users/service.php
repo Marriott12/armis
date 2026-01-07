@@ -203,9 +203,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         </span>
                                     </div>
                                     
-                                    <?php if ($medicalInfo->last_medical_exam): ?>
+                                    <?php if ($medicalInfo->lastMedicalExam): ?>
                                         <p class="text-muted mt-3 mb-0">
-                                            <small>Last Exam: <?= date('M j, Y', strtotime($medicalInfo->last_medical_exam)) ?></small>
+                                            <small>Last Exam: <?= date('M j, Y', strtotime($medicalInfo->lastMedicalExam)) ?></small>
                                         </p>
                                     <?php endif; ?>
                                     
@@ -252,8 +252,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                 <div class="card-body">
                                                     <!-- Medal Icon/Image -->
                                                     <div class="text-center mb-3">
-                                                        <?php if (!empty($medal->image_path)): ?>
-                                                            <img src="<?= htmlspecialchars($medal->image_path) ?>" 
+                                                        <?php if (!empty($medal->imagePath)): ?>
+                                                            <img src="<?= htmlspecialchars($medal->imagePath) ?>" 
                                                                  alt="<?= htmlspecialchars($medal->medal_name) ?>" 
                                                                  class="img-fluid" 
                                                                  style="max-width: 80px; max-height: 80px;">
@@ -359,9 +359,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                 <tr>
                                                     <!-- Effective Date -->
                                                     <td>
-                                                        <strong><?= !empty($promotion->date_from) ? date('M j, Y', strtotime($promotion->date_from)) : 'N/A' ?></strong>
-                                                        <?php if (!empty($promotion->date_to) && $promotion->date_to !== '0000-00-00'): ?>
-                                                            <br><small class="text-muted">to <?= date('M j, Y', strtotime($promotion->date_to)) ?></small>
+                                                        <strong><?= !empty($promotion->dateFrom) ? date('M j, Y', strtotime($promotion->dateFrom)) : 'N/A' ?></strong>
+                                                        <?php if (!empty($promotion->dateTo) && $promotion->dateTo !== '0000-00-00'): ?>
+                                                            <br><small class="text-muted">to <?= date('M j, Y', strtotime($promotion->dateTo)) ?></small>
                                                         <?php endif; ?>
                                                     </td>
                                                     
@@ -455,7 +455,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                                     </h6>
                                                                     <p class="text-muted mb-2 small">
                                                                         <i class="fas fa-calendar"></i>
-                                                                        <?= !empty($promotion->date_from) ? date('F j, Y', strtotime($promotion->date_from)) : 'N/A' ?>
+                                                                        <?= !empty($promotion->dateFrom) ? date('F j, Y', strtotime($promotion->dateFrom)) : 'N/A' ?>
                                                                     </p>
                                                                     <?php if (!empty($promotion->authority)): ?>
                                                                         <p class="mb-0 small">
@@ -504,8 +504,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                     if (!empty($promotions)) {
                                                         $firstPromotion = end($promotions);
                                                         $lastPromotion = reset($promotions);
-                                                        if (!empty($firstPromotion->date_from) && !empty($lastPromotion->date_from)) {
-                                                            $years = (strtotime($lastPromotion->date_from) - strtotime($firstPromotion->date_from)) / (365.25 * 24 * 3600);
+                                                        if (!empty($firstPromotion->dateFrom) && !empty($lastPromotion->dateFrom)) {
+                                                            $years = (strtotime($lastPromotion->dateFrom) - strtotime($firstPromotion->dateFrom)) / (365.25 * 24 * 3600);
                                                             echo number_format($years, 1);
                                                         } else {
                                                             echo 'N/A';
@@ -592,9 +592,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                                         <td><span class="badge bg-info"><?= htmlspecialchars($appt->appointment_type_name ?? 'N/A') ?></span></td>
                                                                         <td><?= htmlspecialchars($appt->rank_abbr ?? $appt->rank_name ?? 'N/A') ?></td>
                                                                         <td><?= htmlspecialchars($appt->location ?? 'N/A') ?></td>
-                                                                        <td><?= !empty($appt->start_date) ? date('M j, Y', strtotime($appt->start_date)) : 'N/A' ?></td>
-                                                                        <td><?php if (!empty($appt->end_date) && $appt->end_date !== '0000-00-00'): ?><?= date('M j, Y', strtotime($appt->end_date)) ?><?php else: ?><span class="text-muted">Ongoing</span><?php endif; ?></td>
-                                                                        <td><?= htmlspecialchars($appt->duration_months ?? '-') ?></td>
+                                                                        <td><?= !empty($appt->startDate) ? date('M j, Y', strtotime($appt->startDate)) : 'N/A' ?></td>
+                                                                        <td><?php if (!empty($appt->endDate) && $appt->endDate !== '0000-00-00'): ?><?= date('M j, Y', strtotime($appt->endDate)) ?><?php else: ?><span class="text-muted">Ongoing</span><?php endif; ?></td>
+                                                                        <td><?= htmlspecialchars($appt->durationMonths ?? '-') ?></td>
                                                                         <td><?= htmlspecialchars($appt->posting_order_reference ?? '-') ?></td>
                                                                         <td><?= htmlspecialchars($appt->remarks ?? $appt->comment ?? '-') ?></td>
                                                                     </tr>
@@ -648,10 +648,10 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                     </td>
                                                     <td><?= htmlspecialchars($deployment->role_during_deployment ?? 'N/A') ?></td>
                                                     <td>
-                                                        <?php if (!empty($deployment->start_date)): ?>
-                                                            <?= date('M j, Y', strtotime($deployment->start_date)) ?>
-                                                            <?php if (!empty($deployment->end_date)): ?>
-                                                                - <?= date('M j, Y', strtotime($deployment->end_date)) ?>
+                                                        <?php if (!empty($deployment->startDate)): ?>
+                                                            <?= date('M j, Y', strtotime($deployment->startDate)) ?>
+                                                            <?php if (!empty($deployment->endDate)): ?>
+                                                                - <?= date('M j, Y', strtotime($deployment->endDate)) ?>
                                                             <?php else: ?>
                                                                 - Ongoing
                                                             <?php endif; ?>

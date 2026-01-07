@@ -44,10 +44,10 @@ class UserAccountGenerator {
                     username, 
                     email, 
                     password, 
-                    staff_id, 
+                    svcNo, 
                     must_change_password,
                     role_id,
-                    created_at
+                    createdAt
                 ) VALUES (?, ?, ?, ?, 1, ?, NOW())
             ");
             
@@ -86,10 +86,10 @@ class UserAccountGenerator {
                             username, 
                             email, 
                             password, 
-                            staff_id, 
+                            svcNo, 
                             must_change_password,
                             role_id,
-                            created_at
+                            createdAt
                         ) VALUES (?, ?, ?, ?, 1, 3, NOW())
                     ");
                     
@@ -196,17 +196,17 @@ class UserAccountGenerator {
                         username VARCHAR(50) UNIQUE NOT NULL,
                         email VARCHAR(100) UNIQUE NOT NULL,
                         password VARCHAR(255) NOT NULL,
-                        staff_id INT UNIQUE,
+                        svcNo INT UNIQUE,
                         role_id INT DEFAULT 3,
                         must_change_password TINYINT(1) DEFAULT 1,
                         is_active TINYINT(1) DEFAULT 1,
-                        created_at DATETIME,
-                        updated_at DATETIME,
-                        last_login DATETIME,
-                        FOREIGN KEY (staff_id) REFERENCES staff(id) ON DELETE CASCADE,
+                        createdAt DATETIME,
+                        updatedAt DATETIME,
+                        lastLogin DATETIME,
+                        FOREIGN KEY (svcNo) REFERENCES staff(id) ON DELETE CASCADE,
                         INDEX idx_username (username),
                         INDEX idx_email (email),
-                        INDEX idx_staff_id (staff_id)
+                        INDEX idx_staff_id (svcNo)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 ");
             } else {

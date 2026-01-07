@@ -56,7 +56,7 @@ if (isset($_GET['download']) && $_GET['download'] === 'pdf') {
         
         // Generate basic PDF content (in production, use TCPDF or similar)
         $cvData = [
-            'service_number' => $userData->svcNo ?? 'N/A',
+            'svcNo' => $userData->svcNo ?? 'N/A',
             'name' => $userData->fullName ?? 'N/A',
             'rank' => $userData->displayRank ?? 'N/A',
             'unit' => $userData->unitName ?? 'N/A',
@@ -73,7 +73,7 @@ if (isset($_GET['download']) && $_GET['download'] === 'pdf') {
         $pdfContent .= "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n";
         
         $contentText = "ARMY RESOURCE MANAGEMENT INFORMATION SYSTEM\\nCURRICULUM VITAE\\n\\n";
-        $contentText .= "Service Number: {$cvData['service_number']}\\n";
+        $contentText .= "Service Number: {$cvData['svcNo']}\\n";
         $contentText .= "Name: {$cvData['name']}\\n";
         $contentText .= "Rank: {$cvData['rank']}\\n";
         $contentText .= "Unit: {$cvData['unit']}\\n";
@@ -307,8 +307,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                             <tr>
                                                 <td><?= htmlspecialchars($training->course_name ?? 'N/A') ?></td>
                                                 <td><?= htmlspecialchars($training->institution ?? 'N/A') ?></td>
-                                                <td><?= $training->start_date ? date('M j, Y', strtotime($training->start_date)) : 'N/A' ?></td>
-                                                <td><?= $training->end_date ? date('M j, Y', strtotime($training->end_date)) : 'N/A' ?></td>
+                                                <td><?= $training->startDate ? date('M j, Y', strtotime($training->startDate)) : 'N/A' ?></td>
+                                                <td><?= $training->endDate ? date('M j, Y', strtotime($training->endDate)) : 'N/A' ?></td>
                                                 <td>
                                                     <span class="badge bg-<?= $training->status === 'completed' ? 'success' : ($training->status === 'in_progress' ? 'warning' : 'secondary') ?>">
                                                         <?= ucfirst($training->status ?? 'N/A') ?>
@@ -369,7 +369,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                             <?php foreach ($promotions as $promotion): ?>
                                             <tr>
                                                 <td>
-                                                    <?= !empty($promotion->date_from) ? date('M j, Y', strtotime($promotion->date_from)) : 'N/A' ?>
+                                                    <?= !empty($promotion->dateFrom) ? date('M j, Y', strtotime($promotion->dateFrom)) : 'N/A' ?>
                                                 </td>
                                                 <td>
                                                     <?= ucfirst($promotion->type ?? 'Promotion') ?>
@@ -465,7 +465,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <?php 
                                 $skillCategories = [];
                                 foreach ($skills as $skill) {
-                                    $skillCategories[$skill->skill_category ?? 'General'][] = $skill;
+                                    $skillCategories[$skill->skillCategory ?? 'General'][] = $skill;
                                 }
                                 ?>
                                 <?php foreach ($skillCategories as $category => $categorySkills): ?>
@@ -475,7 +475,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         <?php foreach ($categorySkills as $skill): ?>
                                         <div class="col-md-6 mb-2">
                                             <div class="d-flex justify-content-between">
-                                                <span><?= htmlspecialchars($skill->skill_name ?? 'N/A') ?></span>
+                                                <span><?= htmlspecialchars($skill->skillName ?? 'N/A') ?></span>
                                                 <span class="badge bg-<?= $skill->proficiency_level === 'Expert' ? 'success' : ($skill->proficiency_level === 'Intermediate' ? 'warning' : 'info') ?>">
                                                     <?= htmlspecialchars($skill->proficiency_level ?? 'Basic') ?>
                                                 </span>
@@ -508,8 +508,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                             <tr>
                                                 <td><?= htmlspecialchars($deployment->deployment_name ?? 'N/A') ?></td>
                                                 <td><?= htmlspecialchars($deployment->location ?? 'N/A') ?></td>
-                                                <td><?= $deployment->start_date ? date('M j, Y', strtotime($deployment->start_date)) : 'N/A' ?></td>
-                                                <td><?= $deployment->end_date ? date('M j, Y', strtotime($deployment->end_date)) : 'Ongoing' ?></td>
+                                                <td><?= $deployment->startDate ? date('M j, Y', strtotime($deployment->startDate)) : 'N/A' ?></td>
+                                                <td><?= $deployment->endDate ? date('M j, Y', strtotime($deployment->endDate)) : 'Ongoing' ?></td>
                                                 <td><?= htmlspecialchars($deployment->role_during_deployment ?? 'N/A') ?></td>
                                             </tr>
                                             <?php endforeach; ?>

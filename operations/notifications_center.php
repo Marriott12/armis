@@ -31,7 +31,7 @@ $notifications = $manager->getUserNotifications($userId);
                     <tr>
                         <td><?= htmlspecialchars($n['type']) ?></td>
                         <td><?= htmlspecialchars($n['message']) ?></td>
-                        <td><?= htmlspecialchars($n['created_at']) ?></td>
+                        <td><?= htmlspecialchars($n['createdAt']) ?></td>
                         <td><?= htmlspecialchars($n['status']) ?></td>
                         <td>
                             <?php if ($n['status'] !== 'read'): ?>

@@ -114,12 +114,12 @@ $fields = $manager->getAllFieldOperations();
                         <input type="text" name="location" id="location" class="form-control" placeholder="Enter location" required>
                     </div>
                     <div class="col-md-2">
-                        <label for="start_date" class="form-label">Start Date</label>
-                        <input type="date" name="start_date" id="start_date" class="form-control" required>
+                        <label for="startDate" class="form-label">Start Date</label>
+                        <input type="date" name="startDate" id="startDate" class="form-control" required>
                     </div>
                     <div class="col-md-2">
-                        <label for="end_date" class="form-label">End Date</label>
-                        <input type="date" name="end_date" id="end_date" class="form-control" required>
+                        <label for="endDate" class="form-label">End Date</label>
+                        <input type="date" name="endDate" id="endDate" class="form-control" required>
                     </div>
                     <div class="col-md-12 d-flex align-items-end">
                         <button type="submit" name="create_field" class="btn btn-primary">Create Operation</button>

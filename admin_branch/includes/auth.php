@@ -162,7 +162,7 @@ function initializeDefaultSession() {
         $_SESSION['role'] = 'administrator';
         $_SESSION['unit'] = 'Headquarters Command';
         $_SESSION['unit_name'] = 'HQ Command';
-        $_SESSION['last_login'] = date('Y-m-d H:i:s');
+        $_SESSION['lastLogin'] = date('Y-m-d H:i:s');
     }
 }
 
@@ -174,7 +174,7 @@ function logActivity($action, $details = '') {
     if (!$user) return;
     
     try {
-        $sql = "INSERT INTO activity_log (user_id, username, action, details, ip_address, user_agent, created_at) 
+        $sql = "INSERT INTO activity_log (user_id, username, action, details, ip_address, user_agent, createdAt) 
                 VALUES (?, ?, ?, ?, ?, ?, NOW())";
         $params = [
             $user['user_id'],
@@ -203,10 +203,10 @@ function createActivityLogTable() {
             details TEXT,
             ip_address VARCHAR(45),
             user_agent TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_user_id (user_id),
             INDEX idx_action (action),
-            INDEX idx_created_at (created_at)
+            INDEX idx_created_at (createdAt)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
         executeQuery($sql);
     } catch (Exception $e) {

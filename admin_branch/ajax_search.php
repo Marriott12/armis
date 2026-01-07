@@ -11,6 +11,47 @@ if (!isLoggedIn()) {
     exit;
 }
 
+/**
+ * Return a mysqli connection instance.
+ * This will attempt to include a nearby config.php file if present and use DB_* constants,
+ * otherwise it falls back to sensible defaults for a local WAMP environment.
+ *
+ * Throws Exception on connection failure.
+ *
+ * Note: Adjust DB_HOST/DB_USER/DB_PASS/DB_NAME in a config file or replace defaults as needed.
+ */
+function getMysqliConnection() {
+    static $conn = null;
+    if ($conn instanceof mysqli) {
+        return $conn;
+    }
+
+    // Try to include common config locations so projects can define DB_HOST/DB_USER/etc.
+    $configCandidates = [
+        __DIR__ . '/config.php',
+        __DIR__ . '/../config.php',
+        __DIR__ . '/../../config.php',
+    ];
+    foreach ($configCandidates as $cfg) {
+        if (file_exists($cfg)) {
+            include_once $cfg;
+            break;
+        }
+    }
+
+    $dbHost = defined('DB_HOST') ? DB_HOST : 'localhost';
+    $dbUser = defined('DB_USER') ? DB_USER : 'root';
+    $dbPass = defined('DB_PASS') ? DB_PASS : '';
+    $dbName = defined('DB_NAME') ? DB_NAME : 'armis';
+
+    $conn = new mysqli($dbHost, $dbUser, $dbPass, $dbName);
+    if ($conn->connect_errno) {
+        throw new Exception('Database connection failed: ' . $conn->connect_error);
+    }
+    $conn->set_charset('utf8mb4');
+    return $conn;
+}
+
 try {
     $action = $_REQUEST['action'] ?? '';
     switch ($action) {
@@ -44,7 +85,7 @@ function handleSearch() {
     $conn = getMysqliConnection();
     $query = trim($_POST['query'] ?? '');
     $filters = $_POST['filters'] ?? [];
-    $sortBy = $_POST['sort_by'] ?? 'last_name';
+    $sortBy = $_POST['sort_by'] ?? 'lName';
     $page = max(1, intval($_POST['page'] ?? 1));
     $pageSize = max(1, intval($_POST['page_size'] ?? 20));
 
@@ -53,21 +94,21 @@ function handleSearch() {
     $types = '';
 
     if ($query !== '') {
-        $whereConditions[] = '(s.first_name LIKE ? OR s.last_name LIKE ? OR s.service_number LIKE ?)';
+        $whereConditions[] = '(s.fName LIKE ? OR s.lName LIKE ? OR s.svcNo LIKE ?)';
         $params[] = "%$query%";
         $params[] = "%$query%";
         $params[] = "%$query%";
         $types .= 'sss';
     }
 
-    if (!empty($filters['rank_id'])) {
-        $whereConditions[] = 's.rank_id = ?';
-        $params[] = $filters['rank_id'];
+    if (!empty($filters['rankId'])) {
+        $whereConditions[] = 's.rankId = ?';
+        $params[] = $filters['rankId'];
         $types .= 'i';
     }
-    if (!empty($filters['unit_id'])) {
-        $whereConditions[] = 's.unit_id = ?';
-        $params[] = $filters['unit_id'];
+    if (!empty($filters['unitId'])) {
+        $whereConditions[] = 's.unitId = ?';
+        $params[] = $filters['unitId'];
         $types .= 'i';
     }
 
@@ -77,23 +118,23 @@ function handleSearch() {
     }
 
     $allowedSortFields = [
-        'last_name' => 's.last_name',
-        'first_name' => 's.first_name',
-        'service_number' => 's.service_number',
-        'rank_id' => 'r.id',
-        'unit_id' => 'u.id',
+        'lName' => 's.lName',
+        'fName' => 's.fName',
+        'svcNo' => 's.svcNo',
+    'rankId' => 'r.rankId',
+        'unitId' => 'u.id',
         'DOB' => 's.DOB',
         'attestDate' => 's.attestDate',
-        'created_at' => 's.dateCreated'
+        'createdAt' => 's.dateCreated'
     ];
-    $orderBy = $allowedSortFields[$sortBy] ?? 's.last_name';
+    $orderBy = $allowedSortFields[$sortBy] ?? 's.lName';
     $orderClause = "ORDER BY $orderBy ASC";
 
     $countSql = "
         SELECT COUNT(*)
         FROM staff s
-        LEFT JOIN ranks r ON s.rank_id = r.id
-        LEFT JOIN units u ON s.unit_id = u.id
+        LEFT JOIN `rank` r ON s.rankId = r.rankId
+        LEFT JOIN unit u ON s.unitId = u.unitId
         $whereClause
     ";
     $countStmt = $conn->prepare($countSql);
@@ -109,14 +150,14 @@ function handleSearch() {
     $sql = "
         SELECT 
             s.id,
-            s.service_number,
-            s.rank_id,
-            s.last_name,
-            s.first_name,
+            s.svcNo,
+            s.rankId,
+            s.lName,
+            s.fName,
             s.NRC,
             s.passport,
             s.gender,
-            s.unit_id,
+            s.unitId,
             s.category,
             s.svcStatus,
             s.appt,
@@ -152,7 +193,7 @@ function handleSearch() {
             s.altNokNrc,
             s.altNokRelat,
             s.email,
-            s.profile_photo,
+            s.profilePhoto,
             s.tel,
             s.unitAtt,
             s.username,
@@ -161,18 +202,18 @@ function handleSearch() {
             s.accStatus,
             s.createdBy,
             s.dateCreated,
-            s.updated_at,
-            s.last_login,
-            s.password_changed_at,
+            s.updatedAt,
+            s.lastLogin,
+            s.passwordChangedAt,
             s.DOB,
             s.status,
-            s.last_profile_update,
-            r.name AS rank_name,
+            s.lastProfileUpdate,
+            r.rankId AS rank_name,
             r.level AS rank_level,
             u.name AS unit_name
         FROM staff s
-        LEFT JOIN ranks r ON s.rank_id = r.id
-        LEFT JOIN units u ON s.unit_id = u.id
+    LEFT JOIN `rank` r ON s.rankId = r.rankId
+    LEFT JOIN unit u ON s.unitId = u.unitId
         $whereClause
         $orderClause
         LIMIT ? OFFSET ?
@@ -206,11 +247,12 @@ function handleSearch() {
 
 function handleGetFilterOptions() {
     $conn = getMysqliConnection();
-    $ranksSql = "SELECT id as rankID, name as rankName, level FROM ranks WHERE level != 0 ORDER BY level";
+    // Use `rank` table which stores rank identifiers in `rankId`
+    $ranksSql = "SELECT rankId as rankID, rankId as rankName, level FROM `rank` WHERE level != 0 ORDER BY level";
     $ranksResult = $conn->query($ranksSql);
-    $ranks = $ranksResult->fetch_all(MYSQLI_ASSOC);
+    $ranks = $ranksResult ? $ranksResult->fetch_all(MYSQLI_ASSOC) : [];
 
-    $unitsSql = "SELECT id, unitName FROM units ORDER BY unitName";
+    $unitsSql = "SELECT unitId as unitName FROM unit ORDER BY unitName";
     $unitsResult = $conn->query($unitsSql);
     $units = $unitsResult->fetch_all(MYSQLI_ASSOC);
 
@@ -250,23 +292,23 @@ function handleExport() {
         $sql = "
             SELECT 
                 s.id,
-                s.service_number,
-                s.first_name,
-                s.last_name,
+                s.svcNo,
+                s.fName,
+                s.lName,
                 s.email,
                 s.svcStatus,
                 s.gender,
                 s.DOB,
                 s.attestDate,
-                r.name AS rank_name,
+                r.rankId AS rank_name,
                 r.level AS rank_level,
                 u.name AS unit_name,
                 s.corps
             FROM staff s
-            LEFT JOIN ranks r ON s.rank_id = r.id
-            LEFT JOIN units u ON s.unit_id = u.id
+            LEFT JOIN `rank` r ON s.rankId = r.rankId
+            LEFT JOIN unit u ON s.unitId = u.id
             WHERE s.id IN ($placeholders)
-            ORDER BY s.last_name, s.first_name
+            ORDER BY s.lName, s.fName
         ";
 
         $stmt = $conn->prepare($sql);
@@ -313,9 +355,9 @@ function exportToCSV($results, $setHeaders = true) {
     foreach ($results as $row) {
         $csvRow = [
             $row['id'] ?? '',
-            $row['service_number'] ?? '',
-            $row['first_name'] ?? '',
-            $row['last_name'] ?? '',
+            $row['svcNo'] ?? '',
+            $row['fName'] ?? '',
+            $row['lName'] ?? '',
             $row['rank_name'] ?? '',
             $row['rank_level'] ?? '',
             $row['unit_name'] ?? '',
@@ -364,8 +406,8 @@ function exportToPDF($results) {
 
     foreach ($results as $row) {
         echo '<tr>
-            <td>' . htmlspecialchars(($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? '')) . '</td>';
-        echo '<td>' . htmlspecialchars($row['service_number'] ?? '') . '</td>';
+            <td>' . htmlspecialchars(($row['fName'] ?? '') . ' ' . ($row['lName'] ?? '')) . '</td>';
+        echo '<td>' . htmlspecialchars($row['svcNo'] ?? '') . '</td>';
         echo '<td>' . htmlspecialchars($row['rank_name'] ?? '') . '</td>';
         echo '<td>' . htmlspecialchars($row['rank_level'] ?? '') . '</td>';
         echo '<td>' . htmlspecialchars($row['unit_name'] ?? '') . '</td>';
@@ -396,8 +438,8 @@ function logSearch($userId, $query, $filters, $resultCount) {
 
 function handleDropdownByRank() {
     $conn = getMysqliConnection();
-    $rankId = $_GET['rank_id'] ?? $_POST['rank_id'] ?? '';
-    $unitId = $_GET['unit_id'] ?? $_POST['unit_id'] ?? '';
+    $rankId = $_GET['rankId'] ?? $_POST['rankId'] ?? '';
+    $unitId = $_GET['unitId'] ?? $_POST['unitId'] ?? '';
     $q = trim($_GET['q'] ?? $_POST['q'] ?? '');
     if (empty($rankId)) {
         echo json_encode(['results' => []]);
@@ -405,20 +447,21 @@ function handleDropdownByRank() {
     }
     $params = [$rankId];
     $types = 'i';
-    $where = 's.rank_id = ?';
+    $where = 's.rankId = ?';
     if (!empty($unitId)) {
-        $where .= ' AND s.unit_id = ?';
+        $where .= ' AND s.unitId = ?';
         $params[] = $unitId;
         $types .= 'i';
     }
     if (!empty($q)) {
-        $where .= ' AND (s.first_name LIKE ? OR s.last_name LIKE ? OR s.service_number LIKE ?)';
+        $where .= ' AND (s.fName LIKE ? OR s.lName LIKE ? OR s.svcNo LIKE ?)';
         $params[] = "%$q%";
         $params[] = "%$q%";
         $params[] = "%$q%";
         $types .= 'sss';
     }
-    $sql = "SELECT s.id, s.service_number, s.first_name, s.last_name, r.name AS rank_name, r.level AS rank_level, u.name AS unit_name FROM staff s LEFT JOIN ranks r ON s.rank_id = r.id LEFT JOIN units u ON s.unit_id = u.id WHERE $where ORDER BY s.last_name, s.first_name LIMIT 50";
+    // Use canonical rank table and safe COALESCE for rank display
+    $sql = "SELECT s.id, s.svcNo, s.fName, s.lName, COALESCE(r.rankId, r.rankId) AS rank_name, r.level AS rank_level, u.code AS unit_name FROM staff s LEFT JOIN `rank` r ON s.rankId = r.rankId LEFT JOIN unit u ON s.unitId = u.unitId WHERE $where ORDER BY s.lName, s.fName LIMIT 50";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param($types, ...$params);
     $stmt->execute();
@@ -427,10 +470,10 @@ function handleDropdownByRank() {
     while ($row = $result->fetch_assoc()) {
         $data[] = [
             'id' => $row['id'],
-            'text' => $row['service_number'] . ' - ' . $row['last_name'] . ', ' . $row['first_name'] . ' (' . $row['rank_name'] . ' / ' . $row['unit_name'] . ')',
-            'service_number' => $row['service_number'],
-            'first_name' => $row['first_name'],
-            'last_name' => $row['last_name'],
+            'text' => $row['svcNo'] . ' - ' . $row['lName'] . ', ' . $row['fName'] . ' (' . $row['rank_name'] . ' / ' . $row['unit_name'] . ')',
+            'svcNo' => $row['svcNo'],
+            'fName' => $row['fName'],
+            'lName' => $row['lName'],
             'rank_name' => $row['rank_name'],
             'rank_level' => $row['rank_level'],
             'unit_name' => $row['unit_name']

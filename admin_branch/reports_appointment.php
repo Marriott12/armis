@@ -54,8 +54,9 @@ function formatSentenceCase($name) {
 }
 
 function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory, $selectedAppt) {
-    $rankSql = "SELECT DISTINCT r.id, r.name FROM ranks r JOIN staff s ON s.rank_id = r.id WHERE s.svcStatus = 'Active'";
-    $unitSql = "SELECT DISTINCT u.id, u.name FROM units u JOIN staff s ON s.unit_id = u.id WHERE s.svcStatus = 'Active'";
+    // Use canonical `rank` table
+    $rankSql = "SELECT DISTINCT r.rankId AS id, COALESCE(r.rankId, r.rankId) AS name FROM `rank` r JOIN staff s ON s.rankId = r.rankId WHERE s.svcStatus = 'Active'";
+    $unitSql = "SELECT DISTINCT u.unitId, u.name FROM unit u JOIN staff s ON s.unitId = u.unitId WHERE s.svcStatus = 'Active'";
     $catSql = "SELECT DISTINCT s.category FROM staff s WHERE s.category IS NOT NULL AND s.category <> '' AND s.svcStatus = 'Active'";
     $apptSql = "SELECT DISTINCT s.appt FROM staff s WHERE s.appt IS NOT NULL AND s.appt <> '' AND s.svcStatus = 'Active'";
     
@@ -65,7 +66,7 @@ function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory
     $apptParams = [];
 
     if ($selectedUnit) {
-        $rankSql .= " AND s.unit_id = ?";
+        $rankSql .= " AND s.unitId = ?";
         $rankParams[] = $selectedUnit;
     }
     if ($selectedCategory) {
@@ -77,7 +78,7 @@ function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory
         $rankParams[] = $selectedAppt;
     }
     if ($selectedRank) {
-        $unitSql .= " AND s.rank_id = ?";
+        $unitSql .= " AND s.rankId = ?";
         $unitParams[] = $selectedRank;
     }
     if ($selectedCategory) {
@@ -89,11 +90,11 @@ function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory
         $unitParams[] = $selectedAppt;
     }
     if ($selectedUnit) {
-        $catSql .= " AND s.unit_id = ?";
+        $catSql .= " AND s.unitId = ?";
         $catParams[] = $selectedUnit;
     }
     if ($selectedRank) {
-        $catSql .= " AND s.rank_id = ?";
+        $catSql .= " AND s.rankId = ?";
         $catParams[] = $selectedRank;
     }
     if ($selectedAppt) {
@@ -101,11 +102,11 @@ function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory
         $catParams[] = $selectedAppt;
     }
     if ($selectedUnit) {
-        $apptSql .= " AND s.unit_id = ?";
+        $apptSql .= " AND s.unitId = ?";
         $apptParams[] = $selectedUnit;
     }
     if ($selectedRank) {
-        $apptSql .= " AND s.rank_id = ?";
+        $apptSql .= " AND s.rankId = ?";
         $apptParams[] = $selectedRank;
     }
     if ($selectedCategory) {
@@ -113,7 +114,7 @@ function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory
         $apptParams[] = $selectedCategory;
     }
 
-    $ranks = fetchAll($rankSql . " ORDER BY r.name ASC", $rankParams);
+    $ranks = fetchAll($rankSql . " ORDER BY r.level ASC, name ASC", $rankParams);
     $units = fetchAll($unitSql . " ORDER BY u.name ASC", $unitParams);
     $categories = fetchAll($catSql . " ORDER BY s.category ASC", $catParams);
     $appointments = fetchAll($apptSql . " ORDER BY s.appt ASC", $apptParams);
@@ -137,9 +138,9 @@ $offset = ($page - 1) * $per_page;
 $sortable_columns = [
     'appt' => 's.appt',
     'rank' => 'r.level',
-    'service_number' => 's.service_number',
-    'surname' => 's.last_name',
-    'first_name' => 's.first_name',
+    'svcNo' => 's.svcNo',
+    'surname' => 's.lName',
+    'fName' => 's.fName',
     'unit' => 'u.name',
     'category' => 's.category',
     'DOB' => 's.DOB',
@@ -148,27 +149,28 @@ $sortable_columns = [
 $sort_col = $_GET['sort_col'] ?? '';
 $sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
 
-$sql = "SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, r.level as rankIndex, u.name as unitName, u.code as unitCode
-        FROM staff s
-        LEFT JOIN ranks r ON s.rank_id = r.id
-        LEFT JOIN units u ON s.unit_id = u.id
-        WHERE s.svcStatus = 'Active'";
+// Normalize rank display to use canonical rank fields
+$sql = "SELECT s.*, COALESCE(r.rankId, r.rankId) as rankName, r.rankId as rankAbbr, r.level as rankIndex, COALESCE(u.code, u.name) as unitName, u.code as unitCode
+    FROM staff s
+    LEFT JOIN `rank` r ON s.rankId = r.rankId
+    LEFT JOIN unit u ON s.unitId = u.unitId
+    WHERE s.svcStatus = 'Active'";
 
 $count_sql = "SELECT COUNT(*) FROM staff s
-        LEFT JOIN ranks r ON s.rank_id = r.id
-        LEFT JOIN units u ON s.unit_id = u.id
-        WHERE s.svcStatus = 'Active'";
+    LEFT JOIN `rank` r ON s.rankId = r.rankId
+    LEFT JOIN unit u ON s.unitId = u.unitId
+    WHERE s.svcStatus = 'Active'";
 $count_params = [];
 
 if ($filter_rank !== '') {
-    $sql .= " AND s.rank_id = ?";
-    $count_sql .= " AND s.rank_id = ?";
+    $sql .= " AND s.rankId = ?";
+    $count_sql .= " AND s.rankId = ?";
     $params[] = $filter_rank;
     $count_params[] = $filter_rank;
 }
 if ($filter_unit !== '') {
-    $sql .= " AND s.unit_id = ?";
-    $count_sql .= " AND s.unit_id = ?";
+    $sql .= " AND s.unitId = ?";
+    $count_sql .= " AND s.unitId = ?";
     $params[] = $filter_unit;
     $count_params[] = $filter_unit;
 }
@@ -185,8 +187,8 @@ if ($filter_appt !== '') {
     $count_params[] = $filter_appt;
 }
 if ($search !== '') {
-    $sql .= " AND (s.appt LIKE ? OR s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR u.name LIKE ? OR s.category LIKE ?)";
-    $count_sql .= " AND (s.appt LIKE ? OR s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR u.name LIKE ? OR s.category LIKE ?)";
+    $sql .= " AND (s.appt LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR COALESCE(r.rankId, r.rankId) LIKE ? OR COALESCE(u.code, u.name) LIKE ? OR s.category LIKE ?)";
+    $count_sql .= " AND (s.appt LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR COALESCE(r.rankId, r.rankId) LIKE ? OR COALESCE(u.code, u.name) LIKE ? OR s.category LIKE ?)";
     for ($i = 0; $i < 7; $i++) {
         $params[] = "%$search%";
         $count_params[] = "%$search%";
@@ -198,7 +200,15 @@ if ($search !== '') {
 if ($sort_col && isset($sortable_columns[$sort_col])) {
     $sql .= " ORDER BY " . $sortable_columns[$sort_col] . " $sort_dir";
 } else {
-    $sql .= " ORDER BY r.level ASC, COALESCE(s.subWef, s.tempWef, s.attestDate) ASC, s.service_number ASC";
+    // Default seniority sorting: rank level, then subWef, then tempWef, then attestDate, then service number
+    // Personnel without ranks (NULL rankId) are listed last
+    $sql .= " ORDER BY 
+        CASE WHEN s.rankId IS NULL THEN 1 ELSE 0 END,
+        r.level ASC,
+        s.subWef ASC,
+        s.tempWef ASC,
+        s.attestDate ASC,
+        s.svcNo ASC";
 }
 $sql .= " LIMIT $per_page OFFSET $offset";
 
@@ -287,7 +297,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             <div class="mb-2">
                 <strong>Show/Hide Columns:</strong>
                 <?php $columns = [
-                    'appt'=>'Appointment','rank'=>'Rank','service_number'=>'Service No','surname'=>'Surname','first_name'=>'First Name(s)',
+                    'appt'=>'Appointment','rank'=>'Rank','svcNo'=>'Service No','surname'=>'Surname','fName'=>'First Name(s)',
                     'unit'=>'Unit','category'=>'Category','DOB'=>'Date of Birth','attestDate'=>'Date of Enlistment'
                 ]; foreach ($columns as $key => $label): ?>
                 <input type="checkbox" checked data-col="<?= $key ?>" class="toggle-col" id="col_<?= $key ?>">
@@ -325,9 +335,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <td><input type="checkbox" name="selected_ids[]" value="<?= htmlspecialchars($s->id) ?>" class="rowCheckbox"></td>
                                 <td class="col-appt"><?= htmlspecialchars($s->appt ?? '') ?></td>
                                 <td class="col-rank"><?= htmlspecialchars($s->rankAbbr ?? '') ?></td>
-                                <td class="col-service_number"><?= htmlspecialchars($s->service_number ?? '') ?></td>
-                                <td class="col-surname"><?= htmlspecialchars(formatSentenceCase($s->last_name ?? '')) ?></td>
-                                <td class="col-first_name"><?= htmlspecialchars(formatSentenceCase($s->first_name ?? '')) ?></td>
+                                <td class="col-svcNo"><?= htmlspecialchars($s->svcNo ?? '') ?></td>
+                                <td class="col-surname"><?= htmlspecialchars(formatSentenceCase($s->lName ?? '')) ?></td>
+                                <td class="col-fName"><?= htmlspecialchars(formatSentenceCase($s->fName ?? '')) ?></td>
                                 <td class="col-unit"><?= htmlspecialchars($s->unitCode ?? '') ?></td>
                                 <td class="col-category"><?= htmlspecialchars($s->category ?? '') ?></td>
                                 <td class="col-DOB"><?= htmlspecialchars($s->DOB ?? '') ?></td>
@@ -338,8 +348,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                     <?php else: ?>
                                         <span class="text-muted">N/A</span>
                                     <?php endif; ?>
-                                    <a href="/Armis2/admin_branch/edit_staff.php?svcNo=<?= urlencode($s->service_number) ?>" class="btn btn-outline-secondary btn-sm ms-1" aria-label="Edit staff">Edit</a>
-                                    <a href="/Armis2/admin_branch/reset_password.php?svcNo=<?= urlencode($s->service_number) ?>" class="btn btn-outline-warning btn-sm ms-1" aria-label="Reset password">Reset Password</a>
+                                    <a href="/Armis2/admin_branch/edit_staff.php?svcNo=<?= urlencode($s->svcNo) ?>" class="btn btn-outline-secondary btn-sm ms-1" aria-label="Edit staff">Edit</a>
+                                    <a href="/Armis2/admin_branch/reset_password.php?svcNo=<?= urlencode($s->svcNo) ?>" class="btn btn-outline-warning btn-sm ms-1" aria-label="Reset password">Reset Password</a>
                                 </td>
                             </tr>
                         <?php endforeach; endif; ?>

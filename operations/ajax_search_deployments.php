@@ -22,8 +22,8 @@ $deployments = $manager->searchDeployments($name, $status, $location);
             <td><?= htmlspecialchars($d['name']) ?></td>
             <td><?= htmlspecialchars($d['status']) ?></td>
             <td><?= htmlspecialchars($d['location']) ?></td>
-            <td><?= htmlspecialchars($d['start_date']) ?></td>
-            <td><?= htmlspecialchars($d['end_date']) ?></td>
+            <td><?= htmlspecialchars($d['startDate']) ?></td>
+            <td><?= htmlspecialchars($d['endDate']) ?></td>
         </tr>
     <?php endforeach; ?>
     </tbody>

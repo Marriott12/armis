@@ -76,7 +76,7 @@ $pdo = getDbConnection();
 $medals = [];
 try {
     // Fetch medals and ensure unique by name (or id if you prefer)
-    $stmt = $pdo->query("SELECT id, name, description, image_path FROM medals ORDER BY name ASC");
+    $stmt = $pdo->query("SELECT id, name, description, imagePath FROM medals ORDER BY name ASC");
     $allMedals = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     // Remove duplicate medals by name (or by id as key)
@@ -131,14 +131,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             // Strategy 1: Try as database ID (most common)
             if (ctype_digit($staffIdOrServiceNumber) && $staffIdOrServiceNumber > 0) {
-                $stmt = $pdo->prepare("SELECT id, service_number, CONCAT(first_name, ' ', last_name) as full_name FROM staff WHERE id = ?");
+                $stmt = $pdo->prepare("SELECT id, svcNo, CONCAT(fName, ' ', lName) as full_name FROM staff WHERE id = ?");
                 $stmt->execute([$staffIdOrServiceNumber]);
                 $row = $stmt->fetch(PDO::FETCH_ASSOC);
             }
             
             // Strategy 2: If not found, try as service number
             if (!$row) {
-                $stmt = $pdo->prepare("SELECT id, service_number, CONCAT(first_name, ' ', last_name) as full_name FROM staff WHERE service_number = ?");
+                $stmt = $pdo->prepare("SELECT id, svcNo, CONCAT(fName, ' ', lName) as full_name FROM staff WHERE svcNo = ?");
                 $stmt->execute([$staffIdOrServiceNumber]);
                 $row = $stmt->fetch(PDO::FETCH_ASSOC);
             }
@@ -147,14 +147,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$row && ctype_digit($staffIdOrServiceNumber)) {
                 $numericValue = ltrim($staffIdOrServiceNumber, '0');
                 if ($numericValue !== $staffIdOrServiceNumber && $numericValue !== '') {
-                    $stmt = $pdo->prepare("SELECT id, service_number, CONCAT(first_name, ' ', last_name) as full_name FROM staff WHERE service_number = ? OR id = ?");
+                    $stmt = $pdo->prepare("SELECT id, svcNo, CONCAT(fName, ' ', lName) as full_name FROM staff WHERE svcNo = ? OR id = ?");
                     $stmt->execute([$numericValue, $numericValue]);
                     $row = $stmt->fetch(PDO::FETCH_ASSOC);
                 }
             }
             
             // If still not found, log error and continue
-            if (!$row || empty($row['service_number'])) {
+            if (!$row || empty($row['svcNo'])) {
                 // Log for debugging
                 error_log("Medal Assignment: Staff lookup failed for identifier: {$staffIdOrServiceNumber}");
                 $errors[] = "Staff member with identifier '{$staffIdOrServiceNumber}' not found. Please verify the staff exists in the system.";
@@ -162,22 +162,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             $staffId = $row['id'];
-            $service_number = $row['service_number'];
+            $svcNo = $row['svcNo'];
             $full_name = $row['full_name'];
             
             // Check for duplicate medal assignment
-            $stmt2 = $pdo->prepare("SELECT COUNT(*) FROM staff_medals WHERE staff_id = ? AND medal_id = ?");
+            $stmt2 = $pdo->prepare("SELECT COUNT(*) FROM staff_medals WHERE svcNo = ? AND medal_id = ?");
             $stmt2->execute([$staffId, $medalId]);
             $alreadyAwarded = $stmt2->fetchColumn();
             if ($alreadyAwarded > 0) {
                 // Track duplicate for later reporting (don't add to staffInfoList)
-                $duplicateStaff[] = "{$full_name} ({$service_number})";
+                $duplicateStaff[] = "{$full_name} ({$svcNo})";
                 continue;
             }
             
             $staffInfoList[] = [
-                'staff_id' => $staffId,
-                'service_number' => $service_number,
+                'svcNo' => $staffId,
+                'svcNo' => $svcNo,
                 'full_name' => $full_name
             ];
         }
@@ -186,7 +186,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (empty($errors) && !empty($staffInfoList)) {
             try {
                 $pdo->beginTransaction();
-                $stmt = $pdo->prepare("INSERT INTO staff_medals (staff_id, service_number, medal_id, award_date, citation, gazette_reference, bar_number, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt = $pdo->prepare("INSERT INTO staff_medals (svcNo, svcNo, medal_id, award_date, citation, gazette_reference, bar_number, createdBy, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 $createdBy = $_SESSION['username'] ?? 'admin';
                 $now = date('Y-m-d H:i:s');
                 
@@ -195,8 +195,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 foreach ($staffInfoList as $info) {
                     try {
                         $stmt->execute([
-                            $info['staff_id'],
-                            $info['service_number'],
+                            $info['svcNo'],
+                            $info['svcNo'],
                             $medalId,
                             $awardDate,
                             $remark,
@@ -209,7 +209,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } catch (PDOException $e) {
                         // Check for duplicate entry error (race condition)
                         if ($e->getCode() == 23000 && strpos($e->getMessage(), 'Duplicate entry') !== false) {
-                            $duplicateStaff[] = $info['full_name'] . " (" . $info['service_number'] . ")";
+                            $duplicateStaff[] = $info['full_name'] . " (" . $info['svcNo'] . ")";
                         } else {
                             throw $e; // Re-throw if it's not a duplicate error
                         }
@@ -355,7 +355,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <option value="">Select Medal...</option>
                                 <?php foreach ($medals as $medal): ?>
                                     <option value="<?=htmlspecialchars($medal->id)?>" 
-                                            data-image="<?=htmlspecialchars($medal->image_path ?? '')?>"
+                                            data-image="<?=htmlspecialchars($medal->imagePath ?? '')?>"
                                             data-description="<?=htmlspecialchars($medal->description ?? 'No description available')?>"
                                             <?=isset($_POST['medal_id']) && $_POST['medal_id']==$medal->id?'selected':''?>>
                                         <?=htmlspecialchars($medal->name)?>
@@ -622,22 +622,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         sm.id,
                         sm.award_date,
                         sm.citation,
-                        sm.created_by,
-                        sm.created_at,
-                        s.service_number,
-                        s.first_name,
-                        s.last_name,
-                        r.name AS rank_name,
-                        r.abbreviation AS rank_abbr,
-                        u.name AS unit_name,
+                        sm.createdBy,
+                        sm.createdAt,
+                        s.svcNo,
+                        s.fName,
+                        s.lName,
+                        COALESCE(r.rankId, r.rankId) AS rank_abbr,
+                        COALESCE(u.code, u.name) AS unit_name,
                         m.name AS medal_name,
                         m.description AS medal_description
                     FROM staff_medals sm
-                    LEFT JOIN staff s ON sm.staff_id = s.id
-                    LEFT JOIN ranks r ON s.rank_id = r.id
-                    LEFT JOIN units u ON s.unit_id = u.id
+                    LEFT JOIN staff s ON sm.svcNo = s.id
+                    -- Prefer canonical `rank` table and join by rankId (string)
+                    LEFT JOIN `rank` r ON s.rankId = r.rankId
+                    LEFT JOIN unit u ON s.unitId = u.unitId
                     LEFT JOIN medals m ON sm.medal_id = m.id
-                    ORDER BY sm.created_at DESC, sm.award_date DESC
+                    ORDER BY sm.createdAt DESC, sm.award_date DESC
                     LIMIT 20
                 ");
                 $recentMedalsStmt->execute();
@@ -679,14 +679,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <div class="d-flex align-items-center">
                                             <div>
                                                 <strong>
-                                                    <?= htmlspecialchars($medal->service_number ?? 'N/A') ?>
+                                                    <?= htmlspecialchars($medal->svcNo ?? 'N/A') ?>
                                                 </strong>
                                                 <br>
                                                 <small class="text-muted">
                                                     <?php if (!empty($medal->rank_abbr)): ?>
                                                         <?= htmlspecialchars($medal->rank_abbr) ?>
                                                     <?php endif; ?>
-                                                    <?= htmlspecialchars(($medal->first_name ?? '') . ' ' . ($medal->last_name ?? '')) ?>
+                                                    <?= htmlspecialchars(($medal->fName ?? '') . ' ' . ($medal->lName ?? '')) ?>
                                                 </small>
                                                 <?php if (!empty($medal->unit_name)): ?>
                                                     <br>
@@ -720,18 +720,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <?php endif; ?>
                                     </td>
                                     <td>
-                                        <?php if (!empty($medal->created_by)): ?>
+                                        <?php if (!empty($medal->createdBy)): ?>
                                             <span class="badge bg-secondary">
-                                                <?= htmlspecialchars($medal->created_by) ?>
+                                                <?= htmlspecialchars($medal->createdBy) ?>
                                             </span>
                                         <?php else: ?>
                                             <span class="text-muted">N/A</span>
                                         <?php endif; ?>
                                     </td>
                                     <td>
-                                        <?php if (!empty($medal->created_at)): ?>
+                                        <?php if (!empty($medal->createdAt)): ?>
                                             <small class="text-muted">
-                                                <?= date('d M Y H:i', strtotime($medal->created_at)) ?>
+                                                <?= date('d M Y H:i', strtotime($medal->createdAt)) ?>
                                             </small>
                                         <?php else: ?>
                                             <span class="text-muted">N/A</span>
@@ -1060,7 +1060,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 </style>
 <!-- Load jQuery first from allowed CDN -->
-<script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+<!-- Core JS (jQuery/Bootstrap) are loaded centrally in shared/footer.php. Keep DataTables scripts below. -->
 <!-- DataTables JavaScript -->
 <script src="https://cdn.jsdelivr.net/npm/datatables.net@1.13.6/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.6/js/dataTables.bootstrap5.min.js"></script>
@@ -1156,24 +1156,24 @@ function initDataTable() {
     // Convert staff data for DataTables with proper seniority sorting
     const tableData = allStaffData.map(staff => {
         // Ensure we have the correct ID mapping
-        // search_staff.php returns: staff_id (database ID), id (service_number), service_number
-        const databaseId = staff.staff_id || staff.id;
-        const serviceNumber = staff.service_number || staff.id;
+        // search_staff.php returns: svcNo (database ID), id (svcNo), svcNo
+        const databaseId = staff.svcNo || staff.id;
+        const serviceNumber = staff.svcNo || staff.id;
         
         return {
             id: databaseId,                      // Use database ID for operations
-            staff_id: databaseId,                // Alias for clarity
-            service_number: serviceNumber,       // Service number for display
-            first_name: staff.first_name || '',
-            last_name: staff.last_name || '',
+            svcNo: databaseId,                // Alias for clarity
+            svcNo: serviceNumber,       // Service number for display
+            fName: staff.fName || '',
+            lName: staff.lName || '',
             rank_name: staff.rank_name || 'N/A',
             rank_level: staff.rank_level || 999, // High number for unknown ranks
             rank_abbr: staff.rank_abbr || '',
             rank_category: staff.rank_category || '',
             unit_name: staff.unit_name || 'N/A',
-            full_name: formatSentenceCase((staff.first_name || '') + ' ' + (staff.last_name || '')).replace(/^\s+/, '').replace(/\s+$/, '') || 'N/A',
-            surname: formatSentenceCase(staff.last_name || ''),
-            first_names: formatSentenceCase(staff.first_name || ''),
+            full_name: formatSentenceCase((staff.fName || '') + ' ' + (staff.lName || '')).replace(/^\s+/, '').replace(/\s+$/, '') || 'N/A',
+            surname: formatSentenceCase(staff.lName || ''),
+            first_names: formatSentenceCase(staff.fName || ''),
             corps: staff.corps || 'N/A',
             status: staff.status || 'Active',
             attestDate: staff.attestDate || '',
@@ -1183,12 +1183,12 @@ function initDataTable() {
     });
     
     // Data is already sorted by seniority from search_staff.php ORDER BY clause:
-    // ORDER BY r.level ASC, s.subWef ASC, s.tempWef ASC, s.attestDate ASC, s.service_number ASC
+    // ORDER BY r.level ASC, s.subWef ASC, s.tempWef ASC, s.attestDate ASC, s.svcNo ASC
     // No need to re-sort here - preserve the database order
     
     console.log('Table data sample (database seniority order):', tableData.slice(0, 3));
     console.log('Checking rank_category field:', tableData.slice(0, 5).map(s => ({ 
-        service: s.service_number, 
+        service: s.svcNo, 
         rank: s.rank_abbr, 
         category: s.rank_category,
         level: s.rank_level 
@@ -1200,7 +1200,7 @@ function initDataTable() {
         undefined: tableData.filter(s => !s.rank_category).length
     });
     console.log('Sample NCOs:', tableData.filter(s => s.rank_category === 'NCO').slice(0, 5).map(s => ({
-        service: s.service_number,
+        service: s.svcNo,
         rank: s.rank_abbr,
         category: s.rank_category,
         level: s.rank_level
@@ -1225,11 +1225,11 @@ function initDataTable() {
                     orderable: false,
                     className: 'select-checkbox text-center',
                     render: function(data, type, row) {
-                        return `<input type="checkbox" class="staff-checkbox form-check-input" value="${row.service_number}" data-staff-id="${row.id}">`;
+                        return `<input type="checkbox" class="staff-checkbox form-check-input" value="${row.svcNo}" data-staff-id="${row.id}">`;
                     }
                 },
                 { 
-                    data: 'service_number', 
+                    data: 'svcNo', 
                     title: 'Service No.',
                     orderable: false // Maintain seniority order
                 },
@@ -1260,8 +1260,8 @@ function initDataTable() {
                             }).join(' ');
                         }
                         
-                        const surname = toTitleCase(row.last_name || '');
-                        const firstName = toTitleCase(row.first_name || '');
+                        const surname = toTitleCase(row.lName || '');
+                        const firstName = toTitleCase(row.fName || '');
                         
                         // Properly format name without comma
                         let fullName = '';
@@ -1337,14 +1337,14 @@ function bindEventHandlers() {
         
         if (checkbox.is(':checked')) {
             // Add to selection
-            if (!selectedStaff.find(s => s.service_number === serviceNumber)) {
-                const staffData = allStaffData.find(s => s.service_number === serviceNumber);
+            if (!selectedStaff.find(s => s.svcNo === serviceNumber)) {
+                const staffData = allStaffData.find(s => s.svcNo === serviceNumber);
                 if (staffData) {
                     console.log('Selected staff:', {
-                        service_number: staffData.service_number,
-                        staff_id: staffData.staff_id,
+                        svcNo: staffData.svcNo,
+                        svcNo: staffData.svcNo,
                         id: staffData.id,
-                        name: staffData.first_name + ' ' + staffData.last_name
+                        name: staffData.fName + ' ' + staffData.lName
                     });
                     selectedStaff.push(staffData);
                     row.addClass('selected');
@@ -1354,7 +1354,7 @@ function bindEventHandlers() {
             }
         } else {
             // Remove from selection
-            selectedStaff = selectedStaff.filter(s => s.service_number !== serviceNumber);
+            selectedStaff = selectedStaff.filter(s => s.svcNo !== serviceNumber);
             row.removeClass('selected');
         }
         
@@ -1425,13 +1425,13 @@ function renderStaffProfileCards() {
     }
     
     selectedStaff.forEach((staff, index) => {
-        const firstName = toTitleCase(staff.first_name || '');
-        const lastName = toTitleCase(staff.last_name || '');
+        const firstName = toTitleCase(staff.fName || '');
+        const lastName = toTitleCase(staff.lName || '');
         const fullName = firstName && lastName ? `${firstName} ${lastName}` : (firstName || lastName || 'N/A');
         
         const card = `
             <div class="col-md-6 col-lg-4">
-                <div class="card staff-profile-card border-primary" data-service-number="${staff.service_number}">
+                <div class="card staff-profile-card border-primary" data-service-number="${staff.svcNo}">
                     <div class="card-body">
                         <div class="d-flex align-items-start">
                             <div class="staff-avatar-circle me-3">
@@ -1443,7 +1443,7 @@ function renderStaffProfileCards() {
                                         <h6 class="staff-name mb-0">${fullName}</h6>
                                         <div class="staff-info">
                                             <i class="fas fa-id-card"></i>
-                                            ${staff.service_number || 'N/A'}
+                                            ${staff.svcNo || 'N/A'}
                                         </div>
                                         <div class="staff-info">
                                             <i class="fas fa-star"></i>
@@ -1454,7 +1454,7 @@ function renderStaffProfileCards() {
                                         ${staff.corps ? `<div class="staff-info"><i class="fas fa-shield-alt"></i> ${staff.corps}</div>` : ''}
                                     </div>
                                     <button type="button" class="btn btn-sm btn-outline-danger btn-remove remove-staff-btn" 
-                                            data-service-number="${staff.service_number}" 
+                                            data-service-number="${staff.svcNo}" 
                                             title="Remove from selection">
                                         <i class="fas fa-times"></i>
                                     </button>
@@ -1487,14 +1487,14 @@ function updateHiddenInputs() {
     inputsContainer.empty();
     
     selectedStaff.forEach(staff => {
-        // Use staff_id (database ID) for submission, not service_number
-        const staffId = staff.staff_id || staff.id;
+        // Use svcNo (database ID) for submission, not svcNo
+        const staffId = staff.svcNo || staff.id;
         
         // Debug log
         console.log('Adding hidden input for staff:', {
-            service_number: staff.service_number,
-            staff_id: staffId,
-            name: staff.first_name + ' ' + staff.last_name
+            svcNo: staff.svcNo,
+            svcNo: staffId,
+            name: staff.fName + ' ' + staff.lName
         });
         
         inputsContainer.append(`<input type="hidden" name="selected_staff[]" value="${staffId}">`);
@@ -1508,8 +1508,8 @@ function updateLegacySelect() {
     
     selectedStaff.forEach(staff => {
         const option = new Option(
-            `${staff.service_number} - ${staff.rank_name || ''} ${staff.first_name} ${staff.last_name}`,
-            staff.service_number,
+            `${staff.svcNo} - ${staff.rank_name || ''} ${staff.fName} ${staff.lName}`,
+            staff.svcNo,
             true,
             true
         );
@@ -1653,12 +1653,12 @@ $('.filter-category').on('click', function() {
                         if (rankCategory === 'Officer') {
                             matches = true;
                         }
-                        // Secondary: Officers have rank_level 1-14
-                        else if (rankLevel >= 1 && rankLevel <= 14) {
+                        // Secondary: Officers have rank_level 1-13 (level 14 is Officer Cadets)
+                        else if (rankLevel >= 1 && rankLevel <= 13) {
                             matches = true;
                         }
                         // Fallback: Check for officer titles
-                        else if (rankName.match(/officer|captain|lieutenant|major|colonel|general|brigadier|commander|cadet/i) ||
+                        else if (rankName.match(/officer|captain|lieutenant|major|colonel|general|brigadier|commander/i) ||
                                rankAbbr.match(/^(2lt|lt|capt|maj|lt col|col|brig|maj gen|lt gen|gen|cmdr|cdr|o\/cdt)$/i)) {
                             matches = true;
                         }
@@ -1667,12 +1667,12 @@ $('.filter-category').on('click', function() {
                         if (rankCategory === 'NCO') {
                             matches = true;
                         }
-                        // Secondary: NCOs have rank_level 15-27
-                        else if (rankLevel >= 15 && rankLevel <= 27) {
+                        // Secondary: NCOs have rank_level 15-26 (level 27 is Recruits, 28 is Civilian)
+                        else if (rankLevel >= 15 && rankLevel <= 26) {
                             matches = true;
                         }
                         // Fallback: Check for NCO titles
-                        else if (rankName.match(/private|lance|corporal|sergeant|warrant|recruit/i) ||
+                        else if (rankName.match(/private|lance|corporal|sergeant|warrant/i) ||
                                rankAbbr.match(/^(pvt|pte|rct|lcpl|l\/cpl|l cpl|cpl|sgt|ssgt|s sgt|wo1|wo2|woi|woii)$/i)) {
                             matches = true;
                         }
@@ -1684,7 +1684,7 @@ $('.filter-category').on('click', function() {
                     if (dataIndex < 5 || (filter === 'ncos' && matches && matchCount <= 5)) {
                         console.log('Filter check:', {
                             index: dataIndex,
-                            service: rowData.service_number,
+                            service: rowData.svcNo,
                             rank: rankAbbr,
                             category: rankCategory,
                             level: rankLevel,
@@ -1840,7 +1840,7 @@ function renderConfirmSummary(selected) {
     selected.forEach(function(staff){
         summary += `<li class="list-group-item d-flex justify-content-between align-items-start">
             <div>
-                <div class="fw-bold">${staff.service_number} - ${staff.rank_name ? staff.rank_name + ' ' : ''}${staff.first_name} ${staff.last_name}</div>
+                <div class="fw-bold">${staff.svcNo} - ${staff.rank_name ? staff.rank_name + ' ' : ''}${staff.fName} ${staff.lName}</div>
                 <small class="text-muted">${staff.unit_name || 'N/A'}</small>
             </div>
             <span class="badge bg-primary rounded-pill">${$('#medal_id option:selected').text()}</span>
@@ -1868,7 +1868,7 @@ $(document).ready(function() {
             console.log('Ready for new assignment');
         } else if (assignAction === 'view' && selectedStaff.length === 1) {
             // Redirect to profile view (you'll need to implement this URL)
-            // window.location.href = 'view_staff.php?id=' + selectedStaff[0].staff_id;
+            // window.location.href = 'view_staff.php?id=' + selectedStaff[0].svcNo;
         }
     }
 });

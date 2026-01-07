@@ -26,8 +26,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Handle personal information update
         if (isset($_POST['action']) && $_POST['action'] === 'update_personal') {
             $personalData = [
-                'first_name' => $_POST['first_name'] ?? '',
-                'last_name' => $_POST['last_name'] ?? '',
+                'fName' => $_POST['fName'] ?? '',
+                'lName' => $_POST['lName'] ?? '',
                 'dob' => $_POST['dob'] ?? '',
                 'gender' => $_POST['gender'] ?? '',
                 'marital_status' => $_POST['marital_status'] ?? '',
@@ -348,15 +348,15 @@ $contactInfo = $profileManager->getContactInfo();
                                 <div class="col-md-6">
                                     <div class="input-group">
                                         <span class="input-group-text"><i class="fas fa-user"></i></span>
-                                        <input type="text" class="form-control" name="first_name" 
-                                               placeholder="First Name" value="<?php echo htmlspecialchars($personalInfo->first_name ?? ''); ?>">
+                                        <input type="text" class="form-control" name="fName" 
+                                               placeholder="First Name" value="<?php echo htmlspecialchars($personalInfo->fName ?? ''); ?>">
                                     </div>
                                 </div>
                                 <div class="col-md-6">
                                     <div class="input-group">
                                         <span class="input-group-text"><i class="fas fa-user"></i></span>
-                                        <input type="text" class="form-control" name="last_name" 
-                                               placeholder="Last Name" value="<?php echo htmlspecialchars($personalInfo->last_name ?? ''); ?>">
+                                        <input type="text" class="form-control" name="lName" 
+                                               placeholder="Last Name" value="<?php echo htmlspecialchars($personalInfo->lName ?? ''); ?>">
                                     </div>
                                 </div>
                                 <div class="col-md-6">
@@ -544,9 +544,8 @@ $contactInfo = $profileManager->getContactInfo();
         <i class="fas fa-arrow-up"></i>
     </button>
 
+    <!-- Core JS (jQuery/Bootstrap) are loaded centrally in shared/footer.php. -->
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    
     <script>
         // Form submission handling
         document.getElementById('personalForm').addEventListener('submit', handleFormSubmit);

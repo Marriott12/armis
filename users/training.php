@@ -159,10 +159,10 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                     </td>
                                                     <td><?= htmlspecialchars($training->course_code ?? 'N/A') ?></td>
                                                     <td>
-                                                        <?php if ($training->start_date): ?>
-                                                            <?= date('M j, Y', strtotime($training->start_date)) ?>
-                                                            <?php if ($training->end_date): ?>
-                                                                - <?= date('M j, Y', strtotime($training->end_date)) ?>
+                                                        <?php if ($training->startDate): ?>
+                                                            <?= date('M j, Y', strtotime($training->startDate)) ?>
+                                                            <?php if ($training->endDate): ?>
+                                                                - <?= date('M j, Y', strtotime($training->endDate)) ?>
                                                             <?php endif; ?>
                                                         <?php else: ?>
                                                             Not specified
@@ -284,7 +284,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 // Group skills by category
                                 $skillsByCategory = [];
                                 foreach ($skills as $skill) {
-                                    $category = $skill->skill_category ?? 'Other';
+                                    $category = $skill->skillCategory ?? 'Other';
                                     if (!isset($skillsByCategory[$category])) {
                                         $skillsByCategory[$category] = [];
                                     }
@@ -307,7 +307,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                             <?php foreach ($categorySkills as $skill): ?>
                                                 <div class="col-md-6 col-lg-4 mb-2">
                                                     <div class="d-flex justify-content-between align-items-center bg-light p-2 rounded">
-                                                        <span><?= htmlspecialchars($skill->skill_name) ?></span>
+                                                        <span><?= htmlspecialchars($skill->skillName) ?></span>
                                                         <span class="badge bg-<?= 
                                                             $skill->proficiency_level === 'Expert' ? 'success' : 
                                                             ($skill->proficiency_level === 'Advanced' ? 'info' : 

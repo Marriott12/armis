@@ -51,21 +51,21 @@ try {
     if ($userData) {
         $userData->age = (isset($userData->DOB) && $userData->DOB) ? floor((time() - strtotime($userData->DOB)) / (365.25 * 24 * 3600)) : 'N/A';
         $userData->serviceYears = (isset($userData->attestDate) && $userData->attestDate) ? floor((time() - strtotime($userData->attestDate)) / (365.25 * 24 * 3600)) : 'N/A';
-        $userData->fullName = trim(($userData->first_name ?? '') . ' ' . ($userData->last_name ?? '')); // No prefix in name
+        $userData->fullName = trim(($userData->fName ?? '') . ' ' . ($userData->lName ?? '')); // No prefix in name
         
         // Map database column names to expected property names for compatibility
-        $userData->fname = $userData->first_name ?? null;
-        $userData->lname = $userData->last_name ?? null;
+        $userData->fname = $userData->fName ?? null;
+        $userData->lname = $userData->lName ?? null;
         // Combine prefix with service number for display
-        $userData->svcNo = (!empty($userData->prefix) ? $userData->prefix : '') . ($userData->service_number ?? '');
-        $userData->rankID = $userData->rank_id ?? null;
-        $userData->unitID = $userData->unit_id ?? null;
+        $userData->svcNo = (!empty($userData->prefix) ? $userData->prefix : '') . ($userData->svcNo ?? '');
+        $userData->rankID = $userData->rankId ?? null;
+        $userData->unitID = $userData->unitId ?? null;
         
-        // Get rank information if rank_id exists
-        if (isset($userData->rank_id) && $userData->rank_id) {
+        // Get rank information if rankId exists
+        if (isset($userData->rankId) && $userData->rankId) {
             try {
-                $rankStmt = $pdo->prepare("SELECT name, abbreviation FROM ranks WHERE id = ?");
-                $rankStmt->execute([$userData->rank_id]);
+                $rankStmt = $pdo->prepare("SELECT rankName, rankId as abbreviation FROM rank WHERE rankId = ?");
+                $rankStmt->execute([$userData->rankId]);
                 $rankData = $rankStmt->fetch(PDO::FETCH_OBJ);
                 if ($rankData) {
                     $userData->rank_name = $rankData->name;
@@ -82,11 +82,11 @@ try {
             $userData->displayRank = 'N/A';
         }
         
-        // Get unit information if unit_id exists
-        if (isset($userData->unit_id) && $userData->unit_id) {
+        // Get unit information if unitId exists
+        if (isset($userData->unitId) && $userData->unitId) {
             try {
-                $unitStmt = $pdo->prepare("SELECT name, code FROM units WHERE id = ?");
-                $unitStmt->execute([$userData->unit_id]);
+                $unitStmt = $pdo->prepare("SELECT code, code FROM unit WHERE unitId = ?");
+                $unitStmt->execute([$userData->unitId]);
                 $unitData = $unitStmt->fetch(PDO::FETCH_OBJ);
                 if ($unitData) {
                     $userData->unit_name = $unitData->name;
@@ -105,7 +105,7 @@ try {
     
     // Get family members count
     try {
-        $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM staff_family_members WHERE staff_id = ?");
+        $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM staff_family_members WHERE svcNo = ?");
         $stmt->execute([$_SESSION['user_id']]);
         $familyCount = $stmt->fetch(PDO::FETCH_OBJ)->count ?? 0;
     } catch (Exception $e) {
@@ -115,7 +115,7 @@ try {
     
     // Get training records count
     try {
-        $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM training_records WHERE staff_id = ?");
+        $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM training_records WHERE svcNo = ?");
         $stmt->execute([$_SESSION['user_id']]);
         $trainingCount = $stmt->fetch(PDO::FETCH_OBJ)->count ?? 0;
     } catch (Exception $e) {
@@ -126,7 +126,7 @@ try {
     
     // Get contact info count
     try {
-        $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM staff_contact_info WHERE staff_id = ?");
+        $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM staff_contact_info WHERE svcNo = ?");
         $stmt->execute([$_SESSION['user_id']]);
         $contactCount = $stmt->fetch(PDO::FETCH_OBJ)->count ?? 0;
     } catch (Exception $e) {
@@ -152,8 +152,8 @@ try {
     
     // Calculate profile completeness
     $completenessFields = [
-        'first_name', 'last_name', 'DOB', 'attestDate', 'email', 'tel', 
-        'NRC', 'gender', 'marital', 'unit_id', 'rank_id'
+        'fName', 'lName', 'DOB', 'attestDate', 'email', 'tel', 
+        'NRC', 'gender', 'marital', 'unitId', 'rankId'
     ];
     $completedFields = 0;
     if ($userData) {
@@ -188,7 +188,7 @@ try {
     // Handle case where user profile doesn't exist
     if (!$userData) {
         $userData = (object)[
-            'service_number' => 'Not Available',
+            'svcNo' => 'Not Available',
             'svcNo' => 'Not Available',
             'fullName' => 'User Profile',
             'displayRank' => 'N/A',
@@ -200,15 +200,15 @@ try {
             'age' => 'N/A',
             'serviceYears' => 'N/A',
             'svcStatus' => 'Unknown',
-            'first_name' => 'Unknown',
-            'last_name' => 'User',
+            'fName' => 'Unknown',
+            'lName' => 'User',
             'fname' => 'Unknown',
             'lname' => 'User',
             'NRC' => null,
             'gender' => null,
             'marital' => null,
-            'unit_id' => null,
-            'rank_id' => null,
+            'unitId' => null,
+            'rankId' => null,
             'prefix' => null,
             'rank_name' => null,
             'rank_abbr' => null,
@@ -225,7 +225,7 @@ try {
 } catch (Exception $e) {
     error_log("Profile loading error: " . $e->getMessage());
     $userData = (object)[
-        'service_number' => 'Error',
+        'svcNo' => 'Error',
         'svcNo' => 'Error',
         'fullName' => 'Error Loading Profile',
         'displayRank' => 'N/A',
@@ -237,15 +237,15 @@ try {
         'svcStatus' => 'Unknown',
         'DOB' => null,
         'attestDate' => null,
-        'first_name' => 'Error',
-        'last_name' => 'Loading',
+        'fName' => 'Error',
+        'lName' => 'Loading',
         'fname' => 'Error',
         'lname' => 'Loading',
         'NRC' => null,
         'gender' => null,
         'marital' => null,
-        'unit_id' => null,
-        'rank_id' => null,
+        'unitId' => null,
+        'rankId' => null,
         'prefix' => null,
         'rank_name' => null,
         'rank_abbr' => null,

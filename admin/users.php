@@ -122,18 +122,18 @@ try {
         SUM(CASE WHEN accStatus = 'active' THEN 1 ELSE 0 END) as active_users,
         SUM(CASE WHEN accStatus = 'inactive' THEN 1 ELSE 0 END) as inactive_users,
         SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END) as admin_users,
-        SUM(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 ELSE 0 END) as new_users_month
+        SUM(CASE WHEN createdAt >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 ELSE 0 END) as new_users_month
         FROM users");
     $userStats = $stmt->fetch(PDO::FETCH_ASSOC);
     
     // Get user list with details
     $stmt = $pdo->query("SELECT 
-        u.id, u.username, u.email, u.role, u.accStatus, u.created_at, u.last_login,
+        u.id, u.username, u.email, u.role, u.accStatus, u.createdAt, u.lastLogin,
         s.fname, s.lname, s.svcNo, s.rank, s.unit
         FROM users u 
         LEFT JOIN staff s ON u.id = s.user_id 
         WHERE u.accStatus = 'active'
-        ORDER BY u.created_at DESC");
+        ORDER BY u.createdAt DESC");
     $userList = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
 } catch (Exception $e) {
@@ -303,10 +303,10 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         </span>
                                     </td>
                                     <td>
-                                        <small><?= date('M j, Y', strtotime($user['created_at'])) ?></small>
+                                        <small><?= date('M j, Y', strtotime($user['createdAt'])) ?></small>
                                     </td>
                                     <td>
-                                        <small><?= $user['last_login'] ? date('M j, Y H:i', strtotime($user['last_login'])) : 'Never' ?></small>
+                                        <small><?= $user['lastLogin'] ? date('M j, Y H:i', strtotime($user['lastLogin'])) : 'Never' ?></small>
                                     </td>
                                     <td>
                                         <div class="btn-group btn-group-sm" role="group">

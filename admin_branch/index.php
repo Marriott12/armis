@@ -38,16 +38,16 @@ try {
         if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             header('Content-Type: application/json');
             $timeFilter = $_GET['filter'] ?? null;
-            $startDate = $_GET['start_date'] ?? null;
-            $endDate = $_GET['end_date'] ?? null;
+            $startDate = $_GET['startDate'] ?? null;
+            $endDate = $_GET['endDate'] ?? null;
             
             try {
                 // Handle period filter
                 if ($timeFilter === 'period' && $startDate && $endDate) {
                     $enhancedPersonnel = $dashboardService->getEnhancedPersonnelStatsByPeriod($startDate, $endDate);
                     $_SESSION['period_filter'] = [
-                        'start_date' => $startDate,
-                        'end_date' => $endDate,
+                        'startDate' => $startDate,
+                        'endDate' => $endDate,
                         'applied_at' => date('Y-m-d H:i:s')
                     ];
                 } else {
@@ -437,11 +437,11 @@ td:has(.text-muted):hover .text-muted {
                                     <!-- Custom Date Range -->
                                     <div class="col-md-3">
                                         <label for="filterStartDate" class="form-label fw-semibold small">Start Date</label>
-                                        <input type="date" class="form-control form-control-sm" id="filterStartDate" name="start_date">
+                                        <input type="date" class="form-control form-control-sm" id="filterStartDate" name="startDate">
                                     </div>
                                     <div class="col-md-3">
                                         <label for="filterEndDate" class="form-label fw-semibold small">End Date</label>
-                                        <input type="date" class="form-control form-control-sm" id="filterEndDate" name="end_date" value="<?php echo date('Y-m-d'); ?>">
+                                        <input type="date" class="form-control form-control-sm" id="filterEndDate" name="endDate" value="<?php echo date('Y-m-d'); ?>">
                                     </div>
                                     
                                     <!-- Action Buttons -->
@@ -499,7 +499,10 @@ td:has(.text-muted):hover .text-muted {
                 <div class="col-12">
                     <div class="card shadow-sm mb-2">
                         <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0">Personnel Snapshot</h5>
+                            <div class="d-flex align-items-center">
+                                <h5 class="mb-0">Personnel Snapshot</h5>
+                                <a href="/Armis2/admin_branch/reports_rank.php" class="btn btn-sm btn-outline-secondary ms-3" title="Rank breakdown">Rank breakdown</a>
+                            </div>
                             <div class="d-flex align-items-center gap-2">
                                 <div class="btn-group btn-group-sm" role="group" aria-label="Filter Options">
                                     <input type="radio" class="btn-check" name="personnel-filter" id="filter-all" value="all" checked>
@@ -560,7 +563,7 @@ td:has(.text-muted):hover .text-muted {
                                                                 }
                                                                 ?>
                                                             </td>
-                                                            <td class="text-center fw-bold text-primary" id="military-officers-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['officers']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['officers']) : '-'; ?></td>
+                                                            <td class="text-center fw-bold text-primary snapshot-count" id="military-officers-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['officers']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['officers']) : '-'; ?></td>
                                                         </tr>
                                                         <tr class="personnel-row clickable-row" data-category="military-ncos" data-type="NCOs" style="cursor: pointer;">
                                                             <td class="ps-3 fw-semibold">NCOs</td>
@@ -585,7 +588,7 @@ td:has(.text-muted):hover .text-muted {
                                                                 }
                                                                 ?>
                                                             </td>
-                                                            <td class="text-center fw-bold text-primary" id="military-ncos-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['ncos']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['ncos']) : '-'; ?></td>
+                                                            <td class="text-center fw-bold text-primary snapshot-count" id="military-ncos-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['ncos']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['ncos']) : '-'; ?></td>
                                                         </tr>
                                                         <tr class="table-secondary">
                                                             <td class="ps-4 fw-semibold"><em>Cadets/ Recruits</em></td>
@@ -595,13 +598,13 @@ td:has(.text-muted):hover .text-muted {
                                                             <td class="ps-5">├ Officer Cadets</td>
                                                             <td class="text-center" id="recruit-officers-male"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_officers_by_gender']['male']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_officers_by_gender']['male']) : '-'; ?></td>
                                                             <td class="text-center" id="recruit-officers-female"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_officers_by_gender']['female']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_officers_by_gender']['female']) : '-'; ?></td>
-                                                            <td class="text-center fw-bold text-success" id="recruit-officers-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_officers']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_officers']) : '-'; ?></td>
+                                                            <td class="text-center fw-bold text-success snapshot-count" id="recruit-officers-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_officers']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_officers']) : '-'; ?></td>
                                                         </tr>
                                                         <tr>
                                                             <td class="ps-5">└ Recruits</td>
                                                             <td class="text-center" id="recruit-ncos-male"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_ncos_by_gender']['male']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_ncos_by_gender']['male']) : '-'; ?></td>
                                                             <td class="text-center" id="recruit-ncos-female"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_ncos_by_gender']['female']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_ncos_by_gender']['female']) : '-'; ?></td>
-                                                            <td class="text-center fw-bold text-success" id="recruit-ncos-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_ncos']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_ncos']) : '-'; ?></td>
+                                                            <td class="text-center fw-bold text-success snapshot-count" id="recruit-ncos-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['recruit_ncos']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['recruit_ncos']) : '-'; ?></td>
                                                         </tr>
                                                     </tbody>
                                                     <tfoot class="table-dark">
@@ -611,7 +614,7 @@ td:has(.text-muted):hover .text-muted {
                                                             </th>
                                                             <th class="text-center py-3" style="font-size: 1.15rem;" id="military-total-male"><?php echo isset($dashboardData['enhanced_personnel']['military']['by_gender']['male']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['by_gender']['male']) : '-'; ?></th>
                                                             <th class="text-center py-3" style="font-size: 1.15rem;" id="military-total-female"><?php echo isset($dashboardData['enhanced_personnel']['military']['by_gender']['female']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['by_gender']['female']) : '-'; ?></th>
-                                                            <th class="text-center py-3" style="font-size: 1.75rem; font-weight: 900; text-shadow: 0 2px 4px rgba(0,0,0,0.3); color: #ffd700;" id="military-grand-total"><?php echo isset($dashboardData['enhanced_personnel']['military']['total']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['total']) : '-'; ?></th>
+                                                            <th class="text-center py-3" style="font-size: 1.75rem; font-weight: 900; text-shadow: 0 2px 4px rgba(0,0,0,0.3); color: #ffd700;" id="military-grand-total"><span class="snapshot-count"><?php echo isset($dashboardData['enhanced_personnel']['military']['total']) ? htmlspecialchars($dashboardData['enhanced_personnel']['military']['total']) : '-'; ?></span></th>
                                                         </tr>
                                                         <?php 
                                                         // Calculate gender percentages for military
@@ -727,6 +730,19 @@ td:has(.text-muted):hover .text-muted {
                                                     <small class="text-muted">Total</small>
                                                 </div>
                                             </div>
+                                            <!-- Percentage breakdown for accessibility and quick glance -->
+                                            <div class="row text-center mt-2">
+                                                <div class="col-6">
+                                                    <small class="text-muted">Male %</small>
+                                                    <div id="modal-male-pct" class="fw-semibold">-</div>
+                                                </div>
+                                                <div class="col-6">
+                                                    <small class="text-muted">Female %</small>
+                                                    <div id="modal-female-pct" class="fw-semibold">-</div>
+                                                </div>
+                                            </div>
+                                            <!-- ARIA live summary for screen readers -->
+                                            <div id="modal-accessible-summary" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
                                         </div>
                                     </div>
                                 </div>
@@ -1198,7 +1214,7 @@ function initializePeriodFilter() {
         }
         
         // Redirect to export endpoint
-        window.location.href = `export_personnel.php?start_date=${startDate}&end_date=${endDate}`;
+        window.location.href = `export_personnel.php?startDate=${startDate}&endDate=${endDate}`;
     });
     
     function applyPeriodFilter(startDate, endDate) {
@@ -1207,7 +1223,7 @@ function initializePeriodFilter() {
         cards.forEach(card => card.classList.add('loading'));
         
         // Make AJAX request for filtered data
-        fetch(`${window.location.pathname}?ajax=1&filter=period&start_date=${startDate}&end_date=${endDate}`, {
+        fetch(`${window.location.pathname}?ajax=1&filter=period&startDate=${startDate}&endDate=${endDate}`, {
             method: 'GET',
             headers: {
                 'X-Requested-With': 'XMLHttpRequest',
@@ -2159,7 +2175,7 @@ function refreshPersonnelData() {
                         { id: 'modal-female-count', value: femaleCount, label: 'Female' },
                         { id: 'modal-total-count', value: totalCount, label: 'Total' }
                     ];
-                    
+
                     let successCount = 0;
                     updates.forEach(update => {
                         const element = document.getElementById(update.id);
@@ -2171,7 +2187,34 @@ function refreshPersonnelData() {
                             console.warn(`⚠️ ${update.label} count element not found (${update.id})`);
                         }
                     });
-                    
+
+                    // Compute and update percentage breakdown if totals are numeric
+                    try {
+                        const maleNum = parseInt(maleCount.replace(/[^0-9\-]/g, '')) || 0;
+                        const femaleNum = parseInt(femaleCount.replace(/[^0-9\-]/g, '')) || 0;
+                        const totalNum = parseInt(totalCount.replace(/[^0-9\-]/g, '')) || (maleNum + femaleNum);
+
+                        const malePctEl = document.getElementById('modal-male-pct');
+                        const femalePctEl = document.getElementById('modal-female-pct');
+                        const ariaSummary = document.getElementById('modal-accessible-summary');
+
+                        let malePct = totalNum > 0 ? ((maleNum / totalNum) * 100) : 0;
+                        let femalePct = totalNum > 0 ? ((femaleNum / totalNum) * 100) : 0;
+
+                        malePct = Math.round(malePct * 10) / 10; // 1 decimal place
+                        femalePct = Math.round(femalePct * 10) / 10;
+
+                        if (malePctEl) malePctEl.textContent = `${malePct}%`;
+                        if (femalePctEl) femalePctEl.textContent = `${femalePct}%`;
+
+                        if (ariaSummary) {
+                            ariaSummary.textContent = `${type} breakdown: ${totalNum} total — ${maleNum} male (${malePct}%), ${femaleNum} female (${femalePct}%).`;
+                        }
+
+                    } catch (pctError) {
+                        console.warn('⚠️ Error computing percentages for modal:', pctError);
+                    }
+
                     if (successCount === 3) {
                         console.log('🎉 All modal data updated successfully!');
                         // Automatically load personnel list after modal content is updated
@@ -2265,6 +2308,55 @@ function refreshPersonnelData() {
         // Initialize auto-refresh
         startAutoRefresh();
         
+        // Make snapshot counts clickable: open personnel modal and load the corresponding category
+        try {
+            document.querySelectorAll('.snapshot-count').forEach(el => {
+                // Make it visually clickable
+                el.style.cursor = 'pointer';
+
+                el.addEventListener('click', function () {
+                    const id = this.id || '';
+                    // Map element IDs to API categories and display types
+                        // Map element IDs to backend API categories and display types
+                        const mapping = {
+                            'military-officers-total': { category: 'military-officers', type: 'Officers' },
+                            'military-ncos-total': { category: 'military-ncos', type: 'NCOs' },
+                            'recruit-officers-total': { category: 'military-officers', type: 'Recruit Officers' },
+                            'recruit-ncos-total': { category: 'military-ncos', type: 'Recruit NCOs' },
+                            'military-grand-total': { category: 'military-all', type: 'Total Military' },
+                            // Civilian mappings
+                            'civilian-current-total': { category: 'civilian-current', type: 'Staff' },
+                            'civilian-new-total': { category: 'civilian-new', type: 'New Hires' },
+                            'civilian-grand-total': { category: 'civilian-current', type: 'Total Civilian' }
+                        };
+
+                        // Default fallback uses the element text for display but maps to a safe API slug
+                        const fallbackCategory = 'military-all';
+                        const info = mapping[id] || { category: fallbackCategory, type: this.textContent.trim() || 'Personnel' };
+
+                        // Normalize category to API expected slugs (ensure lowercase, hyphenated)
+                        currentCategory = info.category;
+                        currentType = info.type;
+
+                        // Update modal title and category label if present
+                        try {
+                            const modalLabel = document.getElementById('personnelDetailModalLabel');
+                            if (modalLabel) modalLabel.innerHTML = `<i class="fas fa-users me-2"></i>${currentType} Details`;
+                            const categoryTitle = document.getElementById('modal-category-title');
+                            if (categoryTitle) categoryTitle.textContent = currentType + ' Breakdown';
+
+                            // Show modal and load list
+                            if (typeof personnelModal !== 'undefined' && personnelModal) personnelModal.show();
+                            if (typeof loadPersonnelList === 'function') loadPersonnelList();
+                        } catch (e) {
+                            console.error('❌ Error opening personnel modal from snapshot-count:', e);
+                        }
+                });
+            });
+        } catch (e) {
+            console.warn('⚠️ Failed to attach snapshot-count handlers:', e);
+        }
+        
         // Add export button functionality
         const exportBtn = document.getElementById('export-snapshot');
         if (exportBtn) {
@@ -2287,23 +2379,26 @@ function refreshPersonnelData() {
             
             // Determine if this is civilian category
             const isCivilian = currentCategory.includes('civilian');
-            
+
             // Update table headers based on category type
             const tableHeaders = document.querySelector('#modal-personnel-list thead tr');
             if (tableHeaders) {
                 if (isCivilian) {
-                    // Civilian: Name, Unit, Gender, Status (no rank column)
+                    // Civilian: Service Number, Rank Abbr(empty), Name, Unit, Gender, Status
                     tableHeaders.innerHTML = `
+                        <th>Service No</th>
+                        <th>Rank</th>
                         <th>Name</th>
                         <th>Unit</th>
                         <th>Gender</th>
                         <th>Status</th>
                     `;
                 } else {
-                    // Military: Name, Rank, Unit, Gender, Status
+                    // Military: Service Number, Rank Abbr, Name (SURNAME uppercase, forenames Title Case), Unit, Gender, Status
                     tableHeaders.innerHTML = `
-                        <th>Name</th>
+                        <th>Service No</th>
                         <th>Rank</th>
+                        <th>Name</th>
                         <th>Unit</th>
                         <th>Gender</th>
                         <th>Status</th>
@@ -2340,35 +2435,41 @@ function refreshPersonnelData() {
                                 </tr>
                             `;
                         } else {
-                            // Build table rows with real data
+                            // Build table rows with real data. Format: Service Number, Rank Abbr, Name (SURNAME UPPER, forenames Title Case), Unit, Gender, Status
                             let rows = '';
                             personnel.forEach(person => {
                                 const statusClass = person.status === 'Active' ? 'success' : 'secondary';
                                 const unit = person.unit || 'N/A';
-                                
-                                if (isCivilian) {
-                                    // Civilian: Name, Unit, Gender, Status
-                                    rows += `
-                                        <tr>
-                                            <td>${person.name}</td>
-                                            <td>${unit}</td>
-                                            <td>${person.gender}</td>
-                                            <td><span class="badge bg-${statusClass}">${person.status}</span></td>
-                                        </tr>
-                                    `;
-                                } else {
-                                    // Military: Name, Rank, Unit, Gender, Status
-                                    const rank = person.rank || 'N/A';
-                                    rows += `
-                                        <tr>
-                                            <td>${person.name}</td>
-                                            <td>${rank}</td>
-                                            <td>${unit}</td>
-                                            <td>${person.gender}</td>
-                                            <td><span class="badge bg-${statusClass}">${person.status}</span></td>
-                                        </tr>
-                                    `;
+                                // Prefer explicit abbreviation; if missing, generate a short abbreviation from the full rank name
+                                function generateRankAbbr(rankName) {
+                                    if (!rankName) return '';
+                                    // Split into words, ignore short filler words, take first letters (max 3)
+                                    const fillers = ['of','and','the','in','on','for','with','by','to'];
+                                    const parts = rankName.replace(/[^A-Za-z\s]/g, ' ').split(/\s+/).filter(w => w.length > 0);
+                                    const initials = parts.filter(w => !fillers.includes(w.toLowerCase())).map(w => w.charAt(0).toUpperCase());
+                                    if (initials.length === 0 && parts.length > 0) return parts[0].substring(0,3).toUpperCase();
+                                    return initials.slice(0,3).join('');
                                 }
+
+                                const rankAbbr = (person.rank_abbr && person.rank_abbr.trim()) ? person.rank_abbr : (person.rank ? generateRankAbbr(person.rank) : '');
+
+                                // Compose name: surname uppercase, forenames title case
+                                const rawFirst = person.fName || '';
+                                const rawLast = person.lName || '';
+                                const formattedFirst = rawFirst.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+                                const formattedLast = rawLast.toUpperCase();
+                                const displayName = formattedLast + ' ' + formattedFirst;
+
+                                rows += `
+                                    <tr>
+                                        <td>${person.svcNo || ''}</td>
+                                        <td>${rankAbbr}</td>
+                                        <td>${displayName}</td>
+                                        <td>${unit}</td>
+                                        <td>${person.gender || ''}</td>
+                                        <td><span class="badge bg-${statusClass}">${person.status}</span></td>
+                                    </tr>
+                                `;
                             });
                             
                             listBody.innerHTML = rows;
@@ -2441,21 +2542,35 @@ function refreshPersonnelData() {
                             if (data.success && data.data && data.data.personnel) {
                                 const personnel = data.data.personnel;
                                 
-                                // Create CSV header
-                                const csvData = [['Name', 'Rank', 'Unit', 'Gender', 'Status', 'Joined Date']];
-                                
-                                // Add data rows
+                                // Create CSV header with requested column order
+                                const csvData = [['Service Number', 'Rank', 'Name', 'Unit', 'Gender', 'Status', 'Joined Date']];
+
+                                // Add data rows (format name as SURNAME uppercase, forenames Title Case)
                                 personnel.forEach(person => {
-                                    const rank = person.rank_abbr ? `${person.rank} (${person.rank_abbr})` : person.rank;
+                                    const rankAbbr = (person.rank_abbr && person.rank_abbr.trim()) ? person.rank_abbr : (person.rank ? (function(r){
+                                        // reuse same generator logic used above
+                                        const fillers = ['of','and','the','in','on','for','with','by','to'];
+                                        const parts = r.replace(/[^A-Za-z\s]/g, ' ').split(/\s+/).filter(w => w.length > 0);
+                                        const initials = parts.filter(w => !fillers.includes(w.toLowerCase())).map(w => w.charAt(0).toUpperCase());
+                                        if (initials.length === 0 && parts.length > 0) return parts[0].substring(0,3).toUpperCase();
+                                        return initials.slice(0,3).join('');
+                                    })(person.rank) : '');
                                     const unit = person.unit || 'N/A';
                                     const joinedDate = person.joined_date || 'N/A';
-                                    
+
+                                    const rawFirst = person.fName || '';
+                                    const rawLast = person.lName || '';
+                                    const formattedFirst = rawFirst.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+                                    const formattedLast = rawLast.toUpperCase();
+                                    const displayName = formattedLast + ', ' + formattedFirst;
+
                                     csvData.push([
-                                        person.name,
-                                        rank,
+                                        person.svcNo || '',
+                                        rank_Abbr,
+                                        displayName,
                                         unit,
-                                        person.gender,
-                                        person.status,
+                                        person.gender || '',
+                                        person.status || '',
                                         joinedDate
                                     ]);
                                 });

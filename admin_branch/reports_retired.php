@@ -42,13 +42,13 @@ $pdo = getDbConnection();
 
 function getRetiredOptions($pdo, $unit, $rank, $cat) {
     $apptSql = "SELECT DISTINCT appt FROM staff WHERE appt IS NOT NULL AND appt <> '' AND svcStatus = 'Retired'";
-    $unitSql = "SELECT DISTINCT u.id, u.name FROM units u JOIN staff s ON s.unit_id = u.id WHERE s.svcStatus = 'Retired'";
-    $rankSql = "SELECT DISTINCT r.id, r.name FROM ranks r JOIN staff s ON s.rank_id = r.id WHERE s.svcStatus = 'Retired'";
+    $unitSql = "SELECT DISTINCT u.unitId, u.name FROM unit u JOIN staff s ON s.unitId = u.unitId WHERE s.svcStatus = 'Retired'";
+    $rankSql = "SELECT DISTINCT r.rankId as id, COALESCE(r.rankId, r.rankId) as name FROM `rank` r JOIN staff s ON s.rankId = r.rankId WHERE s.svcStatus = 'Retired'";
     $catSql  = "SELECT DISTINCT s.category FROM staff s WHERE s.category IS NOT NULL AND s.category <> '' AND s.svcStatus = 'Retired'";
     return [
         $pdo->query($apptSql)->fetchAll(PDO::FETCH_COLUMN),
         fetchAll($unitSql . " ORDER BY u.name ASC"),
-        fetchAll($rankSql . " ORDER BY r.name ASC"),
+        fetchAll($rankSql . " ORDER BY r.rankId ASC"),
         fetchAll($catSql . " ORDER BY s.category ASC")
     ];
 }
@@ -61,19 +61,27 @@ $search = trim($_GET['search'] ?? '');
 list($appts, $units, $ranks, $categories) = getRetiredOptions($pdo, $filter_unit, $filter_rank, $filter_category);
 
 $params = [];
-$sql = "SELECT s.*, r.name as rankName, u.name as unitName FROM staff s
-        LEFT JOIN ranks r ON s.rank_id = r.id
-        LEFT JOIN units u ON s.unit_id = u.id
+$sql = "SELECT s.*, r.rankId as rankName, u.name as unitName FROM staff s
+    LEFT JOIN `rank` r ON s.rankId = r.rankId
+        LEFT JOIN unit u ON s.unitId = u.unitId
         WHERE s.svcStatus = 'Retired'";
 if ($filter_appt !== '')      { $sql .= " AND s.appt = ?"; $params[] = $filter_appt; }
-if ($filter_unit !== '')      { $sql .= " AND s.unit_id = ?"; $params[] = $filter_unit; }
-if ($filter_rank !== '')      { $sql .= " AND s.rank_id = ?"; $params[] = $filter_rank; }
+if ($filter_unit !== '')      { $sql .= " AND s.unitId = ?"; $params[] = $filter_unit; }
+if ($filter_rank !== '')      { $sql .= " AND s.rankId = ?"; $params[] = $filter_rank; }
 if ($filter_category !== '')  { $sql .= " AND s.category = ?"; $params[] = $filter_category; }
 if ($search !== '') {
-    $sql .= " AND (s.appt LIKE ? OR s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR u.name LIKE ? OR s.category LIKE ?)";
+    $sql .= " AND (s.appt LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR r.rankId LIKE ? OR u.name LIKE ? OR s.category LIKE ?)";
     for ($i = 0; $i < 7; $i++) $params[] = "%$search%";
 }
-$sql .= " ORDER BY r.level ASC, s.last_name ASC, s.first_name ASC";
+// Default seniority sorting: rank level, then subWef, then tempWef, then attestDate, then service number
+// Personnel without ranks (NULL rankId) are listed last
+$sql .= " ORDER BY 
+    CASE WHEN s.rankId IS NULL THEN 1 ELSE 0 END,
+    r.level ASC,
+    s.subWef ASC,
+    s.tempWef ASC,
+    s.attestDate ASC,
+    s.svcNo ASC";
 $per_page = intval($_GET['per_page'] ?? 25);
 $page = max(1, intval($_GET['page'] ?? 1)); $offset = ($page - 1) * $per_page;
 $sql .= " LIMIT $per_page OFFSET $offset";
@@ -83,16 +91,16 @@ $staff = fetchAll($sql, $params);
 
 // Get total count for pagination
 $count_sql = "SELECT COUNT(*) FROM staff s
-    LEFT JOIN ranks r ON s.rank_id = r.id
-    LEFT JOIN units u ON s.unit_id = u.id
+    LEFT JOIN `rank` r ON s.rankId = r.rankId
+    LEFT JOIN unit u ON s.unitId = u.unitId
     WHERE s.svcStatus = 'Retired'";
 if ($filter_appt !== '')      { $count_sql .= " AND s.appt = '" . addslashes($filter_appt) . "'"; }
-if ($filter_unit !== '')      { $count_sql .= " AND s.unit_id = '" . addslashes($filter_unit) . "'"; }
-if ($filter_rank !== '')      { $count_sql .= " AND s.rank_id = '" . addslashes($filter_rank) . "'"; }
+if ($filter_unit !== '')      { $count_sql .= " AND s.unitId = '" . addslashes($filter_unit) . "'"; }
+if ($filter_rank !== '')      { $count_sql .= " AND s.rankId = '" . addslashes($filter_rank) . "'"; }
 if ($filter_category !== '')  { $count_sql .= " AND s.category = '" . addslashes($filter_category) . "'"; }
 if ($search !== '') {
     $search_esc = addslashes($search);
-    $count_sql .= " AND (s.appt LIKE '%$search_esc%' OR s.service_number LIKE '%$search_esc%' OR s.last_name LIKE '%$search_esc%' OR s.first_name LIKE '%$search_esc%' OR r.name LIKE '%$search_esc%' OR u.name LIKE '%$search_esc%' OR s.category LIKE '%$search_esc%')";
+    $count_sql .= " AND (s.appt LIKE '%$search_esc%' OR s.svcNo LIKE '%$search_esc%' OR s.lName LIKE '%$search_esc%' OR s.fName LIKE '%$search_esc%' OR r.rankId LIKE '%$search_esc%' OR u.name LIKE '%$search_esc%' OR s.category LIKE '%$search_esc%')";
 }
 $total_staff = $pdo->query($count_sql)->fetchColumn();
 $total_pages = ceil($total_staff / $per_page);
@@ -176,7 +184,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             <div class="mb-2">
                 <strong>Show/Hide Columns:</strong>
                 <?php $columns = [
-                    'appt'=>'Appointment','rank'=>'Rank','service_number'=>'Service No','surname'=>'Surname','first_name'=>'First Name(s)',
+                    'appt'=>'Appointment','rank'=>'Rank','svcNo'=>'Service No','surname'=>'Surname','fName'=>'First Name(s)',
                     'unit'=>'Unit','category'=>'Category','DOB'=>'Date of Birth','attestDate'=>'Date of Enlistment','retire_date'=>'Retirement Date'
                 ];
                 foreach ($columns as $key=>$label): ?>
@@ -201,9 +209,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <td><?= $i++ ?></td>
                                 <td class="col-appt"><?= htmlspecialchars($s->appt ?? '') ?></td>
                                 <td class="col-rank"><?= htmlspecialchars($s->rankName ?? '') ?></td>
-                                <td class="col-service_number"><?= htmlspecialchars($s->service_number ?? '') ?></td>
-                                <td class="col-surname"><?= htmlspecialchars($s->last_name ?? '') ?></td>
-                                <td class="col-first_name"><?= htmlspecialchars($s->first_name ?? '') ?></td>
+                                <td class="col-svcNo"><?= htmlspecialchars($s->svcNo ?? '') ?></td>
+                                <td class="col-surname"><?= htmlspecialchars($s->lName ?? '') ?></td>
+                                <td class="col-fName"><?= htmlspecialchars($s->fName ?? '') ?></td>
                                 <td class="col-unit"><?= htmlspecialchars($s->unitName ?? '') ?></td>
                                 <td class="col-category"><?= htmlspecialchars($s->category ?? '') ?></td>
                                 <td class="col-DOB"><?= htmlspecialchars($s->DOB ?? '') ?></td>

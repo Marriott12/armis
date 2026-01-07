@@ -56,8 +56,8 @@ function getDashboardData($db, $filters = []) {
     $courseChart = $chartData($staffByCourse, 'courseName', 'total');
     $opsTypeChart = $chartData($opsByType, 'opType', 'total');
 
-    $monthly = $db->query("SELECT DATE_FORMAT(created_at, '%Y-%m') as ym, COUNT(*) as total FROM Staff "
-        .($whereSQL ? $whereSQL.' AND ' : ' WHERE ')." created_at IS NOT NULL GROUP BY ym ORDER BY ym ASC", $params)->results();
+    $monthly = $db->query("SELECT DATE_FORMAT(createdAt, '%Y-%m') as ym, COUNT(*) as total FROM Staff "
+        .($whereSQL ? $whereSQL.' AND ' : ' WHERE ')." createdAt IS NOT NULL GROUP BY ym ORDER BY ym ASC", $params)->results();
     $forecastLabels = []; $forecastVals = [];
     foreach($monthly as $m) { $forecastLabels[] = $m->ym; $forecastVals[] = (int)$m->total; }
     return [

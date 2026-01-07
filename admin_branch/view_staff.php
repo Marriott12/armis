@@ -3,6 +3,7 @@ define('ARMIS_ADMIN_BRANCH', true);
 define('ARMIS_DEVELOPMENT', true);
 
 require_once dirname(__DIR__) . '/shared/database_connection.php';
+require_once dirname(__DIR__) . '/shared/rank_levels.php';
 
 $pdo = getDbConnection();
 
@@ -50,9 +51,9 @@ $sidebarLinks = [
     ],
 ];
 
-$id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
-if ($id <= 0) {
-    die('<div class="alert alert-danger">Invalid staff ID.</div>');
+$svcNo = isset($_GET['svcNo']) ? trim($_GET['svcNo']) : '';
+if (empty($svcNo)) {
+    die('<div class="alert alert-danger">Invalid service number.</div>');
 }
 
 // ==================== FETCH COMPREHENSIVE STAFF DATA ====================
@@ -104,23 +105,23 @@ if (!empty($unitCols)) {
         }
     }
     // id column
-    if (in_array('unit_id', $unitCols)) $unitIdCol = 'unit_id';
+    if (in_array('unitId', $unitCols)) $unitIdCol = 'unitId';
     elseif (in_array('id', $unitCols)) $unitIdCol = 'id';
     elseif (in_array('unitID', $unitCols)) $unitIdCol = 'unitID';
 }
 
 // Build the staff query dynamically so we only reference existing columns/tables
-$selectExtras = "c.name AS corpsName,\n        TIMESTAMPDIFF(YEAR, s.attestDate, CURDATE()) as years_of_service,\n        TIMESTAMPDIFF(YEAR, s.DOB, CURDATE()) as age";
+$selectExtras = "c.corpsId AS corpsName,\n        TIMESTAMPDIFF(YEAR, s.attestDate, CURDATE()) as years_of_service,\n        TIMESTAMPDIFF(YEAR, s.DOB, CURDATE()) as age";
 $joinUnit = '';
 $unitSelect = "'' AS unitName";
 if ($unitTable !== '') {
     // alias u
     $joinUnit = " LEFT JOIN `" . $unitTable . "` u ON ";
     if ($unitIdCol !== null) {
-        $joinUnit .= "s.unit_id = u.`" . $unitIdCol . "`";
+        $joinUnit .= "s.unitId = u.`" . $unitIdCol . "`";
     } else {
-        // best-effort join; leave join condition to match s.unit_id = u.id if present
-        $joinUnit .= "s.unit_id = u.id";
+        // best-effort join; leave join condition to match s.unitId = u.id if present
+        $joinUnit .= "s.unitId = u.id";
     }
 
     if ($unitNameCol !== null) {
@@ -131,10 +132,10 @@ if ($unitTable !== '') {
     }
 }
 
-$sql = "SELECT s.*, r.name AS rankName, r.abbreviation AS rankAbbr, " . $unitSelect . ", " . $selectExtras . "\n    FROM staff s\n    LEFT JOIN ranks r ON s.rank_id = r.id\n    " . $joinUnit . "\n    LEFT JOIN corps c ON s.corps_id = c.id\n    WHERE s.id = ?\n    LIMIT 1";
+$sql = "SELECT s.*, r.rankId AS rankName, r.rankId AS rankAbbr, " . getRankCategoryCaseSQL('r') . " AS rankCategory, " . $unitSelect . ", " . $selectExtras . "\n    FROM staff s\n    LEFT JOIN `rank` r ON s.rankId = r.rankId\n    " . $joinUnit . "\n    LEFT JOIN corps c ON s.corpsId = c.corpsId\n    WHERE s.svcNo = ?\n    LIMIT 1";
 
 $stmt = $pdo->prepare($sql);
-$stmt->execute([$id]);
+$stmt->execute([$svcNo]);
 $staff = $stmt->fetch(PDO::FETCH_OBJ);
 
 if (!$staff) {
@@ -145,11 +146,11 @@ if (!$staff) {
 $education = [];
 try {
     $eduStmt = $pdo->prepare("
-        SELECT * FROM staff_education 
-        WHERE staff_id = ? 
-        ORDER BY year_completed DESC, year_started DESC
+        SELECT * FROM staff_course 
+        WHERE svcNo = ? 
+        ORDER BY yearCompleted DESC, yearStarted DESC
     ");
-    $eduStmt->execute([$id]);
+    $eduStmt->execute([$svcNo]);
     $education = $eduStmt->fetchAll(PDO::FETCH_OBJ);
 } catch (PDOException $e) {
     // Table may not exist yet, ignore
@@ -160,10 +161,10 @@ $skills = [];
 try {
     $skillStmt = $pdo->prepare("
         SELECT * FROM staff_skills 
-        WHERE staff_id = ? 
-        ORDER BY skill_level DESC, skill_name ASC
+        WHERE svcNo = ? 
+        ORDER BY skillLevel DESC, skillName ASC
     ");
-    $skillStmt->execute([$id]);
+    $skillStmt->execute([$svcNo]);
     $skills = $skillStmt->fetchAll(PDO::FETCH_OBJ);
 } catch (PDOException $e) {
     // Table may not exist yet, ignore
@@ -174,10 +175,10 @@ $operations = [];
 try {
     $opStmt = $pdo->prepare("
         SELECT * FROM staff_operations 
-        WHERE staff_id = ? 
-        ORDER BY start_date DESC
+        WHERE svcNo = ? 
+        ORDER BY startDate DESC
     ");
-    $opStmt->execute([$id]);
+    $opStmt->execute([$svcNo]);
     $operations = $opStmt->fetchAll(PDO::FETCH_OBJ);
 } catch (PDOException $e) {
     // Table may not exist yet, ignore
@@ -189,15 +190,15 @@ try {
     $deploymentStmt = $pdo->prepare("
         SELECT 
             d.*,
-            d.start_date AS date_from,
-            d.end_date AS date_to,
+            d.startDate AS dateFrom,
+            d.endDate AS dateTo,
             d.deployment_status AS status,
             d.role_during_deployment AS role
         FROM staff_deployments d
-        WHERE d.staff_id = ?
-        ORDER BY d.start_date DESC
+        WHERE d.svcNo = ?
+        ORDER BY d.startDate DESC
     ");
-    $deploymentStmt->execute([$id]);
+    $deploymentStmt->execute([$svcNo]);
     $deployments = $deploymentStmt->fetchAll(PDO::FETCH_OBJ);
 } catch (PDOException $e) {
     // Table may not exist yet, ignore
@@ -205,67 +206,77 @@ try {
 
 // ==================== FETCH PROMOTIONS DATA ====================
 $promotions = [];
-$promStmt = $pdo->prepare("
-    SELECT 
-        p.*, 
-        r.name AS newRankName,
-        r.abbreviation AS newRankAbbr,
-        IFNULL(pr.name, 'N/A') AS previousRankName,
-        IFNULL(pr.abbreviation, 'N/A') AS previousRankAbbr,
-        DATEDIFF(IFNULL(p.date_to, CURDATE()), p.date_from) as days_in_rank
-    FROM staff_promotions p 
-    LEFT JOIN ranks r ON p.new_rank = r.id
-    LEFT JOIN ranks pr ON p.current_rank = pr.id
-    WHERE p.staff_id = ? 
-    ORDER BY p.date_from DESC
-");
-$promStmt->execute([$id]);
-$promotions = $promStmt->fetchAll(PDO::FETCH_OBJ);
+try {
+    $promStmt = $pdo->prepare("
+        SELECT 
+            p.*, 
+            r.rankId AS newRankName,
+            r.rankId AS newRankAbbr,
+            IFNULL(pr.rankId, 'N/A') AS previousRankName,
+            IFNULL(pr.rankId, 'N/A') AS previousRankAbbr,
+            DATEDIFF(IFNULL(p.dateTo, CURDATE()), p.dateFrom) as days_in_rank
+        FROM staff_promotion p 
+        LEFT JOIN `rank` r ON p.newRank = r.rankId
+        LEFT JOIN `rank` pr ON p.currentRank = pr.rankId
+        WHERE p.svcNo = ? 
+        ORDER BY p.dateFrom DESC
+    ");
+    $promStmt->execute([$svcNo]);
+    $promotions = $promStmt->fetchAll(PDO::FETCH_OBJ);
+} catch (PDOException $e) {
+    // Table may not exist or schema mismatch, ignore
+}
 
 // ==================== FETCH MEDALS DATA ====================
 $medals = [];
-$medalStmt = $pdo->prepare("
-    SELECT 
-        m.*, 
-        mm.name AS medalName,
-        mm.description AS medalDescription
-    FROM staff_medals m 
-    LEFT JOIN medals mm ON m.medal_id = mm.id 
-    WHERE m.staff_id = ? 
-    ORDER BY m.award_date DESC
-");
-$medalStmt->execute([$id]);
-$medals = $medalStmt->fetchAll(PDO::FETCH_OBJ);
+try {
+    $medalStmt = $pdo->prepare("
+        SELECT 
+            m.*, 
+            mm.name AS medalName,
+            mm.description AS medalDescription
+        FROM staff_medals m 
+        LEFT JOIN medal mm ON m.medal_id = mm.id 
+        WHERE m.svcNo = ? 
+        ORDER BY m.award_date DESC
+    ");
+    $medalStmt->execute([$svcNo]);
+    $medals = $medalStmt->fetchAll(PDO::FETCH_OBJ);
+} catch (PDOException $e) {
+    // Table may not exist or schema mismatch, ignore
+}
 
 // ==================== FETCH COURSES DATA ====================
 $courses = [];
-// detect course table name (course or courses)
-$courseTable = '';
-    foreach (['course', 'courses'] as $t) {
-    try {
-        $chk = $pdo->query("SHOW TABLES LIKE '" . addslashes($t) . "'");
-        if ($chk && $chk->rowCount() > 0) { $courseTable = $t; break; }
-    } catch (Exception $e) { }
-}
-
-if ($courseTable !== '') {
-    // detect a sensible course name column
-    $courseCols = tableColumns($pdo, $courseTable);
-    $courseNameCol = null;
-    foreach (['name', 'courseName', 'description', 'code', 'title', 'course_id'] as $cand) {
-        if (in_array($cand, $courseCols)) { $courseNameCol = $cand; break; }
-    }
-    if ($courseNameCol === null && !empty($courseCols)) {
-        $courseNameCol = $courseCols[0];
-    }
-
-    $courseSelect = ($courseNameCol !== null) ? "cc.`" . $courseNameCol . "` AS courseName" : "cc.id AS courseName";
-
-    $courseStmt = $pdo->prepare("\n        SELECT \n            c.*, \n            " . $courseSelect . "\n        FROM staff_courses c \n        LEFT JOIN `" . $courseTable . "` cc ON c.course_id = cc." . (in_array('id', $courseCols) ? 'id' : $courseCols[0]) . " \n        WHERE c.staff_id = ? \n        ORDER BY c.end_date DESC\n    ");
-    $courseStmt->execute([$id]);
+try {
+    $courseStmt = $pdo->prepare("
+        SELECT 
+            sc.id,
+            sc.svcNo,
+            sc.instId,
+            sc.cseId,
+            sc.qualification,
+            sc.yearStarted,
+            sc.yearCompleted,
+            sc.grade,
+            sc.result,
+            sc.isHighest,
+            sc.createdAt,
+            sc.updatedAt,
+            i.instLoc AS institutionLocation,
+            i.instType AS institutionType,
+            c.cseType AS courseType,
+            c.cseLevel AS courseLevel
+        FROM staff_course sc
+        LEFT JOIN institution i ON sc.instId = i.instId
+        LEFT JOIN course c ON sc.cseId = c.cseId
+        WHERE sc.svcNo = ?
+        ORDER BY sc.yearCompleted DESC, sc.yearStarted DESC
+    ");
+    $courseStmt->execute([$svcNo]);
     $courses = $courseStmt->fetchAll(PDO::FETCH_OBJ);
-} else {
-    // no course table found; leave $courses empty
+} catch (Exception $e) {
+    error_log("Error fetching courses: " . $e->getMessage());
     $courses = [];
 }
 
@@ -287,8 +298,8 @@ try {
     $unitLocationSelect = "'' AS unit_location";
     $unitJoin = '';
     if (!empty($unitTable) && !empty($unitCols)) {
-        $joinCol = in_array('unit_id', $unitCols) ? 'unit_id' : (in_array('id', $unitCols) ? 'id' : $unitCols[0]);
-        $unitJoin = "LEFT JOIN `" . $unitTable . "` u ON sa.unit_id = u.`" . $joinCol . "`";
+        $joinCol = in_array('unitId', $unitCols) ? 'unitId' : (in_array('id', $unitCols) ? 'id' : $unitCols[0]);
+        $unitJoin = "LEFT JOIN `" . $unitTable . "` u ON sa.unitId = u.`" . $joinCol . "`";
         if (in_array('name', $unitCols)) $unitNameSelect = 'u.name AS unit_name';
         elseif (in_array('unit_name', $unitCols)) $unitNameSelect = 'u.unit_name AS unit_name';
         elseif (in_array('unitName', $unitCols)) $unitNameSelect = 'u.unitName AS unit_name';
@@ -297,9 +308,9 @@ try {
         elseif (in_array('unit_location', $unitCols)) $unitLocationSelect = 'u.unit_location AS unit_location';
     }
 
-    $postingSql = "\n        SELECT \n            sa.*,\n            " . $unitNameSelect . ",\n            " . $unitLocationSelect . ",\n            r.name AS rank_name,\n            r.abbreviation AS rank_abbr\n        FROM staff_appointment sa\n        " . $unitJoin . "\n        LEFT JOIN ranks r ON sa.rank_id = r.id\n        WHERE sa.staff_id = ?\n        ORDER BY sa.start_date DESC\n    ";
+    $postingSql = "\n        SELECT \n            sa.*,\n            " . $unitNameSelect . ",\n            " . $unitLocationSelect . ",\n            r.rankId AS rank_name,\n            r.rankId AS rank_abbr\n        FROM staff_appointment sa\n        " . $unitJoin . "\n        LEFT JOIN `rank` r ON sa.rankId = r.rankId\n        WHERE sa.svcNo = ?\n        ORDER BY sa.startDate DESC\n    ";
     $postingStmt = $pdo->prepare($postingSql);
-    $postingStmt->execute([$id]);
+    $postingStmt->execute([$svcNo]);
     $postings = $postingStmt->fetchAll(PDO::FETCH_OBJ);
 } catch (Exception $e) {
     error_log("Error fetching postings from staff_appointment: " . $e->getMessage());
@@ -310,10 +321,10 @@ $awards = [];
 try {
     $awardStmt = $pdo->prepare("
         SELECT * FROM staff_awards 
-        WHERE staff_id = ? 
-        ORDER BY created_at DESC
+        WHERE svcNo = ? 
+        ORDER BY createdAt DESC
     ");
-    $awardStmt->execute([$id]);
+    $awardStmt->execute([$svcNo]);
     $awards = $awardStmt->fetchAll(PDO::FETCH_OBJ);
 } catch (Exception $e) {
     error_log("Error fetching awards: " . $e->getMessage());
@@ -324,10 +335,10 @@ $disciplinary = [];
 try {
     $disciplinaryStmt = $pdo->prepare("
         SELECT * FROM staff_disciplinary 
-        WHERE staff_id = ? 
+        WHERE svcNo = ? 
         ORDER BY incident_date DESC
     ");
-    $disciplinaryStmt->execute([$id]);
+    $disciplinaryStmt->execute([$svcNo]);
     $disciplinary = $disciplinaryStmt->fetchAll(PDO::FETCH_OBJ);
 } catch (Exception $e) {
     error_log("Error fetching disciplinary records: " . $e->getMessage());
@@ -346,6 +357,90 @@ $skillCount = count($skills);
 $postingCount = count($postings);
 $awardCount = count($awards);
 $disciplinaryCount = count($disciplinary);
+
+// ==================== CALCULATE RETIREMENT DATES ====================
+/**
+ * Calculate retirement dates and remaining time
+ */
+function calculateRetirementInfo($dateOfBirth, $dateOfEnlistment) {
+    $result = [
+        'runout' => null,
+        'earlyRetirement' => null
+    ];
+    
+    // Expected Runout Date (Age 65)
+    if (!empty($dateOfBirth)) {
+        try {
+            $dob = new DateTime($dateOfBirth);
+            $runoutDate = clone $dob;
+            $runoutDate->modify('+65 years');
+            $now = new DateTime();
+            
+            $result['runout'] = [
+                'date' => $runoutDate,
+                'formatted' => $runoutDate->format('d M Y'),
+                'isPast' => $runoutDate < $now,
+            ];
+            
+            if ($runoutDate >= $now) {
+                $interval = $now->diff($runoutDate);
+                $years = $interval->y;
+                $months = $interval->m;
+                $result['runout']['remaining'] = "$years years, $months months";
+                $result['runout']['yearsRemaining'] = $years;
+            } else {
+                $result['runout']['remaining'] = 'Past retirement age';
+                $result['runout']['yearsRemaining'] = -1;
+            }
+        } catch (Exception $e) {
+            // Invalid date
+        }
+    }
+    
+    // Expected Early Retirement (20 Years Service)
+    if (!empty($dateOfEnlistment)) {
+        try {
+            $enlistment = new DateTime($dateOfEnlistment);
+            $earlyRetireDate = clone $enlistment;
+            $earlyRetireDate->modify('+20 years');
+            $now = new DateTime();
+            
+            $result['earlyRetirement'] = [
+                'date' => $earlyRetireDate,
+                'formatted' => $earlyRetireDate->format('d M Y'),
+                'isPast' => $earlyRetireDate < $now,
+            ];
+            
+            if ($earlyRetireDate >= $now) {
+                $interval = $now->diff($earlyRetireDate);
+                $years = $interval->y;
+                $months = $interval->m;
+                $result['earlyRetirement']['remaining'] = "$years years, $months months";
+                $result['earlyRetirement']['yearsRemaining'] = $years;
+            } else {
+                $result['earlyRetirement']['remaining'] = 'Eligible now';
+                $result['earlyRetirement']['yearsRemaining'] = -1;
+            }
+        } catch (Exception $e) {
+            // Invalid date
+        }
+    }
+    
+    return $result;
+}
+
+/**
+ * Get CSS class for retirement urgency color coding
+ */
+function getRetirementUrgencyClass($yearsRemaining) {
+    if ($yearsRemaining < 0) return 'text-danger'; // Past or eligible
+    if ($yearsRemaining < 1) return 'text-danger';
+    if ($yearsRemaining <= 5) return 'text-warning';
+    if ($yearsRemaining <= 10) return 'text-info';
+    return 'text-success';
+}
+
+$retirementInfo = calculateRetirementInfo($staff->DOB ?? null, $staff->attestDate ?? null);
 
 // Add body class for admin access
 $bodyClass = '';
@@ -442,7 +537,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     <i class="fa fa-print"></i> Print
                 </button>
                 <?php if (defined('ARMIS_ADMIN_BRANCH') && ARMIS_ADMIN_BRANCH): ?>
-                    <a href="edit_staff.php?svcNo=<?=urlencode($staff->service_number)?>" class="btn btn-warning">
+                    <a href="edit_staff.php?svcNo=<?=urlencode($staff->svcNo)?>" class="btn btn-warning">
                         <i class="fa fa-edit"></i> Edit Profile
                     </a>
                 <?php endif; ?>
@@ -468,15 +563,15 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             <div class="card-header bg-primary text-white">
                 <h3 class="mb-0">
                     <i class="fa fa-user"></i> 
-                    <?=htmlspecialchars(($staff->rankAbbr ?? '') . ' ' . $staff->first_name . ' ' . $staff->last_name)?>
+                    <?=htmlspecialchars(($staff->rankAbbr ?? '') . ' ' . $staff->fName . ' ' . $staff->lName)?>
                     <span class="badge bg-light text-dark ms-2"><?=htmlspecialchars($staff->titles ?? 'N/A')?></span>
                 </h3>
             </div>
             <div class="card-body row">
                 <!-- Photo Column -->
                 <div class="col-md-3 text-center">
-                    <?php if (!empty($staff->profile_photo) && file_exists(dirname(__DIR__) . '/' . $staff->profile_photo)): ?>
-                        <img src="/Armis2/<?=htmlspecialchars($staff->profile_photo)?>" 
+                    <?php if (!empty($staff->profilePhoto) && file_exists(dirname(__DIR__) . '/' . $staff->profilePhoto)): ?>
+                        <img src="/Armis2/<?=htmlspecialchars($staff->profilePhoto)?>" 
                              class="img-fluid rounded mb-3 profile-photo" 
                              alt="Profile Photo">
                     <?php else: ?>
@@ -502,7 +597,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <tbody>
                             <tr>
                                 <th><i class="fa fa-id-card text-primary"></i> Service Number</th>
-                                <td><strong><?=htmlspecialchars($staff->service_number ?? 'N/A')?></strong></td>
+                                <td><strong><?=htmlspecialchars($staff->svcNo ?? 'N/A')?></strong></td>
                             </tr>
                             <tr>
                                 <th><i class="fa fa-id-badge text-primary"></i> NRC</th>
@@ -534,7 +629,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             </tr>
                             <tr>
                                 <th><i class="fa fa-tag text-primary"></i> Category</th>
-                                <td><?=htmlspecialchars($staff->category ?? 'N/A')?></td>
+                                <td><?=htmlspecialchars($staff->rankCategory ?? $staff->category ?? 'N/A')?></td>
                             </tr>
                             <tr>
                                 <th><i class="fa fa-calendar text-primary"></i> Date of Birth</th>
@@ -551,6 +646,47 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                     <?=!empty($staff->attestDate) ? date('d M Y', strtotime($staff->attestDate)) : 'N/A'?>
                                     <?php if ($yearsOfService > 0): ?>
                                         <small class="text-muted">(<?=$yearsOfService?> years of service)</small>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                            
+                            <!-- Expected Runout Date (Age 65) -->
+                            <tr>
+                                <th><i class="fa fa-hourglass-end text-primary"></i> Expected Runout Date (Age 65)</th>
+                                <td>
+                                    <?php if ($retirementInfo['runout']): ?>
+                                        <?php 
+                                            $runout = $retirementInfo['runout'];
+                                            $urgencyClass = getRetirementUrgencyClass($runout['yearsRemaining']);
+                                        ?>
+                                        <strong><?=$runout['formatted']?></strong>
+                                        <br>
+                                        <small class="<?=$urgencyClass?>">
+                                            <i class="fa fa-clock"></i> <?=$runout['remaining']?> remaining
+                                        </small>
+                                    <?php else: ?>
+                                        <span class="text-muted">N/A (Date of birth not recorded)</span>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                            
+                            <!-- Expected Early Retirement (20 Years Service) -->
+                            <tr>
+                                <th><i class="fa fa-calendar-alt text-primary"></i> Expected Early Retirement (20 Years Service)</th>
+                                <td>
+                                    <?php if ($retirementInfo['earlyRetirement']): ?>
+                                        <?php 
+                                            $earlyRet = $retirementInfo['earlyRetirement'];
+                                            $urgencyClass = getRetirementUrgencyClass($earlyRet['yearsRemaining']);
+                                        ?>
+                                        <strong><?=$earlyRet['formatted']?></strong>
+                                        <br>
+                                        <small class="<?=$urgencyClass?>">
+                                            <i class="fa fa-clock"></i> <?=$earlyRet['remaining']?> 
+                                            <?=$earlyRet['isPast'] ? '' : 'remaining'?>
+                                        </small>
+                                    <?php else: ?>
+                                        <span class="text-muted">N/A (Enlistment date not recorded)</span>
                                     <?php endif; ?>
                                 </td>
                             </tr>
@@ -757,8 +893,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                 <td><strong><?=htmlspecialchars($op->operationName ?? 'N/A')?></strong></td>
                                                 <td><?=htmlspecialchars($op->operationType ?? 'N/A')?></td>
                                                 <td><?=htmlspecialchars($op->operationLocation ?? 'N/A')?></td>
-                                                <td><?=!empty($op->start_date) ? date('d M Y', strtotime($op->start_date)) : 'N/A'?></td>
-                                                <td><?=!empty($op->end_date) ? date('d M Y', strtotime($op->end_date)) : 'Ongoing'?></td>
+                                                <td><?=!empty($op->startDate) ? date('d M Y', strtotime($op->startDate)) : 'N/A'?></td>
+                                                <td><?=!empty($op->endDate) ? date('d M Y', strtotime($op->endDate)) : 'Ongoing'?></td>
                                                 <td><?=htmlspecialchars($op->role ?? 'N/A')?></td>
                                                 <td>
                                                     <?php
@@ -816,7 +952,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                 <td><?=$idx + 1?></td>
                                                 <td><?=htmlspecialchars($prom->previousRankName ?? 'N/A')?></td>
                                                 <td><strong><?=htmlspecialchars($prom->newRankName ?? 'N/A')?></strong></td>
-                                                <td><?=!empty($prom->date_from) ? date('d M Y', strtotime($prom->date_from)) : 'N/A'?></td>
+                                                <td><?=!empty($prom->dateFrom) ? date('d M Y', strtotime($prom->dateFrom)) : 'N/A'?></td>
                                                 <td><?=number_format($prom->days_in_rank ?? 0)?> days</td>
                                                 <td><?=htmlspecialchars($prom->remarks ?? '')?></td>
                                             </tr>
@@ -873,11 +1009,13 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                     <thead class="table-light">
                                         <tr>
                                             <th>#</th>
-                                            <th>Name/Institution</th>
-                                            <th>Qualification/Course</th>
-                                            <th>Start Date</th>
-                                            <th>End Date</th>
+                                            <th>Institution/Course</th>
+                                            <th>Qualification</th>
+                                            <th>Type & Level</th>
+                                            <th>Year Started</th>
+                                            <th>Year Completed</th>
                                             <th>Grade</th>
+                                            <th>Result</th>
                                             <th>Status</th>
                                         </tr>
                                     </thead>
@@ -886,12 +1024,54 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         <?php foreach ($courses as $course): ?>
                                             <tr>
                                                 <td><?=$idx++?></td>
-                                                <td><strong><?=htmlspecialchars($course->courseName ?? 'N/A')?></strong></td>
-                                                <td><?=htmlspecialchars($course->qualification ?? $course->courseName ?? 'N/A')?></td>
-                                                <td><?=!empty($course->start_date) ? date('d M Y', strtotime($course->start_date)) : 'N/A'?></td>
-                                                <td><?=!empty($course->end_date) ? date('d M Y', strtotime($course->end_date)) : 'N/A'?></td>
+                                                <td>
+                                                    <strong><?=htmlspecialchars($course->instId ?? 'N/A')?></strong>
+                                                    <?php if (!empty($course->institutionLocation)): ?>
+                                                        <small class="text-muted d-block"><?=htmlspecialchars($course->institutionLocation)?></small>
+                                                    <?php endif; ?>
+                                                    <?php if (!empty($course->cseId)): ?>
+                                                        <small class="text-primary d-block"><i class="fa fa-book"></i> <?=htmlspecialchars($course->cseId)?></small>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td><strong><?=htmlspecialchars($course->qualification ?? 'N/A')?></strong></td>
+                                                <td>
+                                                    <?php if (!empty($course->courseType)): ?>
+                                                        <span class="badge bg-<?=$course->courseType == 'Military' ? 'success' : 'info'?>"><?=htmlspecialchars($course->courseType)?></span>
+                                                    <?php endif; ?>
+                                                    <?php if (!empty($course->courseLevel)): ?>
+                                                        <br><small class="text-muted"><?=htmlspecialchars($course->courseLevel)?></small>
+                                                    <?php endif; ?>
+                                                    <?php if (!empty($course->institutionType)): ?>
+                                                        <br><small class="badge bg-secondary"><?=htmlspecialchars($course->institutionType)?></small>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td><?=htmlspecialchars($course->yearStarted ?? 'N/A')?></td>
+                                                <td>
+                                                    <?=htmlspecialchars($course->yearCompleted ?? 'N/A')?>
+                                                    <?php if ($course->isHighest == 1): ?>
+                                                        <br><span class="badge bg-warning text-dark"><i class="fa fa-star"></i> Highest</span>
+                                                    <?php endif; ?>
+                                                </td>
                                                 <td><?=htmlspecialchars($course->grade ?? 'N/A')?></td>
-                                                <td><span class="badge bg-<?=strcasecmp($course->status ?? '','Completed')===0?'success':'warning'?>"><?=htmlspecialchars($course->status ?? 'N/A')?></span></td>
+                                                <td>
+                                                    <?php 
+                                                        $resultClass = 'secondary';
+                                                        $resultText = $course->result ?? 'N/A';
+                                                        if (stripos($resultText, 'pass') !== false || stripos($resultText, 'distinction') !== false) {
+                                                            $resultClass = 'success';
+                                                        } elseif (stripos($resultText, 'fail') !== false) {
+                                                            $resultClass = 'danger';
+                                                        }
+                                                    ?>
+                                                    <span class="badge bg-<?=$resultClass?>"><?=htmlspecialchars($resultText)?></span>
+                                                </td>
+                                                <td>
+                                                    <?php if (!empty($course->yearCompleted)): ?>
+                                                        <span class="badge bg-success">Completed</span>
+                                                    <?php else: ?>
+                                                        <span class="badge bg-warning">In Progress</span>
+                                                    <?php endif; ?>
+                                                </td>
                                             </tr>
                                         <?php endforeach; ?>
                                         <?php foreach ($education as $edu): ?>
@@ -899,10 +1079,12 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                 <td><?=$idx++?></td>
                                                 <td><?=htmlspecialchars($edu->institution ?? 'N/A')?></td>
                                                 <td><strong><?=htmlspecialchars($edu->qualification ?? 'N/A')?></strong></td>
+                                                <td><span class="badge bg-info">Education</span></td>
                                                 <td><?=htmlspecialchars($edu->year_started ?? 'N/A')?></td>
                                                 <td><?=htmlspecialchars($edu->year_completed ?? 'N/A')?></td>
                                                 <td><?=htmlspecialchars($edu->grade_obtained ?? 'N/A')?></td>
-                                                <td><span class="badge bg-info">Education</span></td>
+                                                <td>-</td>
+                                                <td><span class="badge bg-info">Education Record</span></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -937,9 +1119,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         <?php foreach ($deployments as $idx => $dep): ?>
                                             <?php
                                             $duration = '';
-                                            if (!empty($dep->date_from)) {
-                                                $start = strtotime($dep->date_from);
-                                                $end = !empty($dep->date_to) ? strtotime($dep->date_to) : time();
+                                            if (!empty($dep->dateFrom)) {
+                                                $start = strtotime($dep->dateFrom);
+                                                $end = !empty($dep->dateTo) ? strtotime($dep->dateTo) : time();
                                                 $days = floor(($end - $start) / (60 * 60 * 24));
                                                 $months = floor($days / 30);
                                                 $duration = $months > 0 ? $months . ' months' : $days . ' days';
@@ -955,8 +1137,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                         <small class="text-muted">(<?=htmlspecialchars($dep->country)?>)</small>
                                                     <?php endif; ?>
                                                 </td>
-                                                <td><?=!empty($dep->date_from) ? date('d M Y', strtotime($dep->date_from)) : 'N/A'?></td>
-                                                <td><?=!empty($dep->date_to) ? date('d M Y', strtotime($dep->date_to)) : 'Ongoing'?></td>
+                                                <td><?=!empty($dep->dateFrom) ? date('d M Y', strtotime($dep->dateFrom)) : 'N/A'?></td>
+                                                <td><?=!empty($dep->dateTo) ? date('d M Y', strtotime($dep->dateTo)) : 'Ongoing'?></td>
                                                 <td><?=$duration?></td>
                                                 <td><?=htmlspecialchars($dep->role ?? 'N/A')?></td>
                                                 <td>
@@ -1017,10 +1199,10 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                             <?php
                                             // Calculate duration
                                             $duration = '';
-                                            if (!empty($post->start_date)) {
-                                                $start = strtotime($post->start_date);
-                                                $end = !empty($post->end_date) ? strtotime($post->end_date) : time();
-                                                $months = $post->duration_months ?? floor(($end - $start) / (60 * 60 * 24 * 30.44));
+                                            if (!empty($post->startDate)) {
+                                                $start = strtotime($post->startDate);
+                                                $end = !empty($post->endDate) ? strtotime($post->endDate) : time();
+                                                $months = $post->durationMonths ?? floor(($end - $start) / (60 * 60 * 24 * 30.44));
                                                 $duration = $months . ' months';
                                             }
                                             ?>
@@ -1040,10 +1222,10 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                     <?php endif; ?>
                                                 </td>
                                                 <td><?=htmlspecialchars($post->appointment ?? 'N/A')?></td>
-                                                <td><?=!empty($post->start_date) ? date('d M Y', strtotime($post->start_date)) : 'N/A'?></td>
+                                                <td><?=!empty($post->startDate) ? date('d M Y', strtotime($post->startDate)) : 'N/A'?></td>
                                                 <td>
-                                                    <?php if (!empty($post->end_date)): ?>
-                                                        <?=date('d M Y', strtotime($post->end_date))?>
+                                                    <?php if (!empty($post->endDate)): ?>
+                                                        <?=date('d M Y', strtotime($post->endDate))?>
                                                     <?php else: ?>
                                                         <span class="badge bg-success">Current</span>
                                                     <?php endif; ?>
@@ -1116,7 +1298,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                 </td>
                                                 <td><strong><?=htmlspecialchars($award->award_name ?? 'N/A')?></strong></td>
                                                 <td><?=htmlspecialchars($award->awarded_by ?? 'N/A')?></td>
-                                                <td><?=!empty($award->created_at) ? date('d M Y', strtotime($award->created_at)) : 'N/A'?></td>
+                                                <td><?=!empty($award->createdAt) ? date('d M Y', strtotime($award->createdAt)) : 'N/A'?></td>
                                                 <td>
                                                     <?php if (!empty($award->citation)): ?>
                                                         <small><?=htmlspecialchars(substr($award->citation, 0, 100))?><?=strlen($award->citation) > 100 ? '...' : ''?></small>
@@ -1124,7 +1306,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                         -
                                                     <?php endif; ?>
                                                 </td>
-                                                <td><?=htmlspecialchars($award->certificate_number ?? '-')?></td>
+                                                <td><?=htmlspecialchars($award->certificateNumber ?? '-')?></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>

@@ -47,13 +47,13 @@ function formatSentenceCase($name) {
 
 function getContractOptions($pdo, $unit, $rank, $cat) {
     $apptSql = "SELECT DISTINCT appt FROM staff WHERE appt IS NOT NULL AND appt <> '' AND svcStatus = 'Contract'";
-    $unitSql = "SELECT DISTINCT u.id, u.name FROM units u JOIN staff s ON s.unit_id = u.id WHERE s.svcStatus = 'Contract'";
-    $rankSql = "SELECT DISTINCT r.id, r.name FROM ranks r JOIN staff s ON s.rank_id = r.id WHERE s.svcStatus = 'Contract'";
+    $unitSql = "SELECT DISTINCT u.unitId, u.name FROM unit u JOIN staff s ON s.unitId = u.unitId WHERE s.svcStatus = 'Contract'";
+    $rankSql = "SELECT DISTINCT r.rankId as id, COALESCE(r.rankId, r.rankId) as name FROM `rank` r JOIN staff s ON s.rankId = r.rankId WHERE s.svcStatus = 'Contract'";
     $catSql  = "SELECT DISTINCT s.category FROM staff s WHERE s.category IS NOT NULL AND s.category <> '' AND s.svcStatus = 'Contract'";
     return [
         $pdo->query($apptSql)->fetchAll(PDO::FETCH_COLUMN),
         fetchAll($unitSql . " ORDER BY u.name ASC"),
-        fetchAll($rankSql . " ORDER BY r.name ASC"),
+        fetchAll($rankSql . " ORDER BY r.rankId ASC"),
         fetchAll($catSql . " ORDER BY s.category ASC")
     ];
 }
@@ -69,9 +69,9 @@ list($appts, $units, $ranks, $categories) = getContractOptions($pdo, $filter_uni
 $sortable_columns = [
     'appt' => 's.appt',
     'rank' => 'r.level',
-    'service_number' => 's.service_number',
-    'surname' => 's.last_name',
-    'first_name' => 's.first_name',
+    'svcNo' => 's.svcNo',
+    'surname' => 's.lName',
+    'fName' => 's.fName',
     'unit' => 'u.name',
     'category' => 's.category',
     'DOB' => 's.DOB',
@@ -81,16 +81,16 @@ $sort_col = $_GET['sort_col'] ?? '';
 $sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
 
 $params = [];
-$sql = "SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, u.name as unitName, u.code as unitCode FROM staff s
-        LEFT JOIN ranks r ON s.rank_id = r.id
-        LEFT JOIN units u ON s.unit_id = u.id
+$sql = "SELECT s.*, r.rankId as rankName, r.rankId as rankAbbr, u.name as unitName, u.code as unitCode FROM staff s
+    LEFT JOIN `rank` r ON s.rankId = r.rankId
+        LEFT JOIN unit u ON s.unitId = u.unitId
         WHERE s.svcStatus = 'Contract'";
 if ($filter_appt !== '')      { $sql .= " AND s.appt = ?"; $params[] = $filter_appt; }
-if ($filter_unit !== '')      { $sql .= " AND s.unit_id = ?"; $params[] = $filter_unit; }
-if ($filter_rank !== '')      { $sql .= " AND s.rank_id = ?"; $params[] = $filter_rank; }
+if ($filter_unit !== '')      { $sql .= " AND s.unitId = ?"; $params[] = $filter_unit; }
+if ($filter_rank !== '')      { $sql .= " AND s.rankId = ?"; $params[] = $filter_rank; }
 if ($filter_category !== '')  { $sql .= " AND s.category = ?"; $params[] = $filter_category; }
 if ($search !== '') {
-    $sql .= " AND (s.appt LIKE ? OR s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR u.name LIKE ? OR s.category LIKE ?)";
+    $sql .= " AND (s.appt LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR r.rankId LIKE ? OR u.name LIKE ? OR s.category LIKE ?)";
     for ($i = 0; $i < 7; $i++) $params[] = "%$search%";
 }
 
@@ -98,7 +98,15 @@ if ($search !== '') {
 if ($sort_col && isset($sortable_columns[$sort_col])) {
     $sql .= " ORDER BY " . $sortable_columns[$sort_col] . " " . $sort_dir;
 } else {
-    $sql .= " ORDER BY r.level ASC, s.last_name ASC, s.first_name ASC";
+    // Default seniority sorting: rank level, then subWef, then tempWef, then attestDate, then service number
+    // Personnel without ranks (NULL rankId) are listed last
+    $sql .= " ORDER BY 
+        CASE WHEN s.rankId IS NULL THEN 1 ELSE 0 END,
+        r.level ASC,
+        s.subWef ASC,
+        s.tempWef ASC,
+        s.attestDate ASC,
+        s.svcNo ASC";
 }
 
 $per_page = intval($_GET['per_page'] ?? 25);
@@ -185,7 +193,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             <div class="mb-2">
                 <strong>Show/Hide Columns:</strong>
                 <?php $columns = [
-                    'appt'=>'Appointment','rank'=>'Rank','service_number'=>'Service No','surname'=>'Surname','first_name'=>'First Name(s)',
+                    'appt'=>'Appointment','rank'=>'Rank','svcNo'=>'Service No','surname'=>'Surname','fName'=>'First Name(s)',
                     'unit'=>'Unit','category'=>'Category','DOB'=>'Date of Birth','attestDate'=>'Date of Enlistment'
                 ];
                 foreach ($columns as $key=>$label): ?>
@@ -221,9 +229,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <td><?= $i++ ?></td>
                                 <td class="col-appt"><?= htmlspecialchars($s->appt ?? '') ?></td>
                                 <td class="col-rank"><?= htmlspecialchars($s->rankAbbr ?? $s->rankName ?? '') ?></td>
-                                <td class="col-service_number"><?= htmlspecialchars($s->service_number ?? '') ?></td>
-                                <td class="col-surname"><?= htmlspecialchars(formatSentenceCase($s->last_name ?? '')) ?></td>
-                                <td class="col-first_name"><?= htmlspecialchars(formatSentenceCase($s->first_name ?? '')) ?></td>
+                                <td class="col-svcNo"><?= htmlspecialchars($s->svcNo ?? '') ?></td>
+                                <td class="col-surname"><?= htmlspecialchars(formatSentenceCase($s->lName ?? '')) ?></td>
+                                <td class="col-fName"><?= htmlspecialchars(formatSentenceCase($s->fName ?? '')) ?></td>
                                 <td class="col-unit"><?= htmlspecialchars($s->unitCode ?? $s->unitName ?? '') ?></td>
                                 <td class="col-category"><?= htmlspecialchars($s->category ?? '') ?></td>
                                 <td class="col-DOB"><?= htmlspecialchars($s->DOB ?? '') ?></td>

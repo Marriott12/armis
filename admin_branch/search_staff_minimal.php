@@ -24,7 +24,7 @@ try {
     ]);
     
     // Get parameters
-    $rankId = $_GET['rank_id'] ?? '';
+    $rankId = $_GET['rankId'] ?? '';
     $query = $_GET['q'] ?? '';
     $noSearch = $_GET['no_search'] ?? false;
     
@@ -37,20 +37,20 @@ try {
     
     // Enhanced query with accurate time at current rank calculation
     $sql = "SELECT 
-                s.service_number,
+                s.svcNo,
                 CONCAT(
-                    COALESCE(r.name, 'No Rank'), ' ',
-                    COALESCE(s.first_name, ''), ' ',
-                    COALESCE(s.last_name, ''),
-                    ' (', s.service_number, ')'
+                    COALESCE(r.rankId, 'No Rank'), ' ',
+                    COALESCE(s.fName, ''), ' ',
+                    COALESCE(s.lName, ''),
+                    ' (', s.svcNo, ')'
                 ) as text,
-                s.first_name,
-                s.last_name,
-                s.rank_id,
-                r.name as rank_name,
-                COALESCE(r.abbreviation, r.name) as rank_abbreviation,
-                COALESCE(u.name, 'N/A') as unit_name,
-                s.corps,
+                s.fName,
+                s.lName,
+                s.rankId,
+                r.rankId as rank_name,
+                COALESCE(r.rankId, r.rankId) as rank_abbreviation,
+                COALESCE(u.code, 'N/A') as unit_name,
+                s.corpsId as corps,
                 s.svcStatus,
                 s.attestDate,
                 s.subWef,
@@ -58,10 +58,10 @@ try {
                 -- Calculate months at CURRENT rank using promotion to this rank
                 TIMESTAMPDIFF(MONTH, 
                     COALESCE(
-                        (SELECT MAX(sp.date_to) 
-                         FROM staff_promotions sp 
-                         WHERE sp.staff_id = s.id 
-                         AND sp.new_rank = s.rank_id 
+                        (SELECT MAX(sp.dateTo) 
+                         FROM staff_promotion sp 
+                         WHERE sp.svcNo = s.svcNo 
+                         AND sp.newRank = s.rankId 
                          AND sp.type = 'promotion'),
                         s.subWef,
                         s.tempWef,
@@ -71,36 +71,36 @@ try {
                 ) as months_at_rank,
                 -- Get the date when promoted/assigned to current rank
                 COALESCE(
-                    (SELECT MAX(sp.date_to) 
-                     FROM staff_promotions sp 
-                     WHERE sp.staff_id = s.id 
-                     AND sp.new_rank = s.rank_id 
+                    (SELECT MAX(sp.dateTo) 
+                     FROM staff_promotion sp 
+                     WHERE sp.svcNo = s.svcNo 
+                     AND sp.newRank = s.rankId 
                      AND sp.type = 'promotion'),
                     s.subWef,
                     s.tempWef,
                     s.attestDate
                 ) as rank_date,
                 -- Last promotion (any rank)
-                (SELECT MAX(sp.date_to) FROM staff_promotions sp WHERE sp.staff_id = s.id AND sp.type = 'promotion') as last_promotion_date,
-                (SELECT DATEDIFF(CURDATE(), MAX(sp.date_to)) FROM staff_promotions sp WHERE sp.staff_id = s.id AND sp.type = 'promotion') as days_since_promotion
+                (SELECT MAX(sp.dateTo) FROM staff_promotion sp WHERE sp.svcNo = s.svcNo AND sp.type = 'promotion') as last_promotion_date,
+                (SELECT DATEDIFF(CURDATE(), MAX(sp.dateTo)) FROM staff_promotion sp WHERE sp.svcNo = s.svcNo AND sp.type = 'promotion') as days_since_promotion
             FROM staff s
-            LEFT JOIN ranks r ON s.rank_id = r.id
-            LEFT JOIN units u ON s.unit_id = u.id
+            LEFT JOIN `rank` r ON s.rankId = r.rankId
+            LEFT JOIN unit u ON s.unitId = u.unitId
             WHERE s.svcStatus = 'Active'";
     
     $params = [];
     
-    // Always require rank_id for promotion search
-    $sql .= " AND s.rank_id = ?";
+    // Always require rankId for promotion search
+    $sql .= " AND s.rankId = ?";
     $params[] = $rankId;
     
     // Add search filter if provided and not "all"
     if (!empty($query) && $query !== 'all') {
         $sql .= " AND (
-            s.first_name LIKE ? OR
-            s.last_name LIKE ? OR
-            s.service_number LIKE ? OR
-            CONCAT(s.first_name, ' ', s.last_name) LIKE ?
+            s.fName LIKE ? OR
+            s.lName LIKE ? OR
+            s.svcNo LIKE ? OR
+            CONCAT(s.fName, ' ', s.lName) LIKE ?
         )";
         $searchTerm = '%' . $query . '%';
         $params[] = $searchTerm;
@@ -112,17 +112,17 @@ try {
     $sql .= " ORDER BY 
         -- Order by time at current rank (oldest first = longest at rank)
         COALESCE(
-            (SELECT MAX(sp.date_to) 
-             FROM staff_promotions sp 
-             WHERE sp.staff_id = s.id 
-             AND sp.new_rank = s.rank_id 
+            (SELECT MAX(sp.dateTo) 
+             FROM staff_promotion sp 
+             WHERE sp.svcNo = s.svcNo 
+             AND sp.newRank = s.rankId 
              AND sp.type = 'promotion'),
             s.subWef,
             s.tempWef,
             s.attestDate,
             '1900-01-01'
         ) ASC,
-        s.service_number ASC 
+        s.svcNo ASC 
     LIMIT 50";
     
     $stmt = $pdo->prepare($sql);
@@ -133,12 +133,12 @@ try {
     $formatted = [];
     foreach ($results as $row) {
         $formatted[] = [
-            'id' => $row['service_number'],
-            'service_number' => $row['service_number'],
+            'id' => $row['svcNo'],
+            'svcNo' => $row['svcNo'],
             'text' => $row['text'],
-            'first_name' => $row['first_name'],
-            'last_name' => $row['last_name'],
-            'rank_id' => $row['rank_id'],
+            'fName' => $row['fName'],
+            'lName' => $row['lName'],
+            'rankId' => $row['rankId'],
             'rank_name' => $row['rank_name'],
             'rank_abbreviation' => $row['rank_abbreviation'],
             'unit_name' => $row['unit_name'] ?? 'N/A',
@@ -173,7 +173,7 @@ try {
         'error' => 'Database error',
         'message' => $e->getMessage(),
         'code' => $e->getCode(),
-        'rank_id' => $rankId ?? null
+        'rankId' => $rankId ?? null
     ]);
     
 } catch (Exception $e) {

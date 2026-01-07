@@ -8,10 +8,10 @@ $manager = new OperationsManager();
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_staff'])) {
     try {
         $missionId = $_POST['mission_id'];
-        $staffId = $_POST['staff_id'];
+        $staffId = $_POST['svcNo'];
         $roleId = $_POST['role_id'] ?? null;
-        $startDate = $_POST['start_date'] ?? null;
-        $endDate = $_POST['end_date'] ?? null;
+        $startDate = $_POST['startDate'] ?? null;
+        $endDate = $_POST['endDate'] ?? null;
         $manager->assignStaffToMission($missionId, $staffId, $roleId, $startDate, $endDate);
         $success = "Staff assigned successfully.";
     } catch (Exception $e) {
@@ -56,8 +56,8 @@ $assignments = $manager->getCurrentAssignments();
             </select>
         </div>
         <div class="col-md-4">
-            <label for="staff_id" class="form-label">Staff Member</label>
-            <select name="staff_id" id="staff_id" class="form-select" required>
+            <label for="svcNo" class="form-label">Staff Member</label>
+            <select name="svcNo" id="svcNo" class="form-select" required>
                 <option value="">Select Staff</option>
                 <?php foreach ($availableStaff as $staff): ?>
                     <option value="<?= $staff['id'] ?>"> <?= htmlspecialchars($staff['full_name'] ?? $staff['name']) ?> </option>
@@ -69,12 +69,12 @@ $assignments = $manager->getCurrentAssignments();
             <input type="text" name="role_id" id="role_id" class="form-control" placeholder="Enter role or position">
         </div>
         <div class="col-md-3">
-            <label for="start_date" class="form-label">Start Date</label>
-            <input type="date" name="start_date" id="start_date" class="form-control">
+            <label for="startDate" class="form-label">Start Date</label>
+            <input type="date" name="startDate" id="startDate" class="form-control">
         </div>
         <div class="col-md-3">
-            <label for="end_date" class="form-label">End Date</label>
-            <input type="date" name="end_date" id="end_date" class="form-control">
+            <label for="endDate" class="form-label">End Date</label>
+            <input type="date" name="endDate" id="endDate" class="form-control">
         </div>
         <div class="col-md-12">
             <button type="submit" name="assign_staff" class="btn btn-primary">Assign Staff</button>
@@ -99,10 +99,10 @@ $assignments = $manager->getCurrentAssignments();
             <?php foreach ($assignments as $a): ?>
                 <tr>
                     <td><?= htmlspecialchars($a['mission_name'] ?? $a['mission_id']) ?></td>
-                    <td><?= htmlspecialchars($a['staff_name'] ?? $a['staff_id']) ?></td>
+                    <td><?= htmlspecialchars($a['staff_name'] ?? $a['svcNo']) ?></td>
                     <td><?= htmlspecialchars($a['role_id']) ?></td>
-                    <td><?= htmlspecialchars($a['start_date']) ?></td>
-                    <td><?= htmlspecialchars($a['end_date']) ?></td>
+                    <td><?= htmlspecialchars($a['startDate']) ?></td>
+                    <td><?= htmlspecialchars($a['endDate']) ?></td>
                     <td><?= htmlspecialchars($a['status']) ?></td>
                     <td>
                         <form method="post" style="display:inline;">

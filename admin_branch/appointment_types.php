@@ -333,8 +333,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
     </div>
 </div>
 
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Core JS (jQuery/Bootstrap) are loaded centrally in shared/footer.php. -->
 <script>
     $(document).ready(function() {
         // Toggle duration field based on temporary checkbox

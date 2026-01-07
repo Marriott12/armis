@@ -103,10 +103,10 @@ try {
             
             // Get current staff data
             $stmt = $pdo->prepare("
-                SELECT s.*, r.name as current_rank_name, r.level as current_rank_order
+                SELECT s.*, r.rankId as current_rank_name, r.level as current_rank_order
                 FROM staff s 
-                LEFT JOIN ranks r ON s.rank_id = r.id 
-                WHERE s.service_number = ? AND s.svcStatus = 'Active'
+                LEFT JOIN rank r ON s.rankId = r.rankId 
+                WHERE s.svcNo = ? AND s.svcStatus = 'Active'
             ");
             $stmt->execute([$serviceNumber]);
             $staff = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -117,7 +117,7 @@ try {
             }
             
             // Get new rank data
-            $stmt = $pdo->prepare("SELECT * FROM ranks WHERE id = ?");
+            $stmt = $pdo->prepare("SELECT * FROM rank WHERE id = ?");
             $stmt->execute([$nextRankId]);
             $newRank = $stmt->fetch(PDO::FETCH_ASSOC);
             
@@ -140,8 +140,8 @@ try {
             // Update staff rank
             $stmt = $pdo->prepare("
                 UPDATE staff 
-                SET rank_id = ?, updated_at = NOW() 
-                WHERE service_number = ?
+                SET rankId = ?, updatedAt = NOW() 
+                WHERE svcNo = ?
             ");
             $stmt->execute([$nextRankId, $serviceNumber]);
             
@@ -151,12 +151,12 @@ try {
             // Log the promotion/reversion in staff_promotions table
             $stmt = $pdo->prepare("
                 INSERT INTO staff_promotions 
-                (staff_id, current_rank, new_rank, date_from, date_to, type, authority, remark, created_by, created_at) 
+                (svcNo, currentRank, newRank, dateFrom, dateTo, type, authority, remark, createdBy, createdAt) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
             ");
             $stmt->execute([
                 $staffId,
-                $staff['rank_id'],
+                $staff['rankId'],
                 $nextRankId,
                 $effectiveDate,
                 $effectiveDate, // Using same date for both from and to for now

@@ -21,6 +21,12 @@ if (!defined('ARMIS_ROLES')) {
             'modules' => ['admin', 'admin_branch', 'staff_management', 'operations', 'command', 'finance', 'users', 'settings'],
             'description' => 'Full system access'
         ],
+        'admin_branch' => [
+            'name' => 'Admin Branch',
+            'level' => 85,
+            'modules' => ['admin_branch', 'users'],
+            'description' => 'Admin branch staff management'
+        ],
         'hr_officer' => [
             'name' => 'HR Officer',
             'level' => 80,
@@ -38,6 +44,24 @@ if (!defined('ARMIS_ROLES')) {
             'level' => 90,
             'modules' => ['command', 'operations', 'users'],
             'description' => 'Command functionality'
+        ],
+        'command' => [
+            'name' => 'Command',
+            'level' => 90,
+            'modules' => ['command', 'users'],
+            'description' => 'Command module access'
+        ],
+        'training' => [
+            'name' => 'Training',
+            'level' => 75,
+            'modules' => ['training', 'users'],
+            'description' => 'Training module access'
+        ],
+        'operations' => [
+            'name' => 'Operations',
+            'level' => 85,
+            'modules' => ['operations', 'users'],
+            'description' => 'Operations module access'
         ],
         'finance_officer' => [
             'name' => 'Finance Officer',

@@ -1,4 +1,18 @@
 <?php
+/**
+ * Seniority List Report
+ * 
+ * RANK LEVEL SYSTEM:
+ * - Officers: Levels 1-13 (1=highest, 13=lowest)
+ * - Officer Cadets: Level 14
+ * - NCOs: Levels 15-26 (15=highest NCO, 26=lowest NCO)  
+ * - Recruits: Level 27
+ * - Civilian Employees: Level 28
+ * 
+ * SENIORITY: ORDER BY r.level ASC, subWef ASC, tempWef ASC, attestDate ASC, svcNo ASC
+ * Lower level number = Higher rank within category
+ */
+
 // Define module constants
 define('ARMIS_ADMIN_BRANCH', true);
 define('ARMIS_DEVELOPMENT', false);
@@ -6,6 +20,9 @@ define('ARMIS_DEVELOPMENT', false);
 // Include admin branch authentication and database
 require_once __DIR__ . '/includes/auth.php';
 require_once dirname(__DIR__) . '/shared/database_connection.php';
+require_once dirname(__DIR__) . '/shared/rank_levels.php';
+// Include local DB helper functions (defines fetchAll, fetchOne, etc.)
+require_once __DIR__ . '/includes/db_helpers.php';
 
 // Require authentication
 requireAuth();
@@ -77,24 +94,44 @@ function formatSentenceCase($name) {
 
 // Dynamic filter options (only for active staff)
 function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory) {
-    $rankSql = "SELECT DISTINCT r.id, r.name FROM ranks r JOIN staff s ON s.rank_id = r.id WHERE s.svcStatus = 'Active'";
-    $unitSql = "SELECT DISTINCT u.id, u.name FROM units u JOIN staff s ON s.unit_id = u.id WHERE s.svcStatus = 'Active'";
-    $catSql  = "SELECT DISTINCT s.category FROM staff s WHERE s.category IS NOT NULL AND s.category <> '' AND s.svcStatus = 'Active'";
+    // Use canonical `rank` table (rankId is the canonical identifier)
+    // Fetch ranks directly from the rank table and order by level so filters list by seniority
+    $rankSql = "SELECT r.rankId AS id, COALESCE(r.rankId, r.rankId) AS name FROM `rank` r";
+    // Detect which units table exists in this environment and build the appropriate SQL
+    // Some installs use `units` (id,name,code) and others use `unit` (unitId, code, location).
+    $unitSql = "";
+    if (function_exists('tableExists') && tableExists('units')) {
+        $unitTable = 'units';
+        $unitSql = "SELECT DISTINCT u.unitId AS id, u.name AS name FROM unit u JOIN staff s ON s.unitId = u.unitId WHERE s.svcStatus = 'Active'";
+    } elseif (function_exists('tableExists') && tableExists('unit')) {
+        $unitTable = 'unit';
+        // normalize columns to id/name for callers
+        $unitSql = "SELECT DISTINCT u.unitId AS id, COALESCE(u.code, u.unitName, u.location, '') AS name FROM unit u JOIN staff s ON s.unitId = u.unitId WHERE s.svcStatus = 'Active'";
+    } else {
+        $unitTable = null;
+        // return an empty set (no units available)
+        $unitSql = "SELECT DISTINCT '' AS id, '' AS name FROM staff s WHERE 1=0";
+    }
+    $catSql  = "SELECT DISTINCT " . getRankCategoryCaseSQL('r') . " as id, " . getRankCategoryCaseSQL('r') . " as name FROM staff s LEFT JOIN `rank` r ON s.rankId = r.rankId WHERE r.level IS NOT NULL AND s.svcStatus = 'Active'";
 
     $rankParams = [];
     $unitParams = [];
     $catParams  = [];
 
-    if ($selectedUnit) {
-        $rankSql .= " AND s.unit_id = ?";
-        $rankParams[] = $selectedUnit;
-    }
-    if ($selectedCategory) {
-        $rankSql .= " AND s.category = ?";
-        $rankParams[] = $selectedCategory;
+    // If a unit or category is selected, restrict ranks to those that have active staff matching the filter
+    if ($selectedUnit || $selectedCategory) {
+        $rankSql = "SELECT DISTINCT r.rankId AS id, COALESCE(r.rankId, r.rankId) AS name FROM `rank` r JOIN staff s ON s.rankId = r.rankId WHERE s.svcStatus = 'Active'";
+        if ($selectedUnit) {
+            $rankSql .= " AND s.unitId = ?";
+            $rankParams[] = $selectedUnit;
+        }
+        if ($selectedCategory) {
+            $rankSql .= " AND s.category = ?";
+            $rankParams[] = $selectedCategory;
+        }
     }
     if ($selectedRank) {
-        $unitSql .= " AND s.rank_id = ?";
+        $unitSql .= " AND s.rankId = ?";
         $unitParams[] = $selectedRank;
     }
     if ($selectedCategory) {
@@ -102,17 +139,25 @@ function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory
         $unitParams[] = $selectedCategory;
     }
     if ($selectedUnit) {
-        $catSql .= " AND s.unit_id = ?";
+        $catSql .= " AND s.unitId = ?";
         $catParams[] = $selectedUnit;
     }
     if ($selectedRank) {
-        $catSql .= " AND s.rank_id = ?";
+        $catSql .= " AND s.rankId = ?";
         $catParams[] = $selectedRank;
     }
 
-    $ranks = fetchAll($rankSql . " ORDER BY r.name ASC", $rankParams);
-    $units = fetchAll($unitSql . " ORDER BY u.name ASC", $unitParams);
-    $categories = fetchAll($catSql . " ORDER BY s.category ASC", $catParams);
+    // Order by r.level if selecting from rank table (to show seniority order). If we built the query with JOIN, we still have r available.
+    // Try ordering by r.level, fallback to name ordering if level isn't present.
+    if (stripos($rankSql, 'ORDER BY') === false) {
+        $orderClause = ' ORDER BY r.level ASC, name ASC';
+    } else {
+        $orderClause = '';
+    }
+    $ranks = fetchAll($rankSql . $orderClause, $rankParams);
+    // ORDER BY the aliased 'name' column so both `units` and `unit` cases sort correctly
+    $units = fetchAll($unitSql . " ORDER BY name ASC", $unitParams);
+    $categories = fetchAll($catSql . " ORDER BY r.level ASC", $catParams);
 
     return [$ranks, $units, $categories];
 }
@@ -130,12 +175,13 @@ $page = max(1, intval($_GET['page'] ?? 1));
 $offset = ($page - 1) * $per_page;
 
 $sortable_columns = [
-    'service_number' => 's.service_number',
+    'svcNo' => 's.svcNo',
     'rank' => 'r.level',
-    'surname' => 's.last_name',
-    'first_name' => 's.first_name',
+    'surname' => 's.lName',
+    'fName' => 's.fName',
+    // unit sortable will be overridden after we detect which unit table (if any) exists
     'unit' => 'u.name',
-    'category' => 's.category',
+    'category' => 'r.level',
     'DOB' => 's.DOB',
     'attestDate' => 's.attestDate',
     'subWef' => 's.subWef',
@@ -146,50 +192,72 @@ $sort_col = $_GET['sort_col'] ?? '';
 $sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
 
 
-$sql = "SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, r.level as rankIndex, u.name as unitName, u.code as unitCode
-        FROM staff s
-        LEFT JOIN ranks r ON s.rank_id = r.id
-        LEFT JOIN units u ON s.unit_id = u.id
-        WHERE s.svcStatus = 'Active'";
-$count_sql = "SELECT COUNT(*) FROM staff s
-        LEFT JOIN ranks r ON s.rank_id = r.id
-        LEFT JOIN units u ON s.unit_id = u.id
-        WHERE s.svcStatus = 'Active'";
+// Build SELECT and JOIN for units dynamically depending on which table exists
+$unitTable = (function_exists('tableExists') && tableExists('units')) ? 'units' : ((function_exists('tableExists') && tableExists('unit')) ? 'unit' : null);
+if ($unitTable === 'units') {
+    $unitSelect = "COALESCE(u.code, u.name) as unitName, u.code as unitCode";
+    $unitJoin = "LEFT JOIN unit u ON s.unitId = u.unitId";
+} elseif ($unitTable === 'unit') {
+    // `unit` table uses unitId and code
+    $unitSelect = "COALESCE(u.code, '') as unitName, u.code as unitCode";
+    $unitJoin = "LEFT JOIN unit u ON s.unitId = u.unitId";
+} else {
+    // No unit table present - return empty strings for unit fields and avoid any join
+    $unitSelect = "'' as unitName, '' as unitCode";
+    $unitJoin = "";
+}
+
+// Define search expression and ensure sortable column mapping is safe depending on unit table
+if ($unitTable === 'units') {
+    $unitSearchExpr = "COALESCE(u.code, u.name)";
+    $sortable_columns['unit'] = 'u.name';
+} elseif ($unitTable === 'unit') {
+    // `unit` table doesn't have `name` column in some installs; use code
+    $unitSearchExpr = "COALESCE(u.code, '')";
+    $sortable_columns['unit'] = 'u.code';
+} else {
+    $unitSearchExpr = "''";
+    $sortable_columns['unit'] = 's.unitId';
+}
+
+$sql = "SELECT s.*, r.rankId as rankName, r.rankId as rankAbbr, r.level as rankIndex, " . getRankCategoryCaseSQL('r') . " as category, " . $unitSelect . "\n    FROM staff s\n    LEFT JOIN `rank` r ON s.rankId = r.rankId\n    " . $unitJoin . "\n    WHERE s.svcStatus = 'Active'";
+
+$count_sql = "SELECT COUNT(*) FROM staff s\n    LEFT JOIN `rank` r ON s.rankId = r.rankId\n    " . $unitJoin . "\n    WHERE s.svcStatus = 'Active'";
 
 // Filter by report type
 if ($reportType === 'officer') {
-    $sql .= " AND s.category = 'Officer'";
-    $count_sql .= " AND s.category = 'Officer'";
+    $sql .= " AND r.level >= 1 AND r.level <= 13";
+    $count_sql .= " AND r.level >= 1 AND r.level <= 13";
 } elseif ($reportType === 'nco') {
-    $sql .= " AND s.category = 'NCO'";
-    $count_sql .= " AND s.category = 'NCO'";
+    $sql .= " AND r.level >= 15 AND r.level <= 26";
+    $count_sql .= " AND r.level >= 15 AND r.level <= 26";
 } elseif ($reportType === 'ce') {
-    $sql .= " AND s.category = 'CE'";
-    $count_sql .= " AND s.category = 'CE'";
+    $sql .= " AND r.level = 28";
+    $count_sql .= " AND r.level = 28";
 }
 $count_params = [];
 
 if ($filter_rank !== '') {
-    $sql .= " AND s.rank_id = ?";
-    $count_sql .= " AND s.rank_id = ?";
+    $sql .= " AND s.rankId = ?";
+    $count_sql .= " AND s.rankId = ?";
     $params[] = $filter_rank;
     $count_params[] = $filter_rank;
 }
 if ($filter_unit !== '') {
-    $sql .= " AND s.unit_id = ?";
-    $count_sql .= " AND s.unit_id = ?";
+    $sql .= " AND s.unitId = ?";
+    $count_sql .= " AND s.unitId = ?";
     $params[] = $filter_unit;
     $count_params[] = $filter_unit;
 }
 if ($filter_category !== '') {
-    $sql .= " AND s.category = ?";
-    $count_sql .= " AND s.category = ?";
-    $params[] = $filter_category;
-    $count_params[] = $filter_category;
+    $categorySQL = getRankCategorySQL($filter_category, 'r');
+    $sql .= " AND (" . $categorySQL . ")";
+    $count_sql .= " AND (" . $categorySQL . ")";
 }
 if ($search !== '') {
-    $sql .= " AND (s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR u.name LIKE ? OR s.category LIKE ? OR s.svcStatus LIKE ? OR s.DOB LIKE ? OR s.attestDate LIKE ?)";
-    $count_sql .= " AND (s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR u.name LIKE ? OR s.category LIKE ? OR s.svcStatus LIKE ? OR s.DOB LIKE ? OR s.attestDate LIKE ?)";
+    // Use the safe rank and unit search expressions built above
+    $sql .= " AND (s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR r.rankId LIKE ? OR r.rankId LIKE ? OR {$unitSearchExpr} LIKE ? OR s.svcStatus LIKE ? OR s.DOB LIKE ? OR s.attestDate LIKE ?)";
+    $count_sql .= " AND (s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR r.rankId LIKE ? OR r.rankId LIKE ? OR {$unitSearchExpr} LIKE ? OR s.svcStatus LIKE ? OR s.DOB LIKE ? OR s.attestDate LIKE ?)";
     for ($i = 0; $i < 9; $i++) {
         $params[] = "%$search%";
         $count_params[] = "%$search%";
@@ -204,7 +272,7 @@ if ($sort_col && array_key_exists($sort_col, $sortable_columns)) {
         s.subWef ASC,
         s.tempWef ASC,
         s.attestDate ASC,
-        s.service_number ASC";
+        s.svcNo ASC";
 }
 
 $sql .= " LIMIT $per_page OFFSET $offset";
@@ -298,10 +366,10 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                 <strong>Show/Hide Columns:</strong>
                 <?php
                 $columns = [
-                    'service_number' => 'Service No',
+                    'svcNo' => 'Service No',
                     'rank' => 'Rank',
                     'surname' => 'Surname',
-                    'first_name' => 'First Name(s)',
+                    'fName' => 'First Name(s)',
                     'unit' => 'Unit',
                     'DOB' => 'Date of Birth',
                     'attestDate' => 'Date of Enlistment',
@@ -343,12 +411,12 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <?php else: $i=1; foreach ($staff as $s): ?>
                             <tr>
                                 <td>
-                                    <input type="checkbox" name="selected_ids[]" value="<?= htmlspecialchars($s->id) ?>" class="rowCheckbox">
+                                    <input type="checkbox" name="selected_ids[]" value="<?= htmlspecialchars($s->svcNo ?? '') ?>" class="rowCheckbox">
                                 </td>
-                                <td class="col-service_number"><?= htmlspecialchars($s->service_number ?? '') ?></td>
-                                <td class="col-service_number"><?= htmlspecialchars($s->rankAbbr ?? $s->rankName ?? '') ?></td>
-                                <td class="col-surname"><?= htmlspecialchars(formatSentenceCase($s->last_name ?? '')) ?></td>
-                                <td class="col-first_name"><?= htmlspecialchars(formatSentenceCase($s->first_name ?? '')) ?></td>
+                                <td class="col-svcNo"><?= htmlspecialchars($s->svcNo ?? '') ?></td>
+                                <td class="col-svcNo"><?= htmlspecialchars($s->rankAbbr ?? $s->rankName ?? '') ?></td>
+                                <td class="col-surname"><?= htmlspecialchars(formatSentenceCase($s->lName ?? '')) ?></td>
+                                <td class="col-fName"><?= htmlspecialchars(formatSentenceCase($s->fName ?? '')) ?></td>
                                 <td class="col-unit"><?= htmlspecialchars($s->unitCode ?? $s->unitName ?? '') ?></td>
                                 <td class="col-DOB"><?= htmlspecialchars($s->DOB ?? '') ?></td>
                                 <td class="col-attestDate"><?= htmlspecialchars($s->attestDate ?? '') ?></td>
@@ -359,8 +427,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                     <?php else: ?>
                                         <span class="text-muted">N/A</span>
                                     <?php endif; ?>
-                                    <a href="/Armis2/admin_branch/edit_staff.php?svcNo=<?= urlencode($s->service_number) ?>" class="btn btn-outline-secondary btn-sm ms-1" aria-label="Edit staff">Edit</a>
-                                    <!--<a href="/Armis2/reset_password.php?svcNo=<?= urlencode($s->service_number) ?>" class="btn btn-outline-warning btn-sm ms-1" aria-label="Reset password">Reset Password</a>-->
+                                    <a href="/Armis2/admin_branch/edit_staff.php?svcNo=<?= urlencode($s->svcNo) ?>" class="btn btn-outline-secondary btn-sm ms-1" aria-label="Edit staff">Edit</a>
+                                    <!--<a href="/Armis2/reset_password.php?svcNo=<?= urlencode($s->svcNo) ?>" class="btn btn-outline-warning btn-sm ms-1" aria-label="Reset password">Reset Password</a>-->
                                 </td>
                             </tr>
                         <?php endforeach; endif; ?>

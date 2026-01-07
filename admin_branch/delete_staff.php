@@ -34,25 +34,25 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         $pdo = getDbConnection();
         
         // Build ranks and units map
-        $ranksStmt = $pdo->query("SELECT id as rankID, name as rankName FROM ranks");
+        $ranksStmt = $pdo->query("SELECT id as rankID, name as rankId as rankName FROM rank");
         $ranks = $ranksStmt->fetchAll(PDO::FETCH_OBJ);
         $rankMap = [];
         foreach ($ranks as $r) $rankMap[$r->rankID] = $r->rankName;
         
-        $unitsStmt = $pdo->query("SELECT id as unitID, name as unitName FROM units");
+        $unitsStmt = $pdo->query("SELECT unitId as unitID, code as unitName FROM unit");
         $units = $unitsStmt->fetchAll(PDO::FETCH_OBJ);
         $unitMap = [];
         foreach ($units as $u) $unitMap[$u->unitID] = $u->unitName;
 
         $search = trim($_GET['search'] ?? '');
-        $sql = "SELECT service_number as svcNo, first_name as fname, last_name as lname, rank_id, unit_id FROM staff";
+        $sql = "SELECT svcNo as svcNo, fName as fname, lName as lname, rankId, unitId FROM staff";
         $params = [];
         if ($search !== '') {
-            $sql .= " WHERE (service_number LIKE ? OR first_name LIKE ? OR last_name LIKE ?)";
+            $sql .= " WHERE (svcNo LIKE ? OR fName LIKE ? OR lName LIKE ?)";
             $searchParam = '%' . $search . '%';
             $params = [$searchParam, $searchParam, $searchParam];
         }
-        $sql .= " ORDER BY rank_id ASC, last_name ASC, first_name ASC";
+        $sql .= " ORDER BY rankId ASC, lName ASC, fName ASC";
         
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
@@ -63,8 +63,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             $result[] = [
                 'svcNo' => $s->svcNo ?? '',
                 'name' => ($s->lname ?? '') . ' ' . ($s->fname ?? ''),
-                'rank' => isset($rankMap[$s->rank_id]) ? $rankMap[$s->rank_id] : ('ID:' . $s->rank_id),
-                'unit' => isset($unitMap[$s->unit_id]) ? $unitMap[$s->unit_id] : '',
+                'rank' => isset($rankMap[$s->rankId]) ? $rankMap[$s->rankId] : ('ID:' . $s->rankId),
+                'unit' => isset($unitMap[$s->unitId]) ? $unitMap[$s->unitId] : '',
             ];
         }
         echo json_encode($result);
@@ -85,7 +85,7 @@ function csrf_token() { return $_SESSION['csrf_token']; }
 try {
     $pdo = getDbConnection();
     
-    $ranksStmt = $pdo->query("SELECT id as rankID, name as rankName FROM ranks");
+    $ranksStmt = $pdo->query("SELECT id as rankID, name as rankId as rankName FROM rank");
     $ranks = $ranksStmt->fetchAll(PDO::FETCH_OBJ);
     $rankMap = [];
     foreach ($ranks as $r) $rankMap[$r->rankID] = $r->rankName;
@@ -109,10 +109,10 @@ if (isset($_GET['svcNo'])) {
     $svcNo = $_GET['svcNo'];
     try {
         $stmt = $pdo->prepare(
-            "SELECT service_number as svcNo, first_name as fname, last_name as lname, 
-                    rank_id, unit_id, NRC, DOB, gender, svcStatus 
+            "SELECT svcNo as svcNo, fName as fname, lName as lname, 
+                    rankId, unitId, NRC, DOB, gender, svcStatus 
              FROM staff 
-             WHERE service_number = ?"
+             WHERE svcNo = ?"
         );
         $stmt->execute([$svcNo]);
         $staff = $stmt->fetch(PDO::FETCH_OBJ);
@@ -139,7 +139,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_svcNo'])) {
         $errors[] = "You must type DELETE to confirm.";
     } else {
         try {
-            $stmt = $pdo->prepare("SELECT * FROM staff WHERE service_number = ?");
+            $stmt = $pdo->prepare("SELECT * FROM staff WHERE svcNo = ?");
             $stmt->execute([$svcNo]);
             $staff = $stmt->fetch(PDO::FETCH_OBJ);
             
@@ -148,15 +148,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_svcNo'])) {
             } else {
                 // Get additional staff information for logging
                 $staffName = ($staff->lname ?? '') . ' ' . ($staff->fname ?? '');
-                $rankName = $rankMap[$staff->rank_id] ?? 'Unknown';
-                $unitName = $unitMap[$staff->unit_id] ?? 'Unknown';
+                $rankName = $rankMap[$staff->rankId] ?? 'Unknown';
+                $unitName = $unitMap[$staff->unitId] ?? 'Unknown';
                 
                 // Backup staff data as JSON
                 $staffBackup = json_encode([
                     'svcNo' => $staff->svcNo ?? '',
                     'name' => $staffName,
-                    'rank_id' => $staff->rank_id ?? null,
-                    'unit_id' => $staff->unit_id ?? null,
+                    'rankId' => $staff->rankId ?? null,
+                    'unitId' => $staff->unitId ?? null,
                     'NRC' => $staff->NRC ?? '',
                     'DOB' => $staff->DOB ?? '',
                     'gender' => $staff->gender ?? '',
@@ -197,7 +197,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_svcNo'])) {
                 ]);
                 
                 // Delete the staff member
-                $deleteStmt = $pdo->prepare("DELETE FROM staff WHERE service_number = ?");
+                $deleteStmt = $pdo->prepare("DELETE FROM staff WHERE svcNo = ?");
                 $deleteResult = $deleteStmt->execute([$svcNo]);
                 $rowsAffected = $deleteStmt->rowCount();
                 
@@ -379,14 +379,14 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <tr>
                             <th scope="row">Rank</th>
                             <td><?php 
-                                $rankId = $staff->rank_id ?? null;
+                                $rankId = $staff->rankId ?? null;
                                 echo htmlspecialchars($rankMap[$rankId] ?? ('ID:' . $rankId ?? 'Unknown'));
                             ?></td>
                         </tr>
                         <tr>
                             <th scope="row">Unit</th>
                             <td><?php 
-                                $unitId = $staff->unit_id ?? null;
+                                $unitId = $staff->unitId ?? null;
                                 echo htmlspecialchars($unitMap[$unitId] ?? 'N/A');
                             ?></td>
                         </tr>

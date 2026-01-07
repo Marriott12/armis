@@ -38,10 +38,10 @@ $errors = [];
 $pdo = getDbConnection();
 
 // Get search parameters
-$serviceNumber = isset($_GET['service_number']) ? trim($_GET['service_number']) : '';
-$unitId = isset($_GET['unit_id']) ? (int)$_GET['unit_id'] : 0;
-$startDate = isset($_GET['start_date']) ? trim($_GET['start_date']) : '';
-$endDate = isset($_GET['end_date']) ? trim($_GET['end_date']) : '';
+$serviceNumber = isset($_GET['svcNo']) ? trim($_GET['svcNo']) : '';
+$unitId = isset($_GET['unitId']) ? (int)$_GET['unitId'] : 0;
+$startDate = isset($_GET['startDate']) ? trim($_GET['startDate']) : '';
+$endDate = isset($_GET['endDate']) ? trim($_GET['endDate']) : '';
 $status = isset($_GET['status']) ? trim($_GET['status']) : '';
 $appointmentTypeId = isset($_GET['appointment_type_id']) ? (int)$_GET['appointment_type_id'] : 0;
 
@@ -51,56 +51,56 @@ $params = [];
 $sql = "
     SELECT 
         sa.id, 
-        sa.service_number, 
-        s.first_name, 
-        s.last_name, 
-        r.name as rank_name,
+        sa.svcNo, 
+        s.fName, 
+        s.lName, 
+        r.rankId as rank_name,
         u.name as unit_name, 
         at.name as appointment_type, 
         at.is_temporary,
         sa.position,
         sa.appointment_date, 
-        sa.start_date,
-        sa.end_date,
+        sa.startDate,
+        sa.endDate,
         sa.comment, 
         sa.status,
-        sa.created_at,
+        sa.createdAt,
         sa.approval_date,
-        u2.username as created_by,
+        u2.username as createdBy,
         u3.username as approved_by
     FROM 
         staff_appointment sa
     JOIN 
-        staff s ON sa.staff_id = s.id
+        staff s ON sa.svcNo = s.id
     JOIN 
-        ranks r ON s.rank_id = r.id
+        ranks r ON s.rankId = r.id
     JOIN 
-        units u ON sa.unit_id = u.id
+        units u ON sa.unitId = u.id
     JOIN 
         appointment_types at ON sa.appointment_type_id = at.id
     JOIN 
-        users u2 ON sa.created_by = u2.id
+        users u2 ON sa.createdBy = u2.id
     LEFT JOIN 
         users u3 ON sa.approved_by = u3.id
 ";
 
 if (!empty($serviceNumber)) {
-    $where[] = "sa.service_number LIKE ?";
+    $where[] = "sa.svcNo LIKE ?";
     $params[] = "%$serviceNumber%";
 }
 
 if ($unitId > 0) {
-    $where[] = "sa.unit_id = ?";
+    $where[] = "sa.unitId = ?";
     $params[] = $unitId;
 }
 
 if (!empty($startDate)) {
-    $where[] = "sa.start_date >= ?";
+    $where[] = "sa.startDate >= ?";
     $params[] = $startDate;
 }
 
 if (!empty($endDate)) {
-    $where[] = "sa.start_date <= ?";
+    $where[] = "sa.startDate <= ?";
     $params[] = $endDate;
 }
 
@@ -119,11 +119,11 @@ if (!empty($where)) {
     $sql .= " WHERE " . implode(" AND ", $where);
 }
 
-$sql .= " ORDER BY sa.created_at DESC LIMIT 100";
+$sql .= " ORDER BY sa.createdAt DESC LIMIT 100";
 
 // Get all units for filter dropdown
 try {
-    $unitsStmt = $pdo->query("SELECT id, name FROM units ORDER BY name");
+    $unitsStmt = $pdo->query("SELECT unitId as id, code as name FROM unit ORDER BY code");
     $units = $unitsStmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {
     $errors[] = "Error fetching units: " . $e->getMessage();
@@ -160,35 +160,35 @@ if (isset($_GET['appointment_id']) && is_numeric($_GET['appointment_id'])) {
         $detailStmt = $pdo->prepare("
             SELECT 
                 sa.id, 
-                sa.service_number, 
-                s.first_name, 
-                s.last_name, 
-                r.name as rank_name,
+                sa.svcNo, 
+                s.fName, 
+                s.lName, 
+                r.rankId as rank_name,
                 u.name as unit_name, 
                 at.name as appointment_type, 
                 at.is_temporary,
                 sa.position,
                 sa.appointment_date, 
-                sa.start_date,
-                sa.end_date,
+                sa.startDate,
+                sa.endDate,
                 sa.comment, 
                 sa.status,
-                sa.created_at,
+                sa.createdAt,
                 sa.approval_date,
-                u2.username as created_by,
+                u2.username as createdBy,
                 u3.username as approved_by
             FROM 
                 staff_appointment sa
             JOIN 
-                staff s ON sa.staff_id = s.id
+                staff s ON sa.svcNo = s.id
             JOIN 
-                ranks r ON s.rank_id = r.id
+                ranks r ON s.rankId = r.id
             JOIN 
-                units u ON sa.unit_id = u.id
+                units u ON sa.unitId = u.id
             JOIN 
                 appointment_types at ON sa.appointment_type_id = at.id
             JOIN 
-                users u2 ON sa.created_by = u2.id
+                users u2 ON sa.createdBy = u2.id
             LEFT JOIN 
                 users u3 ON sa.approved_by = u3.id
             WHERE 
@@ -227,7 +227,7 @@ if (isset($_GET['appointment_id']) && is_numeric($_GET['appointment_id'])) {
                 WHERE 
                     aa.appointment_id = ?
                 ORDER BY 
-                    aa.created_at DESC
+                    aa.createdAt DESC
             ");
             $approvalStmt->execute([$appointmentId]);
             $appointmentApprovals = $approvalStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -283,12 +283,12 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <div class="card-body">
                             <form method="get" action="" class="row g-3">
                                 <div class="col-md-4">
-                                    <label for="service_number" class="form-label">Service Number</label>
-                                    <input type="text" class="form-control" id="service_number" name="service_number" value="<?= htmlspecialchars($serviceNumber) ?>">
+                                    <label for="svcNo" class="form-label">Service Number</label>
+                                    <input type="text" class="form-control" id="svcNo" name="svcNo" value="<?= htmlspecialchars($serviceNumber) ?>">
                                 </div>
                                 <div class="col-md-4">
-                                    <label for="unit_id" class="form-label">Unit</label>
-                                    <select class="form-select" id="unit_id" name="unit_id">
+                                    <label for="unitId" class="form-label">Unit</label>
+                                    <select class="form-select" id="unitId" name="unitId">
                                         <option value="">All Units</option>
                                         <?php foreach ($units as $unit): ?>
                                             <option value="<?= $unit['id'] ?>" <?= ($unitId == $unit['id']) ? 'selected' : '' ?>>
@@ -309,12 +309,12 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                     </select>
                                 </div>
                                 <div class="col-md-3">
-                                    <label for="start_date" class="form-label">Start Date</label>
-                                    <input type="date" class="form-control" id="start_date" name="start_date" value="<?= htmlspecialchars($startDate) ?>">
+                                    <label for="startDate" class="form-label">Start Date</label>
+                                    <input type="date" class="form-control" id="startDate" name="startDate" value="<?= htmlspecialchars($startDate) ?>">
                                 </div>
                                 <div class="col-md-3">
-                                    <label for="end_date" class="form-label">End Date</label>
-                                    <input type="date" class="form-control" id="end_date" name="end_date" value="<?= htmlspecialchars($endDate) ?>">
+                                    <label for="endDate" class="form-label">End Date</label>
+                                    <input type="date" class="form-control" id="endDate" name="endDate" value="<?= htmlspecialchars($endDate) ?>">
                                 </div>
                                 <div class="col-md-3">
                                     <label for="status" class="form-label">Status</label>
@@ -356,11 +356,11 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                     <table class="table table-bordered">
                                         <tr>
                                             <th width="40%">Service Number</th>
-                                            <td><?= htmlspecialchars($appointmentDetails['service_number']) ?></td>
+                                            <td><?= htmlspecialchars($appointmentDetails['svcNo']) ?></td>
                                         </tr>
                                         <tr>
                                             <th>Name</th>
-                                            <td><?= htmlspecialchars($appointmentDetails['last_name'] . ', ' . $appointmentDetails['first_name']) ?></td>
+                                            <td><?= htmlspecialchars($appointmentDetails['lName'] . ', ' . $appointmentDetails['fName']) ?></td>
                                         </tr>
                                         <tr>
                                             <th>Rank</th>
@@ -407,12 +407,12 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         </tr>
                                         <tr>
                                             <th>Start Date</th>
-                                            <td><?= date('d M Y', strtotime($appointmentDetails['start_date'])) ?></td>
+                                            <td><?= date('d M Y', strtotime($appointmentDetails['startDate'])) ?></td>
                                         </tr>
                                         <tr>
                                             <th>End Date</th>
                                             <td>
-                                                <?= $appointmentDetails['end_date'] ? date('d M Y', strtotime($appointmentDetails['end_date'])) : 'N/A' ?>
+                                                <?= $appointmentDetails['endDate'] ? date('d M Y', strtotime($appointmentDetails['endDate'])) : 'N/A' ?>
                                             </td>
                                         </tr>
                                         <tr>
@@ -429,11 +429,11 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                     <table class="table table-bordered">
                                         <tr>
                                             <th width="40%">Created By</th>
-                                            <td><?= htmlspecialchars($appointmentDetails['created_by']) ?></td>
+                                            <td><?= htmlspecialchars($appointmentDetails['createdBy']) ?></td>
                                         </tr>
                                         <tr>
                                             <th>Created Date</th>
-                                            <td><?= date('d M Y H:i', strtotime($appointmentDetails['created_at'])) ?></td>
+                                            <td><?= date('d M Y H:i', strtotime($appointmentDetails['createdAt'])) ?></td>
                                         </tr>
                                         <tr>
                                             <th>Approved By</th>
@@ -557,8 +557,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         <tbody>
                                             <?php foreach ($appointments as $appointment): ?>
                                                 <tr>
-                                                    <td><?= htmlspecialchars($appointment['service_number']) ?></td>
-                                                    <td><?= htmlspecialchars($appointment['last_name'] . ', ' . $appointment['first_name']) ?></td>
+                                                    <td><?= htmlspecialchars($appointment['svcNo']) ?></td>
+                                                    <td><?= htmlspecialchars($appointment['lName'] . ', ' . $appointment['fName']) ?></td>
                                                     <td><?= htmlspecialchars($appointment['rank_name']) ?></td>
                                                     <td>
                                                         <?= htmlspecialchars($appointment['appointment_type']) ?>
@@ -569,10 +569,10 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                     <td><?= htmlspecialchars($appointment['unit_name']) ?></td>
                                                     <td>
                                                         <small>
-                                                            <strong>Start:</strong> <?= date('d M Y', strtotime($appointment['start_date'])) ?>
-                                                            <?php if ($appointment['end_date']): ?>
+                                                            <strong>Start:</strong> <?= date('d M Y', strtotime($appointment['startDate'])) ?>
+                                                            <?php if ($appointment['endDate']): ?>
                                                                 <br>
-                                                                <strong>End:</strong> <?= date('d M Y', strtotime($appointment['end_date'])) ?>
+                                                                <strong>End:</strong> <?= date('d M Y', strtotime($appointment['endDate'])) ?>
                                                             <?php endif; ?>
                                                         </small>
                                                     </td>
@@ -610,7 +610,5 @@ include dirname(__DIR__) . '/shared/sidebar.php';
     </div>
 </div>
 
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-
+<!-- Core JS (jQuery/Bootstrap) are loaded centrally in shared/footer.php. -->
 <?php include dirname(__DIR__) . '/shared/footer.php'; ?>

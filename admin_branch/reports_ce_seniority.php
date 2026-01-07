@@ -6,6 +6,7 @@ define('ARMIS_DEVELOPMENT', false);
 // Include admin branch authentication and database
 require_once __DIR__ . '/includes/auth.php';
 require_once dirname(__DIR__) . '/shared/database_connection.php';
+require_once __DIR__ . '/includes/db_helpers.php';
 
 // Require authentication
 requireAuth();
@@ -77,11 +78,11 @@ function formatSentenceCase($name) {
 
 // Dynamic filter options (only for active CE staff)
 function getDynamicOptions($pdo, $selectedUnit) {
-    $unitSql = "SELECT DISTINCT u.id, u.name FROM units u JOIN staff s ON s.unit_id = u.id WHERE s.svcStatus = 'Active' AND s.category = 'CE'";
+    $unitSql = "SELECT DISTINCT u.unitId as id, u.code as name FROM unit u JOIN staff s ON s.unitId = u.unitId JOIN `rank` r ON s.rankId = r.rankId WHERE s.svcStatus = 'Active' AND r.level = 28";
 
     $unitParams = [];
 
-    $units = fetchAll($unitSql . " ORDER BY u.name ASC", $unitParams);
+    $units = fetchAll($unitSql . " ORDER BY u.code ASC", $unitParams);
 
     return [$units];
 }
@@ -97,10 +98,10 @@ $page = max(1, intval($_GET['page'] ?? 1));
 $offset = ($page - 1) * $per_page;
 
 $sortable_columns = [
-    'service_number' => 's.service_number',
-    'surname' => 's.last_name',
-    'first_name' => 's.first_name',
-    'unit' => 'u.name',
+    'svcNo' => 's.svcNo',
+    'surname' => 's.lName',
+    'fName' => 's.fName',
+    'unit' => 'u.code',
     'DOB' => 's.DOB',
     'attestDate' => 's.attestDate',
     'svcStatus' => 's.svcStatus'
@@ -109,15 +110,15 @@ $sort_col = $_GET['sort_col'] ?? '';
 $sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
 
 
-$sql = "SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, r.level as rankIndex, u.name as unitName, u.code as unitCode
+$sql = "SELECT s.*, r.rankId as rankName, r.rankId as rankAbbr, r.level as rankIndex, u.code as unitName, u.code as unitCode
         FROM staff s
-        LEFT JOIN ranks r ON s.rank_id = r.id
-        LEFT JOIN units u ON s.unit_id = u.id
-        WHERE s.svcStatus = 'Active' AND s.category = 'CE'";
+    LEFT JOIN `rank` r ON s.rankId = r.rankId
+        LEFT JOIN unit u ON s.unitId = u.unitId
+        WHERE s.svcStatus = 'Active' AND r.level = 28";
 $count_sql = "SELECT COUNT(*) FROM staff s
-        LEFT JOIN ranks r ON s.rank_id = r.id
-        LEFT JOIN units u ON s.unit_id = u.id
-        WHERE s.svcStatus = 'Active' AND s.category = 'CE'";
+        LEFT JOIN `rank` r ON s.rankId = r.rankId
+        LEFT JOIN unit u ON s.unitId = u.unitId
+        WHERE s.svcStatus = 'Active' AND r.level = 28";
 
 // Filter by report type
 // Already filtered to CE in the base query
@@ -125,14 +126,14 @@ $count_sql = "SELECT COUNT(*) FROM staff s
 $count_params = [];
 
 if ($filter_unit !== '') {
-    $sql .= " AND s.unit_id = ?";
-    $count_sql .= " AND s.unit_id = ?";
+    $sql .= " AND s.unitId = ?";
+    $count_sql .= " AND s.unitId = ?";
     $params[] = $filter_unit;
     $count_params[] = $filter_unit;
 }
 if ($search !== '') {
-    $sql .= " AND (s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR u.name LIKE ? OR s.svcStatus LIKE ? OR s.DOB LIKE ? OR s.attestDate LIKE ?)";
-    $count_sql .= " AND (s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR u.name LIKE ? OR s.svcStatus LIKE ? OR s.DOB LIKE ? OR s.attestDate LIKE ?)";
+    $sql .= " AND (s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR u.code LIKE ? OR s.svcStatus LIKE ? OR s.DOB LIKE ? OR s.attestDate LIKE ?)";
+    $count_sql .= " AND (s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR u.code LIKE ? OR s.svcStatus LIKE ? OR s.DOB LIKE ? OR s.attestDate LIKE ?)";
     for ($i = 0; $i < 7; $i++) {
         $params[] = "%$search%";
         $count_params[] = "%$search%";
@@ -143,9 +144,8 @@ if ($sort_col && array_key_exists($sort_col, $sortable_columns)) {
     $sql .= " ORDER BY " . $sortable_columns[$sort_col] . " $sort_dir";
 } else {
     $sql .= " ORDER BY 
-        s.last_name ASC,
-        s.first_name ASC,
-        s.service_number ASC";
+        s.attestDate ASC,
+        s.svcNo ASC";
 }
 
 $sql .= " LIMIT $per_page OFFSET $offset";
@@ -231,9 +231,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                 <strong>Show/Hide Columns:</strong>
                 <?php
                 $columns = [
-                    'service_number' => 'Service No',
+                    'svcNo' => 'Service No',
                     'surname' => 'Surname',
-                    'first_name' => 'First Name(s)',
+                    'fName' => 'First Name(s)',
                     'unit' => 'Unit',
                     'DOB' => 'Date of Birth',
                     'attestDate' => 'Date of Enlistment',
@@ -275,23 +275,23 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <?php else: $i=1; foreach ($staff as $s): ?>
                             <tr>
                                 <td>
-                                    <input type="checkbox" name="selected_ids[]" value="<?= htmlspecialchars($s->id) ?>" class="rowCheckbox">
+                                    <input type="checkbox" name="selected_ids[]" value="<?= htmlspecialchars($s->svcNo) ?>" class="rowCheckbox">
                                 </td>
-                                <td class="col-service_number"><?= htmlspecialchars($s->service_number ?? '') ?></td>
-                                <td class="col-surname"><?= htmlspecialchars(formatSentenceCase($s->last_name ?? '')) ?></td>
-                                <td class="col-first_name"><?= htmlspecialchars(formatSentenceCase($s->first_name ?? '')) ?></td>
+                                <td class="col-svcNo"><?= htmlspecialchars($s->svcNo ?? '') ?></td>
+                                <td class="col-surname"><?= htmlspecialchars(formatSentenceCase($s->lName ?? '')) ?></td>
+                                <td class="col-fName"><?= htmlspecialchars(formatSentenceCase($s->fName ?? '')) ?></td>
                                 <td class="col-unit"><?= htmlspecialchars($s->unitCode ?? $s->unitName ?? '') ?></td>
                                 <td class="col-DOB"><?= htmlspecialchars($s->DOB ?? '') ?></td>
                                 <td class="col-attestDate"><?= htmlspecialchars($s->attestDate ?? '') ?></td>
                                 <td class="col-svcStatus"><?= htmlspecialchars($s->svcStatus ?? '') ?></td>
                                 <td>
-                                    <?php if (!empty($s->id)): ?>
-                                        <a href="/Armis2/admin_branch/view_staff.php?id=<?= urlencode($s->id) ?>" class="btn btn-outline-primary btn-sm" target="_blank" aria-label="View staff">View</a>
+                                    <?php if (!empty($s->svcNo)): ?>
+                                        <a href="/Armis2/admin_branch/view_staff.php?svcNo=<?= urlencode($s->svcNo) ?>" class="btn btn-outline-primary btn-sm" target="_blank" aria-label="View staff">View</a>
                                     <?php else: ?>
                                         <span class="text-muted">N/A</span>
                                     <?php endif; ?>
-                                    <a href="/Armis2/admin_branch/edit_staff.php?svcNo=<?= urlencode($s->service_number) ?>" class="btn btn-outline-secondary btn-sm ms-1" aria-label="Edit staff">Edit</a>
-                                    <!--<a href="/Armis2/reset_password.php?svcNo=<?= urlencode($s->service_number) ?>" class="btn btn-outline-warning btn-sm ms-1" aria-label="Reset password">Reset Password</a>-->
+                                    <a href="/Armis2/admin_branch/edit_staff.php?svcNo=<?= urlencode($s->svcNo) ?>" class="btn btn-outline-secondary btn-sm ms-1" aria-label="Edit staff">Edit</a>
+                                    <!--<a href="/Armis2/reset_password.php?svcNo=<?= urlencode($s->svcNo) ?>" class="btn btn-outline-warning btn-sm ms-1" aria-label="Reset password">Reset Password</a>-->
                                 </td>
                             </tr>
                         <?php endforeach; endif; ?>
@@ -299,8 +299,10 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                 </table>
                 <div class="d-flex justify-content-start align-items-center gap-2 mb-2">
                     <button type="submit" name="action" value="export" class="btn btn-outline-success btn-sm"><i class="fa fa-file-csv"></i> Export Selected</button>
+                    <button type="button" id="exportCSVBtn" class="btn btn-outline-success btn-sm"><i class="fa fa-file-csv"></i> CSV</button>
                     <button type="button" id="exportExcelBtn" class="btn btn-outline-success btn-sm"><i class="fa fa-file-excel"></i> Excel</button>
                     <button type="button" id="exportPDFBtn" class="btn btn-outline-danger btn-sm"><i class="fa fa-file-pdf"></i> PDF</button>
+                    <button type="button" class="btn btn-outline-primary btn-sm print-btn"><i class="fa fa-print"></i> Print</button>
                     <button type="submit" name="action" value="delete" class="btn btn-outline-danger btn-sm" onclick="return confirm('Are you sure you want to delete selected records?');"><i class="fa fa-trash"></i> Delete Selected</button>
                 </div>
                 </form>
@@ -414,9 +416,12 @@ document.getElementById('exportPDFBtn').addEventListener('click', function(){
     doc.save("ce_seniority_report.pdf");
 });
 
-document.querySelector('.print-btn').addEventListener('click', function(){
-    window.print();
-});
+const printBtn = document.querySelector('.print-btn');
+if (printBtn) {
+    printBtn.addEventListener('click', function(){
+        window.print();
+    });
+}
 
 // Dynamic dropdown filtering via AJAX (simulate for demo, ideally do via endpoint)
 ['unitFilter'].forEach(function(id){

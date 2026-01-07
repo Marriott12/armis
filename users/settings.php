@@ -200,7 +200,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         </div>
                                         <div class="col-md-6">
                                             <small class="text-muted">Account Created:</small>
-                                            <p><?= $userData ? date('M j, Y', strtotime($userData->created_at ?? 'now')) : 'Unknown' ?></p>
+                                            <p><?= $userData ? date('M j, Y', strtotime($userData->createdAt ?? 'now')) : 'Unknown' ?></p>
                                         </div>
                                     </div>
                                 </div>
@@ -311,8 +311,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         <div class="col-md-8">
                                             <form id="photo-upload-form" enctype="multipart/form-data">
                                                 <div class="mb-3">
-                                                    <label for="profile_photo" class="form-label">Upload New Photo</label>
-                                                    <input type="file" class="form-control" id="profile_photo" name="profile_photo" accept="image/*">
+                                                    <label for="profilePhoto" class="form-label">Upload New Photo</label>
+                                                    <input type="file" class="form-control" id="profilePhoto" name="profilePhoto" accept="image/*">
                                                     <div class="form-text">
                                                         Supported formats: JPG, PNG, GIF. Maximum size: 2MB.
                                                         Recommended size: 400x400 pixels.
@@ -402,7 +402,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 <!-- JavaScript for Photo Upload -->
 <script>
 function uploadPhoto() {
-    const fileInput = document.getElementById('profile_photo');
+    const fileInput = document.getElementById('profilePhoto');
     const file = fileInput.files[0];
     
     if (!file) {
@@ -424,7 +424,7 @@ function uploadPhoto() {
     
     // Create FormData and upload
     const formData = new FormData();
-    formData.append('profile_photo', file);
+    formData.append('profilePhoto', file);
     formData.append('action', 'upload_photo');
     
     // Show loading state
@@ -453,7 +453,7 @@ function uploadPhoto() {
 function removePhoto() {
     if (confirm('Are you sure you want to remove your profile photo?')) {
         document.getElementById('current-photo').src = '/Armis2/shared/default-avatar.png';
-        document.getElementById('profile_photo').value = '';
+        document.getElementById('profilePhoto').value = '';
         alert('Profile photo removed successfully!');
     }
 }

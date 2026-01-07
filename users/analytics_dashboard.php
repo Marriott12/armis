@@ -37,14 +37,14 @@ $recentActivity = $profileManager->getRecentActivity(10);
 // Get rank and unit information
 $rankName = 'N/A';
 $unitName = 'N/A';
-$serviceNumber = $personalInfo->service_number ?? 'N/A';
+$serviceNumber = $personalInfo->svcNo ?? 'N/A';
 $attestDate = $personalInfo->attestDate ?? null;
 $serviceYears = 'N/A';
 
-if (isset($personalInfo->rank_id) && $personalInfo->rank_id) {
+if (isset($personalInfo->rankId) && $personalInfo->rankId) {
     try {
-        $stmt = $pdo->prepare("SELECT rank, abbreviation FROM ranks WHERE id = ?");
-        $stmt->execute([$personalInfo->rank_id]);
+        $stmt = $pdo->prepare("SELECT rankName, rankId as abbreviation FROM rank WHERE rankId = ?");
+        $stmt->execute([$personalInfo->rankId]);
         $rankData = $stmt->fetch(PDO::FETCH_OBJ);
         if ($rankData) {
             $rankName = $rankData->rank ?? $rankData->abbreviation ?? 'N/A';
@@ -54,10 +54,10 @@ if (isset($personalInfo->rank_id) && $personalInfo->rank_id) {
     }
 }
 
-if (isset($personalInfo->unit_id) && $personalInfo->unit_id) {
+if (isset($personalInfo->unitId) && $personalInfo->unitId) {
     try {
-        $stmt = $pdo->prepare("SELECT name, code FROM units WHERE id = ?");
-        $stmt->execute([$personalInfo->unit_id]);
+        $stmt = $pdo->prepare("SELECT code, code FROM unit WHERE unitId = ?");
+        $stmt->execute([$personalInfo->unitId]);
         $unitData = $stmt->fetch(PDO::FETCH_OBJ);
         if ($unitData) {
             $unitName = $unitData->name ?? $unitData->code ?? 'N/A';
@@ -85,8 +85,8 @@ function getUserStats($pdo, $userId) {
         // Profile completion percentage
         $stmt = $pdo->prepare("
             SELECT 
-                (CASE WHEN first_name IS NOT NULL AND first_name != '' THEN 10 ELSE 0 END +
-                 CASE WHEN last_name IS NOT NULL AND last_name != '' THEN 10 ELSE 0 END +
+                (CASE WHEN fName IS NOT NULL AND fName != '' THEN 10 ELSE 0 END +
+                 CASE WHEN lName IS NOT NULL AND lName != '' THEN 10 ELSE 0 END +
                  CASE WHEN dob IS NOT NULL THEN 10 ELSE 0 END +
                  CASE WHEN gender IS NOT NULL AND gender != '' THEN 10 ELSE 0 END +
                  CASE WHEN phone IS NOT NULL AND phone != '' THEN 10 ELSE 0 END +
@@ -95,9 +95,9 @@ function getUserStats($pdo, $userId) {
                  CASE WHEN bsize IS NOT NULL AND bsize != '' THEN 5 ELSE 0 END +
                  CASE WHEN ssize IS NOT NULL AND ssize != '' THEN 5 ELSE 0 END +
                  CASE WHEN hdress IS NOT NULL AND hdress != '' THEN 5 ELSE 0 END +
-                 CASE WHEN EXISTS(SELECT 1 FROM staff_addresses WHERE staff_id = ?) THEN 15 ELSE 0 END +
-                 CASE WHEN EXISTS(SELECT 1 FROM staff_contact_info WHERE staff_id = ?) THEN 10 ELSE 0 END +
-                 CASE WHEN EXISTS(SELECT 1 FROM staff_family_members WHERE staff_id = ?) THEN 5 ELSE 0 END
+                 CASE WHEN EXISTS(SELECT 1 FROM staff_addresses WHERE svcNo = ?) THEN 15 ELSE 0 END +
+                 CASE WHEN EXISTS(SELECT 1 FROM staff_contact_info WHERE svcNo = ?) THEN 10 ELSE 0 END +
+                 CASE WHEN EXISTS(SELECT 1 FROM staff_family_members WHERE svcNo = ?) THEN 5 ELSE 0 END
                 ) as completion_percentage
             FROM staff WHERE id = ?
         ");
@@ -107,7 +107,7 @@ function getUserStats($pdo, $userId) {
         
         // Recent activity count (if activity log exists)
         try {
-            $stmt = $pdo->prepare("SELECT COUNT(*) as activity_count FROM staff_activity_log WHERE staff_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)");
+            $stmt = $pdo->prepare("SELECT COUNT(*) as activity_count FROM staff_activity_log WHERE svcNo = ? AND createdAt >= DATE_SUB(NOW(), INTERVAL 30 DAY)");
             $stmt->execute([$userId]);
             $result = $stmt->fetch(PDO::FETCH_OBJ);
             $stats['recent_activities'] = $result ? $result->activity_count : 0;
@@ -117,7 +117,7 @@ function getUserStats($pdo, $userId) {
         
         // Training records count (if training table exists)
         try {
-            $stmt = $pdo->prepare("SELECT COUNT(*) as training_count FROM staff_training WHERE staff_id = ?");
+            $stmt = $pdo->prepare("SELECT COUNT(*) as training_count FROM staff_training WHERE svcNo = ?");
             $stmt->execute([$userId]);
             $result = $stmt->fetch(PDO::FETCH_OBJ);
             $stats['training_records'] = $result ? $result->training_count : 0;
@@ -127,7 +127,7 @@ function getUserStats($pdo, $userId) {
         
         // Equipment issued count (if equipment table exists)
         try {
-            $stmt = $pdo->prepare("SELECT COUNT(*) as equipment_count FROM staff_equipment WHERE staff_id = ? AND status = 'issued'");
+            $stmt = $pdo->prepare("SELECT COUNT(*) as equipment_count FROM staff_equipment WHERE svcNo = ? AND status = 'issued'");
             $stmt->execute([$userId]);
             $result = $stmt->fetch(PDO::FETCH_OBJ);
             $stats['equipment_issued'] = $result ? $result->equipment_count : 0;
@@ -550,7 +550,7 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                         <table class="table table-borderless">
                                             <tr>
                                                 <td><strong>Full Name:</strong></td>
-                                                <td><?php echo htmlspecialchars($personalInfo->first_name ?? '') . ' ' . htmlspecialchars($personalInfo->last_name ?? ''); ?></td>
+                                                <td><?php echo htmlspecialchars($personalInfo->fName ?? '') . ' ' . htmlspecialchars($personalInfo->lName ?? ''); ?></td>
                                             </tr>
                                             <tr>
                                                 <td><strong>Date of Birth:</strong></td>
@@ -689,8 +689,8 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                                             <td><?php echo htmlspecialchars($edu->field_of_study ?? 'N/A'); ?></td>
                                                             <td>
                                                                 <?php 
-                                                                if (isset($edu->start_date) && isset($edu->end_date)) {
-                                                                    echo date('Y', strtotime($edu->start_date)) . ' - ' . date('Y', strtotime($edu->end_date));
+                                                                if (isset($edu->startDate) && isset($edu->endDate)) {
+                                                                    echo date('Y', strtotime($edu->startDate)) . ' - ' . date('Y', strtotime($edu->endDate));
                                                                 } else {
                                                                     echo 'N/A';
                                                                 }
@@ -725,8 +725,8 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                                         <tr>
                                                             <td><?php echo htmlspecialchars($training->course_name ?? 'N/A'); ?></td>
                                                             <td><?php echo htmlspecialchars($training->institution ?? 'N/A'); ?></td>
-                                                            <td><?php echo isset($training->start_date) ? date('d M Y', strtotime($training->start_date)) : 'N/A'; ?></td>
-                                                            <td><?php echo isset($training->end_date) ? date('d M Y', strtotime($training->end_date)) : 'N/A'; ?></td>
+                                                            <td><?php echo isset($training->startDate) ? date('d M Y', strtotime($training->startDate)) : 'N/A'; ?></td>
+                                                            <td><?php echo isset($training->endDate) ? date('d M Y', strtotime($training->endDate)) : 'N/A'; ?></td>
                                                             <td>
                                                                 <?php if (isset($training->status)): ?>
                                                                     <span class="badge bg-<?php echo $training->status == 'completed' ? 'success' : ($training->status == 'in_progress' ? 'warning' : 'secondary'); ?>">
@@ -786,7 +786,7 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                             <?php foreach ($skills as $skill): ?>
                                                 <div class="col-md-3 mb-2">
                                                     <span class="badge bg-info p-2 w-100">
-                                                        <?php echo htmlspecialchars($skill->skill_name ?? 'Unknown'); ?>
+                                                        <?php echo htmlspecialchars($skill->skillName ?? 'Unknown'); ?>
                                                     </span>
                                                 </div>
                                             <?php endforeach; ?>
@@ -873,13 +873,13 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                                         <tr>
                                                             <td><?php echo htmlspecialchars($deployment->location ?? 'N/A'); ?></td>
                                                             <td><?php echo htmlspecialchars($deployment->mission_name ?? 'N/A'); ?></td>
-                                                            <td><?php echo isset($deployment->start_date) ? date('d M Y', strtotime($deployment->start_date)) : 'N/A'; ?></td>
-                                                            <td><?php echo isset($deployment->end_date) ? date('d M Y', strtotime($deployment->end_date)) : 'Ongoing'; ?></td>
+                                                            <td><?php echo isset($deployment->startDate) ? date('d M Y', strtotime($deployment->startDate)) : 'N/A'; ?></td>
+                                                            <td><?php echo isset($deployment->endDate) ? date('d M Y', strtotime($deployment->endDate)) : 'Ongoing'; ?></td>
                                                             <td>
                                                                 <?php 
-                                                                if (isset($deployment->start_date)) {
-                                                                    $endDate = isset($deployment->end_date) ? strtotime($deployment->end_date) : time();
-                                                                    $startDate = strtotime($deployment->start_date);
+                                                                if (isset($deployment->startDate)) {
+                                                                    $endDate = isset($deployment->endDate) ? strtotime($deployment->endDate) : time();
+                                                                    $startDate = strtotime($deployment->startDate);
                                                                     $days = floor(($endDate - $startDate) / (24 * 3600));
                                                                     echo $days . ' days';
                                                                 } else {
@@ -1063,10 +1063,10 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                                         </span>
                                                     </td>
                                                 </tr>
-                                                <?php if (isset($medicalInfo->last_medical_exam)): ?>
+                                                <?php if (isset($medicalInfo->lastMedicalExam)): ?>
                                                     <tr>
                                                         <td><strong>Last Medical Exam:</strong></td>
-                                                        <td><?php echo date('d M Y', strtotime($medicalInfo->last_medical_exam)); ?></td>
+                                                        <td><?php echo date('d M Y', strtotime($medicalInfo->lastMedicalExam)); ?></td>
                                                     </tr>
                                                 <?php endif; ?>
                                                 <?php if (isset($medicalInfo->next_exam_due)): ?>
@@ -1104,7 +1104,7 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                             <table class="table table-borderless">
                                                 <tr>
                                                     <td><strong>Name:</strong></td>
-                                                    <td><?php echo htmlspecialchars(($nokData->first_name ?? '') . ' ' . ($nokData->last_name ?? '')); ?></td>
+                                                    <td><?php echo htmlspecialchars(($nokData->fName ?? '') . ' ' . ($nokData->lName ?? '')); ?></td>
                                                 </tr>
                                                 <tr>
                                                     <td><strong>Relationship:</strong></td>
@@ -1228,7 +1228,7 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                             <table class="table table-borderless">
                                                 <tr>
                                                     <td><strong>Full Name:</strong></td>
-                                                    <td><?php echo htmlspecialchars($personalInfo->first_name ?? '') . ' ' . htmlspecialchars($personalInfo->last_name ?? ''); ?></td>
+                                                    <td><?php echo htmlspecialchars($personalInfo->fName ?? '') . ' ' . htmlspecialchars($personalInfo->lName ?? ''); ?></td>
                                                 </tr>
                                                 <tr>
                                                     <td><strong>Date of Birth:</strong></td>
@@ -1385,7 +1385,7 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                     <div class="card-body">
                                         <div class="row">
                                             <div class="col-sm-6">
-                                                <p><strong>Name:</strong> <?php echo htmlspecialchars($personalInfo->first_name ?? '') . ' ' . htmlspecialchars($personalInfo->last_name ?? ''); ?></p>
+                                                <p><strong>Name:</strong> <?php echo htmlspecialchars($personalInfo->fName ?? '') . ' ' . htmlspecialchars($personalInfo->lName ?? ''); ?></p>
                                                 <p><strong>DOB:</strong> <?php echo isset($personalInfo->dob) && $personalInfo->dob ? date('d M Y', strtotime($personalInfo->dob)) : 'Not specified'; ?></p>
                                             </div>
                                             <div class="col-sm-6">

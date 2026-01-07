@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $assignments = $manager->getAllAssignments();
 $courses = $manager->getAllCourses();
 $sessions = $manager->getAllSessions();
-$personnel = $manager->getDb()->query('SELECT id, first_name, last_name FROM staff')->fetchAll(PDO::FETCH_ASSOC);
+$personnel = $manager->getDb()->query('SELECT id, fName, lName FROM staff')->fetchAll(PDO::FETCH_ASSOC);
 
 require_once dirname(__DIR__) . '/shared/header.php';
 require_once dirname(__DIR__) . '/shared/sidebar.php';

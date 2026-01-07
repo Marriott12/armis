@@ -19,8 +19,8 @@ $isLoggedIn = isset($_SESSION['user_id']);
 $userName = $_SESSION['name'] ?? 'User';
 $userRank = $_SESSION['rank'] ?? '';
 $userRankAbbr = $_SESSION['rank_abbr'] ?? '';
-$userFirstName = $_SESSION['first_name'] ?? ($_SESSION['fname'] ?? '');
-$userLastName = $_SESSION['last_name'] ?? ($_SESSION['lname'] ?? '');
+$userFirstName = $_SESSION['fName'] ?? ($_SESSION['fname'] ?? '');
+$userLastName = $_SESSION['lName'] ?? ($_SESSION['lname'] ?? '');
 $userRole = $_SESSION['role'] ?? '';
 $userCategory = $_SESSION['category'] ?? '';
 
@@ -36,14 +36,14 @@ if ($isLoggedIn && isset($_SESSION['user_id']) && function_exists('getUserProfil
         $_SESSION['rank'] = $userProfileData['rank_name'] ?? $userRank;
         $_SESSION['rank_abbr'] = $userProfileData['rank_abbr'] ?? $userRankAbbr;
         $_SESSION['unit'] = $userProfileData['unit_name'] ?? ($_SESSION['unit'] ?? 'Unknown');
-        $_SESSION['service_number'] = $userProfileData['service_number'] ?? ($_SESSION['service_number'] ?? '');
+        $_SESSION['svcNo'] = $userProfileData['svcNo'] ?? ($_SESSION['svcNo'] ?? '');
         $_SESSION['email'] = $userProfileData['email'] ?? ($_SESSION['email'] ?? '');
 
         // Update display variables
         $userRank = $_SESSION['rank'];
         $userRankAbbr = $_SESSION['rank_abbr'];
-        $userFirstName = $userProfileData['first_name'] ?? $userFirstName;
-        $userLastName = $userProfileData['last_name'] ?? $userLastName;
+        $userFirstName = $userProfileData['fName'] ?? $userFirstName;
+        $userLastName = $userProfileData['lName'] ?? $userLastName;
     }
 }
 
@@ -342,8 +342,8 @@ header('X-Response-Time: ' . (microtime(true) - $startTime));
                                 <i class="fas fa-id-badge"></i> <?php echo htmlspecialchars($formattedUserName); ?><br>
                                 <small class="text-muted">
                                     <?php echo htmlspecialchars(ucfirst($userRole)); ?>
-                                    <?php if (!empty($_SESSION['service_number'])): ?>
-                                        | SVC: <?php echo htmlspecialchars($_SESSION['service_number']); ?>
+                                    <?php if (!empty($_SESSION['svcNo'])): ?>
+                                        | SVC: <?php echo htmlspecialchars($_SESSION['svcNo']); ?>
                                     <?php endif; ?>
                                 </small>
                                 <?php if ($userProfileData): ?>
@@ -355,9 +355,9 @@ header('X-Response-Time: ' . (microtime(true) - $startTime));
                                             | <?php echo htmlspecialchars($_SESSION['corps']); ?>
                                         <?php endif; ?>
                                     </small>
-                                    <?php if (!empty($userProfileData['last_login']) && $userProfileData['last_login'] !== '0000-00-00 00:00:00'): ?>
+                                    <?php if (!empty($userProfileData['lastLogin']) && $userProfileData['lastLogin'] !== '0000-00-00 00:00:00'): ?>
                                         <br><small class="text-muted">
-                                            🕒 Last Login: <?php echo date('M j, Y g:i A', strtotime($userProfileData['last_login'])); ?>
+                                            🕒 Last Login: <?php echo date('M j, Y g:i A', strtotime($userProfileData['lastLogin'])); ?>
                                         </small>
                                     <?php endif; ?>
                                 <?php endif; ?>

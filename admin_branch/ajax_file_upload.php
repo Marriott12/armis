@@ -62,7 +62,7 @@ function handleDocumentUpload() {
         throw new Exception('Missing required fields');
     }
     
-    $staffId = (int)($_POST['staff_id'] ?? 0);
+    $staffId = (int)($_POST['svcNo'] ?? 0);
     $documentType = sanitize($_POST['document_type']);
     $file = $_FILES['document_file'];
     
@@ -142,7 +142,7 @@ function handleTemporaryUpload($file, $documentType) {
  */
 function handleDocumentDelete() {
     $fileId = $_POST['file_id'] ?? '';
-    $staffId = (int)($_POST['staff_id'] ?? 0);
+    $staffId = (int)($_POST['svcNo'] ?? 0);
     
     if ($staffId === 0) {
         // Remove from session for new staff
@@ -178,7 +178,7 @@ function handleDocumentDelete() {
  * Handle getting documents list
  */
 function handleGetDocuments() {
-    $staffId = (int)($_GET['staff_id'] ?? 0);
+    $staffId = (int)($_GET['svcNo'] ?? 0);
     
     if ($staffId === 0) {
         // Return session documents for new staff

@@ -16,6 +16,7 @@ session_start();
 // Include required files
 require_once __DIR__ . '/includes/auth.php';
 require_once dirname(__DIR__) . '/shared/database_connection.php';
+require_once dirname(__DIR__) . '/shared/rank_levels.php';
 
 // Verify user is logged in
 requireAuth();
@@ -52,7 +53,7 @@ try {
     
     // Get parameters
     $query = $_GET['q'] ?? '';
-    $rankId = $_GET['rank_id'] ?? '';
+    $rankId = $_GET['rankId'] ?? '';
     $limit = (int)($_GET['limit'] ?? 50);
     
     // Validate limit (allow higher limits for bulk operations like medal assignment)
@@ -61,35 +62,35 @@ try {
     
     // Build base SQL query with rank level for proper seniority sorting
     $sql = "SELECT 
-                s.service_number,
+                s.svcNo,
                 CONCAT(
-                    COALESCE(r.name, 'No Rank'), ' ',
-                    COALESCE(s.first_name, ''), ' ',
-                    COALESCE(s.last_name, ''),
+                    COALESCE(r.rankId, 'No Rank'), ' ',
+                    COALESCE(s.fName, ''), ' ',
+                    COALESCE(s.lName, ''),
                     CASE 
-                        WHEN s.service_number IS NOT NULL
-                        THEN CONCAT(' (', s.service_number, ')')
+                        WHEN s.svcNo IS NOT NULL
+                        THEN CONCAT(' (', s.svcNo, ')')
                         ELSE ''
                     END
                 ) as text,
                 s.id,
-                s.first_name,
-                s.last_name,
-                s.rank_id,
-                r.name as rank_name,
+                s.fName,
+                s.lName,
+                s.rankId,
+                r.rankId as rank_name,
                 r.level as rank_level,
-                r.abbreviation as rank_abbr,
-                r.category as rank_category,
-                u.name as unit_name,
-                s.corps,
+                r.rankId as rank_abbr,
+                " . getRankCategoryCaseSQL('r') . " as rank_category,
+                u.code as unit_name,
+                s.corpsId as corps,
                 s.svcStatus,
                 s.attestDate,
                 s.subWef,
                 s.tempWef,
                 s.DOB
             FROM staff s
-            LEFT JOIN ranks r ON s.rank_id = r.id
-            LEFT JOIN units u ON s.unit_id = u.id
+            LEFT JOIN `rank` r ON s.rankId = r.rankId
+            LEFT JOIN `unit` u ON s.unitId = u.unitId
             WHERE s.svcStatus = 'Active'";
     
     $params = [];
@@ -97,25 +98,25 @@ try {
     // Add medal exclusion filter if specified
     if (!empty($_GET['exclude_medal_id'])) {
         $sql .= " AND s.id NOT IN (
-            SELECT staff_id FROM staff_medals WHERE medal_id = :medal_id
+            SELECT svcNo FROM staff_medals WHERE medal_id = :medal_id
         )";
         $params[':medal_id'] = $_GET['exclude_medal_id'];
     }
     
     // Add rank filter if specified
     if (!empty($rankId)) {
-        $sql .= " AND s.rank_id = :rank_id";
-        $params[':rank_id'] = $rankId;
+        $sql .= " AND s.rankId = :rankId";
+        $params[':rankId'] = $rankId;
     }
     
     // Add search filter if not "all"
     if (!empty($query) && $query !== 'all') {
         $sql .= " AND (
-            s.first_name LIKE :query OR
-            s.last_name LIKE :query OR
-            s.service_number LIKE :query OR
-            CONCAT(s.first_name, ' ', s.last_name) LIKE :query OR
-            r.name LIKE :query
+            s.fName LIKE :query OR
+            s.lName LIKE :query OR
+            s.svcNo LIKE :query OR
+            CONCAT(s.fName, ' ', s.lName) LIKE :query OR
+            r.rankId LIKE :query
         )";
         $params[':query'] = '%' . $query . '%';
     }
@@ -126,7 +127,7 @@ try {
         s.subWef ASC,
         s.tempWef ASC,
         s.attestDate ASC,
-        s.service_number ASC 
+        s.svcNo ASC 
         LIMIT :limit";
     
     // Prepare and execute query
@@ -145,13 +146,12 @@ try {
     $formatted = [];
     foreach ($results as $row) {
         $formatted[] = [
-            'id' => $row['service_number'],
-            'service_number' => $row['service_number'],
-            'staff_id' => $row['id'],
+            'id' => $row['svcNo'],
+            'svcNo' => $row['svcNo'],
             'text' => $row['text'],
-            'first_name' => $row['first_name'],
-            'last_name' => $row['last_name'],
-            'rank_id' => $row['rank_id'],
+            'fName' => $row['fName'],
+            'lName' => $row['lName'],
+            'rankId' => $row['rankId'],
             'rank_name' => $row['rank_name'],
             'rank_level' => $row['rank_level'],
             'rank_abbr' => $row['rank_abbr'],

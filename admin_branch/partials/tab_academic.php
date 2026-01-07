@@ -122,8 +122,8 @@ class AcademicFieldManager {
     }
     
     validateSkillFields(row) {
-        const skillName = row.querySelector('[name="skill_name[]"]');
-        const skillCategory = row.querySelector('[name="skill_category[]"]');
+        const skillName = row.querySelector('[name="skillName[]"]');
+        const skillCategory = row.querySelector('[name="skillCategory[]"]');
         const proficiencyLevel = row.querySelector('[name="skill_proficiency[]"]');
         
         const hasAnyValue = skillName.value.trim() || skillCategory.value || proficiencyLevel.value;
@@ -295,10 +295,10 @@ function addSkill() {
     div.className = 'row mb-2 align-items-end';
     div.innerHTML = `
         <div class="col-md-3 mb-2">
-            <input type="text" name="skill_name[]" class="form-control form-control-sm" placeholder="Skill/Competency" title="Name of skill or competency">
+            <input type="text" name="skillName[]" class="form-control form-control-sm" placeholder="Skill/Competency" title="Name of skill or competency">
         </div>
         <div class="col-md-2 mb-2">
-            <select name="skill_category[]" class="form-select form-select-sm" title="Category of skill">
+            <select name="skillCategory[]" class="form-select form-select-sm" title="Category of skill">
                 <option value="">Category</option>
                 <option value="Technical">Technical</option>
                 <option value="Leadership">Leadership</option>

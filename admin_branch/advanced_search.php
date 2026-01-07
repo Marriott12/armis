@@ -107,14 +107,14 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                             <div class="row mb-3">
                                 <div class="col-md-3">
                                     <label class="form-label" for="filterRank">Rank</label>
-                                    <select class="form-select" id="filterRank" name="rank_id">
+                                    <select class="form-select" id="filterRank" name="rankId">
                                         <option value="">All Ranks</option>
                                         <!-- Will be populated by JavaScript -->
                                     </select>
                                 </div>
                                 <div class="col-md-3">
                                     <label class="form-label" for="filterUnit">Unit</label>
-                                    <select class="form-select" id="filterUnit" name="unit_id">
+                                    <select class="form-select" id="filterUnit" name="unitId">
                                         <option value="">All Units</option>
                                         <!-- Will be populated by JavaScript -->
                                     </select>

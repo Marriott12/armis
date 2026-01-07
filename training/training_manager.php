@@ -62,7 +62,7 @@ class TrainingManager {
     }
     // Assignments CRUD
     public function getAllAssignments() {
-    $stmt = $this->db->query('SELECT a.*, CONCAT(s.rank_id, " ", s.first_name, " ", s.last_name) as personnel_name, c.name as course_name, ts.title as session_title FROM training_assignments a LEFT JOIN staff s ON a.personnel_id = s.id LEFT JOIN courses c ON a.course_id = c.id LEFT JOIN training_sessions ts ON a.session_id = ts.id');
+    $stmt = $this->db->query('SELECT a.*, CONCAT(s.rankId, " ", s.fName, " ", s.lName) as personnel_name, c.name as course_name, ts.title as session_title FROM training_assignments a LEFT JOIN staff s ON a.personnel_id = s.id LEFT JOIN courses c ON a.course_id = c.id LEFT JOIN training_sessions ts ON a.session_id = ts.id');
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
     public function getAssignment($id) {

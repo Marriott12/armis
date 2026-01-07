@@ -5,35 +5,35 @@ $params = [];
 $where = '';
 
 if ($search !== '') {
-    $where = "WHERE s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?";
+    $where = "WHERE s.svcNo LIKE ? OR s.fName LIKE ? OR s.lName LIKE ?";
     $params[] = "%$search%";
     $params[] = "%$search%";
     $params[] = "%$search%";
 }
 
 $staffList = $db->query(
-    "SELECT s.service_number, s.first_name, s.last_name, s.category,
-            IFNULL(r.abbreviation, 'Unknown') as rankAbb, IFNULL(r.rankName, 'Unknown') as rankName,
+    "SELECT s.svcNo, s.fName, s.lName, s.category,
+            IFNULL(r.rankId, 'Unknown') as rankAbb, IFNULL(r.rankId, 'Unknown') as rankName,
             IFNULL(u.name, 'Unknown') as unitName
      FROM staff s
-     LEFT JOIN ranks r ON s.rankID = r.rankID
-     LEFT JOIN units u ON s.unitID = u.unitID
+     LEFT JOIN rank r ON s.rankId = r.rankId
+     LEFT JOIN unit u ON s.unitId = u.unitId
      $where
-     ORDER BY s.last_name ASC
+     ORDER BY s.lName ASC
      LIMIT 100",
     $params
 )->results();
 
 // Fetch profile if requested
 $profile = null;
-if (Input::get('service_number')) {
-    $profileSvcNo = Input::get('service_number');
+if (Input::get('svcNo')) {
+    $profileSvcNo = Input::get('svcNo');
     $profile = $db->query(
-        "SELECT s.*, r.name, r.abbreviation, u.name
+        "SELECT s.*, r.rankId as rankName, r.rankId as abbreviation, u.code
          FROM staff s
-         LEFT JOIN ranks r ON s.id = r.id
-         LEFT JOIN units u ON s.id = u.id
-         WHERE s.service_number = ?", [$profileSvcNo]
+         LEFT JOIN rank r ON s.rankId = r.rankId
+         LEFT JOIN unit u ON s.unitId = u.unitId
+         WHERE s.svcNo = ?", [$profileSvcNo]
     )->first();
 }
 
@@ -46,8 +46,8 @@ function calculateAge($dob) {
     return $age;
 }
 
-function getInitials($first_name) {
-    $parts = preg_split('/\s+/', trim($first_name));
+function getInitials($fName) {
+    $parts = preg_split('/\s+/', trim($fName));
     $initials = '';
     foreach ($parts as $part) {
         if ($part !== '') {
@@ -61,9 +61,9 @@ function formatHeading($staff) {
     $category = strtolower($staff->category);
     $prefix = trim(($staff->rankAbb ? $staff->rankAbb : '') .' ');
     if ($category === 'officer' || $category === 'officer cadet') {
-        return htmlspecialchars($prefix. ' ' . getInitials($staff->first_name)  . ' ' . $staff->last_name);
+        return htmlspecialchars($prefix. ' ' . getInitials($staff->fName)  . ' ' . $staff->lName);
     } else {
-        return htmlspecialchars($prefix . ' ' . $staff->last_name . ' ' . getInitials($staff->fname));
+        return htmlspecialchars($prefix . ' ' . $staff->lName . ' ' . getInitials($staff->fname));
     }
 }
 include dirname(__DIR__) . '/shared/header.php';
@@ -94,11 +94,11 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <li class="list-group-item d-flex justify-content-between align-items-center">
                                     <div>
                                         <span class="fw-bold"><?=htmlspecialchars($staff->abbreviation)?></span>
-                                        <a href="?svcNo=<?=urlencode($staff->service_number)?>" class="ms-2 text-decoration-none">
+                                        <a href="?svcNo=<?=urlencode($staff->svcNo)?>" class="ms-2 text-decoration-none">
                                             <?php
                                             echo (strtolower($staff->category) === 'officer' || strtolower($staff->category) === 'officer cadet')
-                                                ? htmlspecialchars(getInitials($staff->first_name) . ' ' . $staff->last_name)
-                                                : htmlspecialchars($staff->last_name . ' ' . getInitials($staff->first_name));
+                                                ? htmlspecialchars(getInitials($staff->fName) . ' ' . $staff->lName)
+                                                : htmlspecialchars($staff->lName . ' ' . getInitials($staff->fName));
                                             ?>
                                         </a>
                                         <span class="badge bg-secondary ms-2"><?=htmlspecialchars($staff->svcNo)?></span>
@@ -119,12 +119,12 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                 <div class="card border-0 shadow-sm">
                     <div class="card-header bg-primary text-white">
                         <h4 class="mb-0"><?=formatHeading($profile)?></h4>
-                        <div class="small"><?=htmlspecialchars($profile->service_number)?> | <?=htmlspecialchars($profile->unitName ?? '')?></div>
+                        <div class="small"><?=htmlspecialchars($profile->svcNo)?> | <?=htmlspecialchars($profile->unitName ?? '')?></div>
                     </div>
                     <div class="card-body">
                         <dl class="row mb-0">
                             <dt class="col-sm-4">Full Name</dt>
-                            <dd class="col-sm-8"><?=htmlspecialchars($profile->first_name . ' ' . $profile->last_name)?></dd>
+                            <dd class="col-sm-8"><?=htmlspecialchars($profile->fName . ' ' . $profile->lName)?></dd>
                             <dt class="col-sm-4">Gender</dt>
                             <dd class="col-sm-8"><?=htmlspecialchars($profile->gender ?? '')?></dd>
                             <dt class="col-sm-4">Date of Birth / Age</dt>
@@ -180,12 +180,12 @@ document.addEventListener('DOMContentLoaded', function() {
                         li.innerHTML = `
                             <div>
                                 <span class="fw-bold">${staff.abbreviation}</span>
-                                <a href="?svcNo=${encodeURIComponent(staff.service_number)}" class="ms-2 text-decoration-none">
+                                <a href="?svcNo=${encodeURIComponent(staff.svcNo)}" class="ms-2 text-decoration-none">
                                     ${(staff.category.toLowerCase() === 'officer' || staff.category.toLowerCase() === 'officer cadet')
                                         ? (staff.fname.split(' ').map(n => n[0].toUpperCase()).join(' ') + ' ' + staff.lname)
-                                        : (staff.last_name + ' ' + staff.first_name.split(' ').map(n => n[0].toUpperCase()).join(' '))}
+                                        : (staff.lName + ' ' + staff.fName.split(' ').map(n => n[0].toUpperCase()).join(' '))}
                                 </a>
-                                <span class="badge bg-secondary ms-2">${staff.service_number}</span>
+                                <span class="badge bg-secondary ms-2">${staff.svcNo}</span>
                             </div>
                             <span class="text-muted small">${staff.unitName}</span>
                         `;

@@ -2,6 +2,7 @@
 define('ARMIS_ADMIN_BRANCH', true);
 require_once __DIR__ . '/includes/auth.php';
 require_once dirname(__DIR__) . '/shared/database_connection.php';
+require_once dirname(__DIR__) . '/shared/rank_levels.php';
 requireAuth();
 
 $pageTitle = "Personnel Report by Unit as at " . date('d-M-Y');
@@ -46,14 +47,20 @@ function formatSentenceCase($name) {
 }
 
 function getUnitOptions($pdo) {
-    $unitSql = "SELECT id, name FROM units ORDER BY name ASC";
-    $catSql  = "SELECT DISTINCT s.category FROM staff s WHERE s.category IS NOT NULL AND s.category <> ''";
-    $rankSql = "SELECT DISTINCT r.id, r.name FROM ranks r JOIN staff s ON s.rank_id = r.id";
-    return [
-        fetchAll($unitSql),
-        fetchAll($catSql . " ORDER BY s.category ASC"),
-        fetchAll($rankSql . " ORDER BY r.name ASC")
-    ];
+    $unitSql = "SELECT unitId as id, code as name FROM unit ORDER BY code ASC";
+    $catSql  = "SELECT DISTINCT " . getRankCategoryCaseSQL('r') . " as id, " . getRankCategoryCaseSQL('r') . " as name FROM `rank` r JOIN staff s ON s.rankId = r.rankId WHERE r.level IS NOT NULL ORDER BY r.level ASC";
+    $rankSql = "SELECT DISTINCT r.rankId as id, r.rankId as name FROM `rank` r JOIN staff s ON s.rankId = r.rankId ORDER BY r.rankId ASC";
+    
+    $stmt = $pdo->query($unitSql);
+    $units = $stmt->fetchAll(PDO::FETCH_OBJ);
+    
+    $stmt = $pdo->query($catSql);
+    $categories = $stmt->fetchAll(PDO::FETCH_OBJ);
+    
+    $stmt = $pdo->query($rankSql);
+    $ranks = $stmt->fetchAll(PDO::FETCH_OBJ);
+    
+    return [$units, $categories, $ranks];
 }
 $filter_unit = $_GET['unitID'] ?? '';
 $filter_category = $_GET['category'] ?? '';
@@ -64,12 +71,12 @@ list($units, $categories, $ranks) = getUnitOptions($pdo);
 
 // Sorting functionality
 $sortable_columns = [
-    'unit' => 'u.name',
+    'unit' => 'u.code',
     'rank' => 'r.level',
-    'service_number' => 's.service_number',
-    'surname' => 's.last_name',
-    'first_name' => 's.first_name',
-    'category' => 's.category',
+    'svcNo' => 's.svcNo',
+    'surname' => 's.lName',
+    'fName' => 's.fName',
+    'category' => 'r.level',
     'DOB' => 's.DOB',
     'attestDate' => 's.attestDate'
 ];
@@ -77,16 +84,19 @@ $sort_col = $_GET['sort_col'] ?? '';
 $sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
 
 $params = [];
-$sql = "SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, r.level as rankLevel, u.name as unitName, u.code as unitCode FROM staff s
-        LEFT JOIN ranks r ON s.rank_id = r.id
-        LEFT JOIN units u ON s.unit_id = u.id
+$sql = "SELECT s.*, COALESCE(r.rankId, s.rankId) as rankName, r.rankId as rankAbbr, r.level as rankLevel, " . getRankCategoryCaseSQL('r') . " as category, u.code as unitCode FROM staff s
+    LEFT JOIN `rank` r ON s.rankId = r.rankId
+        LEFT JOIN unit u ON s.unitId = u.unitId
         WHERE 1=1";
-if ($filter_unit !== '')      { $sql .= " AND s.unit_id = ?"; $params[] = $filter_unit; }
-if ($filter_category !== '')  { $sql .= " AND s.category = ?"; $params[] = $filter_category; }
-if ($filter_rank !== '')      { $sql .= " AND s.rank_id = ?"; $params[] = $filter_rank; }
+if ($filter_unit !== '')      { $sql .= " AND s.unitId = ?"; $params[] = $filter_unit; }
+if ($filter_category !== '')  { 
+    $categorySQL = getRankCategorySQL($filter_category, 'r');
+    $sql .= " AND (" . $categorySQL . ")"; 
+}
+if ($filter_rank !== '')      { $sql .= " AND s.rankId = ?"; $params[] = $filter_rank; }
 if ($search !== '') {
-    $sql .= " AND (u.name LIKE ? OR s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR s.category LIKE ?)";
-    for ($i = 0; $i < 6; $i++) $params[] = "%$search%";
+    $sql .= " AND (u.code LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR COALESCE(r.rankId, r.rankId) LIKE ?)";
+    for ($i = 0; $i < 5; $i++) $params[] = "%$search%";
 }
 
 // Handle sorting
@@ -94,13 +104,23 @@ $order_clause = '';
 if ($sort_col && isset($sortable_columns[$sort_col])) {
     $order_clause = " ORDER BY " . $sortable_columns[$sort_col] . " $sort_dir";
 } else {
-    $order_clause = " ORDER BY r.level ASC, u.name ASC, s.last_name ASC, s.first_name ASC";
+    // Default seniority sorting: rank level, then subWef, then tempWef, then attestDate, then service number
+    // Personnel without ranks (NULL rankId) are listed last
+    $order_clause = " ORDER BY 
+        CASE WHEN s.rankId IS NULL THEN 1 ELSE 0 END,
+        r.level ASC,
+        s.subWef ASC,
+        s.tempWef ASC,
+        s.attestDate ASC,
+        s.svcNo ASC";
 }
 $sql .= $order_clause;
 $per_page = intval($_GET['per_page'] ?? 25);
 $page = max(1, intval($_GET['page'] ?? 1)); $offset = ($page - 1) * $per_page;
 $sql .= " LIMIT $per_page OFFSET $offset";
-$staff = fetchAll($sql, $params);
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
+$staff = $stmt->fetchAll(PDO::FETCH_OBJ);
 
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';
@@ -173,7 +193,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             <div class="mb-2">
                 <strong>Show/Hide Columns:</strong>
                 <?php $columns = [
-                    'unit'=>'Unit','rank'=>'Rank','service_number'=>'Service No','surname'=>'Surname','first_name'=>'First Name(s)',
+                    'unit'=>'Unit','rank'=>'Rank','svcNo'=>'Service No','surname'=>'Surname','fName'=>'First Name(s)',
                     'category'=>'Category','DOB'=>'Date of Birth','attestDate'=>'Date of Enlistment'
                 ];
                 foreach ($columns as $key=>$label): ?>
@@ -206,9 +226,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <td><?= $i++ ?></td>
                                 <td class="col-unit"><?= htmlspecialchars($s->unitCode ?? $s->unitName ?? '') ?></td>
                                 <td class="col-rank"><?= htmlspecialchars($s->rankAbbr ?? $s->rankName ?? '') ?></td>
-                                <td class="col-service_number"><?= htmlspecialchars($s->service_number ?? '') ?></td>
-                                <td class="col-surname"><?= htmlspecialchars(formatSentenceCase($s->last_name ?? '')) ?></td>
-                                <td class="col-first_name"><?= htmlspecialchars(formatSentenceCase($s->first_name ?? '')) ?></td>
+                                <td class="col-svcNo"><?= htmlspecialchars($s->svcNo ?? '') ?></td>
+                                <td class="col-surname"><?= htmlspecialchars(formatSentenceCase($s->lName ?? '')) ?></td>
+                                <td class="col-fName"><?= htmlspecialchars(formatSentenceCase($s->fName ?? '')) ?></td>
                                 <td class="col-category"><?= htmlspecialchars($s->category ?? '') ?></td>
                                 <td class="col-DOB"><?= htmlspecialchars($s->DOB ?? '') ?></td>
                                 <td class="col-attestDate"><?= htmlspecialchars($s->attestDate ?? '') ?></td>

@@ -42,13 +42,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         if ($user) {
             // Check if user needs to change temporary password (first-time login)
-            if ($user['is_first_login'] == 1) {
+            if ($user['isFirstLogin'] == 1) {
                 // Store user info for password change
                 $_SESSION['temp_password_change_required'] = true;
                 $_SESSION['temp_password_user_id'] = $user['id'];
                 $_SESSION['temp_user_info'] = [
                     'username' => $user['username'],
-                    'name' => trim($user['first_name'] . ' ' . $user['last_name']),
+                    'name' => trim($user['fName'] . ' ' . $user['lName']),
                     'rank' => $user['rank_name'] ?? 'Unknown'
                 ];
                 
@@ -66,12 +66,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['username'] = $user['username'];
             $_SESSION['role'] = $user['role'];
             $_SESSION['rank'] = $user['rank_name'] ?? 'Unknown';
-            $_SESSION['name'] = trim($user['first_name'] . ' ' . $user['last_name']);
+            $_SESSION['name'] = trim($user['fName'] . ' ' . $user['lName']);
             $_SESSION['unit'] = $user['unit_name'] ?? 'Unknown';
             $_SESSION['corps'] = $user['corps_name'] ?? $user['corps'] ?? 'Unknown';
-            $_SESSION['service_number'] = $user['service_number'];
-            $_SESSION['first_name'] = $user['first_name'];
-            $_SESSION['last_name'] = $user['last_name'];
+            $_SESSION['svcNo'] = $user['svcNo'];
+            $_SESSION['fName'] = $user['fName'];
+            $_SESSION['lName'] = $user['lName'];
             $_SESSION['email'] = $user['email'];
             
             // Include RBAC functions for centralized role management
@@ -117,39 +117,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Force session write
             session_write_close();
             
+            // Debug log: successful authentication and redirect target
+            error_log(sprintf("User '%s' (id=%s) authenticated successfully; redirecting to %s", $user['username'], $user['id'], $dashboardUrl));
+
             // Redirect to appropriate dashboard
             header('Location: ' . $dashboardUrl);
             exit();
         } else {
-            // Fallback to hardcoded credentials for demo
-            if (($username === 'admin' || $username === 'Admin') && $password === 'armis2025') {
-                // Clear any existing session data
-                $_SESSION = array();
-                
-                // Set up admin session variables
-                $_SESSION['user_id'] = 1;
-                $_SESSION['userID'] = 1; // For compatibility
-                $_SESSION['username'] = 'admin';
-                $_SESSION['role'] = 'admin'; // This is critical - must be 'admin'
-                $_SESSION['rank'] = 'Colonel';
-                $_SESSION['name'] = 'System Administrator';
-                $_SESSION['unit'] = 'HQ Command';
-                $_SESSION['first_name'] = 'System';
-                $_SESSION['last_name'] = 'Administrator';
-                $_SESSION['email'] = 'admin@armis.mil';
-                $_SESSION['service_number'] = 'AD-00001';
-                $_SESSION['last_login_time'] = time();
-                
-                // Log successful admin login
-                error_log("ADMIN LOGIN: Successful login using fallback credentials");
-                
-                // Direct redirect to admin dashboard
-                header('Location: /Armis2/admin/index.php');
-                exit();
-            } else {
-                $error = 'Invalid username or password';
-            }
+            // No user found or password mismatch - log attempt and show error
+            error_log(sprintf("Failed login attempt for username='%s' from IP=%s", $username, $_SERVER['REMOTE_ADDR'] ?? 'unknown'));
+            $error = 'Invalid username or password';
         }
+        
     } else {
         $error = 'Please enter both username and password';
     }
@@ -248,43 +227,12 @@ $pageTitle = "Login";
                             <i class="fas fa-home"></i> Home
                         </a>
                     </div>
-                    
-                    <!-- Enhanced Demo Credentials -->
-                    <div class="demo-credentials">
-                        <h6><i class="fas fa-key"></i> Demo Access Credentials</h6>
-                        
-                        <div class="credential-group">
-                            <strong class="text-danger">System Administrator:</strong><br>
-                            <code>admin</code> / <code>armis2025</code>
-                            <small class="d-block text-muted">Full system access & control</small>
-                        </div>
-                        
-                        <div class="credential-group">
-                            <strong class="text-warning">Command Officers:</strong><br>
-                            <code>commander</code> / <code>commander123</code><br>
-                            <code>trainer</code> / <code>trainer123</code>
-                            <small class="d-block text-muted">Module-specific access</small>
-                        </div>
-                        
-                        <div class="credential-group">
-                            <strong class="text-info">Staff Members:</strong><br>
-                            <code>staff1</code> / <code>staff123</code><br>
-                            <code>staff2</code> / <code>staff456</code>
-                            <small class="d-block text-muted">Limited access permissions</small>
-                        </div>
-                        
-                        <div class="text-center mt-3">
-                            <small class="text-muted">
-                                <i class="fas fa-info-circle"></i> Role-based access control ensures secure system operation
-                            </small>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>
     </div>
     
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Core JS (Bootstrap) is loaded in shared/footer.php when included; no inline bootstrap bundle here. -->
     <script>
         // Password visibility toggle
         document.getElementById('togglePassword').addEventListener('click', function() {

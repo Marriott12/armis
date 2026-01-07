@@ -563,6 +563,6 @@ $completionPercentage = round(($implementedFeatures / $totalFeatures) * 100);
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Core JS (jQuery/Bootstrap) are loaded centrally in shared/footer.php. -->
 </body>
 </html>

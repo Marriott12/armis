@@ -29,12 +29,25 @@
         </div>
     </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    
+    <!-- Core JS libraries (jQuery + Bootstrap) - loaded once via footer -->
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+    <script>window.jQuery || document.write('\x3Cscript src="/Armis2/assets/js/jquery-3.6.0.min.js">\x3C/script>');</script>
+
     <?php if (!defined('ARMIS_SCRIPTS_LOADED')): ?>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <?php define('ARMIS_SCRIPTS_LOADED', true); ?>
     <!-- Chart.js for modern dashboards (UMD version to avoid ESM import errors) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.44.0/dist/apexcharts.min.js"></script>
+    <!-- DataTables core and extensions (loaded after jQuery & Bootstrap) -->
+    <script src="https://cdn.jsdelivr.net/npm/datatables.net@1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.6/js/dataTables.bootstrap5.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/datatables.net-responsive@2.5.0/js/dataTables.responsive.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/datatables.net-responsive-bs5@2.5.0/js/responsive.bootstrap5.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/datatables.net-select@1.7.0/js/dataTables.select.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/datatables.net-select-bs5@1.6.3/js/select.bootstrap5.min.js"></script>
+    <!-- Select2 for enhanced selects (load after jQuery) -->
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     
     <!-- ARMIS Dashboard Utilities -->
     <script src="/Armis2/shared/dashboard-utils.js"></script>
@@ -50,6 +63,14 @@
     </script>
     <script src="/Armis2/shared/session-management.js"></script>
     <?php endif; ?>
+    <script>
+        // If page defines initAppointmentsPage, call it after DOM is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof window.initAppointmentsPage === 'function') {
+                try { window.initAppointmentsPage(); } catch (e) { console.error('Error initializing appointments page:', e); }
+            }
+        });
+    </script>
     
     <script>
         // Scroll to Top functionality

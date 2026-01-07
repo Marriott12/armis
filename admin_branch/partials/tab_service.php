@@ -3,8 +3,8 @@
     <div class="row mb-3">
         <input type="hidden" name="svcStatus" value="Serving">
         <div class="col-md-4 mb-2">
-            <label class="form-label form-label-sm" for="service_number">Service Number *</label>
-            <input type="text" name="service_number" id="service_number" class="form-control form-control-sm" required maxlength="20" pattern="[0-9]+" aria-label="Service Number" value="<?=old('service_number') ?>" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'');">
+            <label class="form-label form-label-sm" for="svcNo">Service Number *</label>
+            <input type="text" name="svcNo" id="svcNo" class="form-control form-control-sm" required maxlength="20" pattern="[0-9]+" aria-label="Service Number" value="<?=old('svcNo') ?>" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'');">
             <small class="form-text text-warning">Please enter numbers only for the Service Number.</small>
         </div>
         <div class="col-md-4 mb-2">

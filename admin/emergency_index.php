@@ -342,7 +342,6 @@ if ($pdo) {
         </div>
     </div>
 
-    <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Core JS (jQuery/Bootstrap) are loaded centrally in shared/footer.php. -->
 </body>
 </html>

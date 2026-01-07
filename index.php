@@ -68,12 +68,12 @@ $sidebarLinks = [
 $userName = $_SESSION['username'] ?? $_SESSION['name'] ?? 'System User';
 $userRank = $_SESSION['rank'] ?? 'Staff';
 $userRankAbbr = $_SESSION['rank_abbr'] ?? getRankAbbreviation($userRank);
-$userFirstName = $_SESSION['first_name'] ?? $_SESSION['fname'] ?? '';
-$userLastName = $_SESSION['last_name'] ?? $_SESSION['lname'] ?? '';
+$userFirstName = $_SESSION['fName'] ?? $_SESSION['fname'] ?? '';
+$userLastName = $_SESSION['lName'] ?? $_SESSION['lname'] ?? '';
 $userCategory = $_SESSION['category'] ?? '';
 $userUnit = $_SESSION['unit'] ?? $_SESSION['unit_name'] ?? 'Central Command';
-$userSvcNo = $_SESSION['svcNo'] ?? $_SESSION['service_number'] ?? '';
-$userLastLogin = $_SESSION['last_login'] ?? date('Y-m-d H:i:s');
+$userSvcNo = $_SESSION['svcNo'] ?? $_SESSION['svcNo'] ?? '';
+$userLastLogin = $_SESSION['lastLogin'] ?? date('Y-m-d H:i:s');
 
 // Format the user's name according to military conventions
 $formattedUserName = formatMilitaryName($userRank, $userRankAbbr, $userFirstName, $userLastName, $userCategory);
@@ -81,16 +81,16 @@ $formattedUserName = formatMilitaryName($userRank, $userRankAbbr, $userFirstName
 // Set additional session variables for header use
 $_SESSION['formatted_name'] = $formattedUserName;
 if (!empty($userRankAbbr)) $_SESSION['rank_abbr'] = $userRankAbbr;
-if (!empty($userFirstName)) $_SESSION['first_name'] = $userFirstName;
-if (!empty($userLastName)) $_SESSION['last_name'] = $userLastName;
+if (!empty($userFirstName)) $_SESSION['fName'] = $userFirstName;
+if (!empty($userLastName)) $_SESSION['lName'] = $userLastName;
 if (!empty($userCategory)) $_SESSION['category'] = $userCategory;
 
 $userInfo = [
     'name' => $formattedUserName,
     'rank' => $userRank,
     'unit' => $userUnit,
-    'service_number' => $userSvcNo,
-    'last_login' => $userLastLogin
+    'svcNo' => $userSvcNo,
+    'lastLogin' => $userLastLogin
 ];
 
 include __DIR__ . '/shared/header.php';
@@ -111,8 +111,8 @@ include __DIR__ . '/shared/sidebar.php';
                             </h1>
                             <p class="text-muted">
                                 Welcome back, <?php echo htmlspecialchars($userInfo['name']); ?>
-                                <?php if (!empty($userInfo['service_number'])): ?>
-                                    <span class="badge bg-secondary ms-2"><?php echo htmlspecialchars($userInfo['service_number']); ?></span>
+                                <?php if (!empty($userInfo['svcNo'])): ?>
+                                    <span class="badge bg-secondary ms-2"><?php echo htmlspecialchars($userInfo['svcNo']); ?></span>
                                 <?php endif; ?>
                                 <br>
                                 <small>Unit: <?php echo htmlspecialchars($userInfo['unit']); ?> | System Administrator Access</small>
@@ -120,7 +120,7 @@ include __DIR__ . '/shared/sidebar.php';
                         </div>
                         <div class="text-end">
                             <div class="badge bg-success mb-2">System Online</div><br>
-                            <small class="text-muted">Last login: <?php echo date('d M Y, H:i', strtotime($userInfo['last_login'])); ?></small>
+                            <small class="text-muted">Last login: <?php echo date('d M Y, H:i', strtotime($userInfo['lastLogin'])); ?></small>
                         </div>
                     </div>
                 </div>

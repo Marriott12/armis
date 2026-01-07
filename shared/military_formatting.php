@@ -128,8 +128,8 @@ function formatOfficialName($rank, $firstName, $lastName, $serviceNumber = '') {
 function formatRosterName($staffData) {
     $rank = $staffData['rank'] ?? $staffData['rankName'] ?? '';
     $rankAbbr = $staffData['rank_abbr'] ?? getRankAbbreviation($rank);
-    $firstName = $staffData['fname'] ?? $staffData['first_name'] ?? $staffData['firstName'] ?? '';
-    $lastName = $staffData['lname'] ?? $staffData['last_name'] ?? $staffData['lastName'] ?? '';
+    $firstName = $staffData['fname'] ?? $staffData['fName'] ?? $staffData['firstName'] ?? '';
+    $lastName = $staffData['lname'] ?? $staffData['lName'] ?? $staffData['lastName'] ?? '';
     $category = $staffData['category'] ?? '';
     
     return formatMilitaryName($rank, $rankAbbr, $firstName, $lastName, $category);

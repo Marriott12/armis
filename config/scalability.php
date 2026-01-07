@@ -108,7 +108,7 @@ class ScalabilityConfig {
             "CREATE INDEX idx_staff_status ON staff(svcStatus)",
             "CREATE INDEX idx_staff_name ON staff(firstName, lastName)",
             "CREATE INDEX idx_users_email ON users(email)",
-            "CREATE INDEX idx_users_last_login ON users(last_login)",
+            "CREATE INDEX idx_users_last_login ON users(lastLogin)",
             "CREATE INDEX idx_training_user ON training_records(user_id)",
             "CREATE INDEX idx_training_date ON training_records(completion_date)",
             "CREATE INDEX idx_medals_user ON staff_medals(svcNo)",

@@ -15,7 +15,7 @@ $response = [
 ];
 
 // Validate inputs
-if (!isset($_GET['current_rank']) || !is_numeric($_GET['current_rank'])) {
+if (!isset($_GET['currentRank']) || !is_numeric($_GET['currentRank'])) {
     $response['message'] = 'Invalid current rank';
     header('Content-Type: application/json');
     echo json_encode($response);
@@ -30,7 +30,7 @@ if (!isset($_GET['promotion_type']) || !in_array($_GET['promotion_type'], ['prom
 }
 
 // Get parameters
-$currentRankId = (int)$_GET['current_rank'];
+$currentRankId = (int)$_GET['currentRank'];
 $promotionType = $_GET['promotion_type'];
 
 try {
@@ -54,16 +54,33 @@ try {
     $rankStmt = $pdo->query("SELECT id, name, level FROM ranks ORDER BY level ASC");
     $ranks = $rankStmt->fetchAll(PDO::FETCH_OBJ);
     
-    // Determine rank category (Officer or NCO)
+    // Determine rank category based on level
+    // Officers: 1-13, Officer Cadets: 14, NCOs: 15-26, Recruits: 27, Civilian: 28
     $category = '';
-    if ($currentRank->level >= 1 && $currentRank->level <= 14) {
+    if ($currentRank->level >= 1 && $currentRank->level <= 13) {
         $category = 'Officer';
+    } elseif ($currentRank->level == 14) {
+        $category = 'Officer Cadet';
     } elseif ($currentRank->level >= 15 && $currentRank->level <= 26) {
         $category = 'NCO';
+    } elseif ($currentRank->level == 27) {
+        $category = 'Recruit';
+    } elseif ($currentRank->level == 28) {
+        $category = 'Civilian Employee';
     }
     
-    // Define valid range based on category
-    $validRange = $category === 'Officer' ? range(1, 13) : ($category === 'NCO' ? range(15, 26) : []);
+    // Define valid range based on category (Officer Cadets can only promote to Officers)
+    if ($category === 'Officer') {
+        $validRange = range(1, 13);
+    } elseif ($category === 'Officer Cadet') {
+        $validRange = $promotionType === 'promotion' ? range(1, 13) : [14];
+    } elseif ($category === 'NCO') {
+        $validRange = range(15, 26);
+    } elseif ($category === 'Recruit') {
+        $validRange = $promotionType === 'promotion' ? range(15, 26) : [27];
+    } else {
+        $validRange = [28];
+    }
     $nextRankObj = null;
     
     // Find the appropriate next/previous rank

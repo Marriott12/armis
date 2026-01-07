@@ -52,9 +52,9 @@ if ($isCLI) {
         
         // Find staff member
         $stmt = $pdo->prepare("
-            SELECT id, service_number, first_name, last_name, username, email, rank_id
+            SELECT id, svcNo, fName, lName, username, email, rankId
             FROM staff 
-            WHERE service_number = ?
+            WHERE svcNo = ?
         ");
         $stmt->execute([$serviceNumber]);
         $staff = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -68,8 +68,8 @@ if ($isCLI) {
         echo "═══════════════════════════════════════════════════════════\n";
         echo "Staff Member Found:\n";
         echo "═══════════════════════════════════════════════════════════\n";
-        echo "Name:            {$staff['first_name']} {$staff['last_name']}\n";
-        echo "Service Number:  {$staff['service_number']}\n";
+        echo "Name:            {$staff['fName']} {$staff['lName']}\n";
+        echo "Service Number:  {$staff['svcNo']}\n";
         echo "Username:        " . ($staff['username'] ?: 'Not set') . "\n";
         echo "Email:           " . ($staff['email'] ?: 'Not set') . "\n";
         echo "═══════════════════════════════════════════════════════════\n\n";
@@ -95,7 +95,7 @@ if ($isCLI) {
             UPDATE staff 
             SET password = ?, 
                 username = ?, 
-                is_first_login = 1,
+                isFirstLogin = 1,
                 accStatus = 'Active'
             WHERE id = ?
         ");
@@ -136,8 +136,8 @@ if ($isCLI) {
     $credentials = null;
     
     // Handle form submission
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['service_number'])) {
-        $serviceNumber = trim($_POST['service_number']);
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['svcNo'])) {
+        $serviceNumber = trim($_POST['svcNo']);
         $customPassword = trim($_POST['custom_password'] ?? '');
         
         try {
@@ -145,9 +145,9 @@ if ($isCLI) {
             
             // Find staff member
             $stmt = $pdo->prepare("
-                SELECT id, service_number, first_name, last_name, username, email
+                SELECT id, svcNo, fName, lName, username, email
                 FROM staff 
-                WHERE service_number = ?
+                WHERE svcNo = ?
             ");
             $stmt->execute([$serviceNumber]);
             $staff = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -173,7 +173,7 @@ if ($isCLI) {
                     UPDATE staff 
                     SET password = ?, 
                         username = ?, 
-                        is_first_login = 1,
+                        isFirstLogin = 1,
                         accStatus = 'Active'
                     WHERE id = ?
                 ");
@@ -181,8 +181,8 @@ if ($isCLI) {
                 if ($updateStmt->execute([$hashedPassword, $username, $staff['id']])) {
                     $message = "Password reset successful!";
                     $credentials = [
-                        'name' => $staff['first_name'] . ' ' . $staff['last_name'],
-                        'service_number' => $staff['service_number'],
+                        'name' => $staff['fName'] . ' ' . $staff['lName'],
+                        'svcNo' => $staff['svcNo'],
                         'username' => $username,
                         'password' => $newPassword,
                         'email' => $staff['email']
@@ -249,7 +249,7 @@ if ($isCLI) {
                             
                             <div class="credential-item">
                                 <span class="credential-label">Service Number:</span>
-                                <span class="credential-value"><?= htmlspecialchars($credentials['service_number']) ?></span>
+                                <span class="credential-value"><?= htmlspecialchars($credentials['svcNo']) ?></span>
                             </div>
                             
                             <div class="credential-item">
@@ -296,10 +296,10 @@ if ($isCLI) {
                         
                         <form method="POST" action="">
                             <div class="mb-3">
-                                <label for="service_number" class="form-label">
+                                <label for="svcNo" class="form-label">
                                     <i class="fas fa-id-badge"></i> Staff Service Number <span class="text-danger">*</span>
                                 </label>
-                                <input type="text" class="form-control" id="service_number" name="service_number" 
+                                <input type="text" class="form-control" id="svcNo" name="svcNo" 
                                        placeholder="e.g., 108458" required>
                                 <small class="form-text text-muted">Enter the service number of the staff member</small>
                             </div>
@@ -333,8 +333,8 @@ if ($isCLI) {
             </div>
         </div>
         
-        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-        <script>
+    <!-- Core JS (jQuery/Bootstrap) are loaded centrally in shared/footer.php. -->
+    <script>
             function copyToClipboard(elementId) {
                 const element = document.getElementById(elementId);
                 const text = element.textContent;

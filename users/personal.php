@@ -408,7 +408,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     toggleSpouseSection();
     marital.addEventListener('change', toggleSpouseSection);
-});
 // --- Enhanced Dynamic Education Fields ---
 let educationIndex = 0;
 
@@ -769,7 +768,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 
                                 <!-- Photo Upload Form -->
                                 <form method="POST" enctype="multipart/form-data" id="photoForm" class="mt-2">
-                                    <input type="file" id="photoInput" name="profile_photo" accept="image/*" style="display: none;" onchange="previewAndUpload(this)">
+                                    <input type="file" id="photoInput" name="profilePhoto" accept="image/*" style="display: none;" onchange="previewAndUpload(this)">
                                     <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('photoInput').click()">
                                         <i class="fas fa-camera"></i> Change Photo
                                     </button>

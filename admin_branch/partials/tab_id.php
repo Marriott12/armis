@@ -464,7 +464,7 @@ document.addEventListener('DOMContentLoaded', function() {
         formData.append('document_file', documentFileInput.files[0]);
         formData.append('document_type', documentTypeSelect.value);
         formData.append('action', 'upload_document');
-        formData.append('staff_id', '0'); // Will be set when staff is created
+        formData.append('svcNo', '0'); // Will be set when staff is created
 
         // Show progress
         showUploadProgress();

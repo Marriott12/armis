@@ -114,7 +114,7 @@ function getSystemStats() {
         'active_modules' => 7,
         'tables' => 0,
         'storage' => '0 MB',
-        'last_login' => 'Unknown'
+        'lastLogin' => 'Unknown'
     ];
     
     try {
@@ -162,10 +162,10 @@ function getSystemStats() {
         $sessionCount = 0;
         if (in_array('users', $tables)) {
             try {
-                $stmt = $pdo->query("SELECT COUNT(*) as total FROM users WHERE last_login > DATE_SUB(NOW(), INTERVAL 1 HOUR)");
+                $stmt = $pdo->query("SELECT COUNT(*) as total FROM users WHERE lastLogin > DATE_SUB(NOW(), INTERVAL 1 HOUR)");
                 $sessionCount = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
             } catch (Exception $e) {
-                // If last_login doesn't exist, try other approaches
+                // If lastLogin doesn't exist, try other approaches
                 try {
                     $stmt = $pdo->query("SELECT COUNT(*) as total FROM users");
                     $sessionCount = max(1, intval($stmt->fetch(PDO::FETCH_ASSOC)['total'] * 0.2)); // Approximate 20% active
@@ -219,7 +219,7 @@ function getRecentActivity() {
         // Get recent user activities if users table exists
         if (in_array('users', $tables)) {
             try {
-                $stmt = $pdo->prepare("SELECT username, created_at, 'User Registration' as activity_type FROM users ORDER BY created_at DESC LIMIT 5");
+                $stmt = $pdo->prepare("SELECT username, createdAt, 'User Registration' as activity_type FROM users ORDER BY createdAt DESC LIMIT 5");
                 $stmt->execute();
                 $user_activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 $activities = array_merge($activities, $user_activities);
@@ -233,9 +233,9 @@ function getRecentActivity() {
             try {
                 // Try different name column combinations
                 $nameQueries = [
-                    "SELECT CONCAT(COALESCE(first_name, fname, ''), ' ', COALESCE(last_name, lname, '')) as username, created_at, 'Staff Added' as activity_type FROM staff ORDER BY created_at DESC LIMIT 5",
-                    "SELECT CONCAT(COALESCE(fname, ''), ' ', COALESCE(lname, '')) as username, created_at, 'Staff Added' as activity_type FROM staff ORDER BY created_at DESC LIMIT 5",
-                    "SELECT username, created_at, 'Staff Activity' as activity_type FROM staff ORDER BY created_at DESC LIMIT 5"
+                    "SELECT CONCAT(COALESCE(fName, fname, ''), ' ', COALESCE(lName, lname, '')) as username, createdAt, 'Staff Added' as activity_type FROM staff ORDER BY createdAt DESC LIMIT 5",
+                    "SELECT CONCAT(COALESCE(fname, ''), ' ', COALESCE(lname, '')) as username, createdAt, 'Staff Added' as activity_type FROM staff ORDER BY createdAt DESC LIMIT 5",
+                    "SELECT username, createdAt, 'Staff Activity' as activity_type FROM staff ORDER BY createdAt DESC LIMIT 5"
                 ];
                 
                 foreach ($nameQueries as $query) {
@@ -257,15 +257,15 @@ function getRecentActivity() {
         // If no activities found, return sample data
         if (empty($activities)) {
             return [
-                ['username' => 'admin', 'created_at' => date('Y-m-d H:i:s'), 'activity_type' => 'System Login'],
-                ['username' => 'system', 'created_at' => date('Y-m-d H:i:s', strtotime('-1 hour')), 'activity_type' => 'Database Backup'],
-                ['username' => 'admin', 'created_at' => date('Y-m-d H:i:s', strtotime('-2 hours')), 'activity_type' => 'Settings Update'],
+                ['username' => 'admin', 'createdAt' => date('Y-m-d H:i:s'), 'activity_type' => 'System Login'],
+                ['username' => 'system', 'createdAt' => date('Y-m-d H:i:s', strtotime('-1 hour')), 'activity_type' => 'Database Backup'],
+                ['username' => 'admin', 'createdAt' => date('Y-m-d H:i:s', strtotime('-2 hours')), 'activity_type' => 'Settings Update'],
             ];
         }
         
-        // Sort by created_at and limit to 10
+        // Sort by createdAt and limit to 10
         usort($activities, function($a, $b) {
-            return strtotime($b['created_at']) - strtotime($a['created_at']);
+            return strtotime($b['createdAt']) - strtotime($a['createdAt']);
         });
         
         return array_slice($activities, 0, 10);
@@ -273,8 +273,8 @@ function getRecentActivity() {
         error_log("Recent activity error: " . $e->getMessage());
         // Return sample data
         return [
-            ['username' => 'admin', 'created_at' => date('Y-m-d H:i:s'), 'activity_type' => 'System Login'],
-            ['username' => 'system', 'created_at' => date('Y-m-d H:i:s', strtotime('-1 hour')), 'activity_type' => 'Database Backup'],
+            ['username' => 'admin', 'createdAt' => date('Y-m-d H:i:s'), 'activity_type' => 'System Login'],
+            ['username' => 'system', 'createdAt' => date('Y-m-d H:i:s', strtotime('-1 hour')), 'activity_type' => 'Database Backup'],
         ];
     }
 }
@@ -540,7 +540,7 @@ try {
                                     <div>
                                         <h6 class="mb-1"><?= htmlspecialchars($activity['activity_type']) ?></h6>
                                         <p class="mb-1 text-muted small">User: <?= htmlspecialchars($activity['username']) ?></p>
-                                        <small class="text-muted"><?= timeAgo($activity['created_at']) ?></small>
+                                        <small class="text-muted"><?= timeAgo($activity['createdAt']) ?></small>
                                     </div>
                                     <?php
                                     $badgeClass = $activity['activity_type'] === 'User Registration' ? 'bg-info' : 'bg-success';

@@ -16,7 +16,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 // Get service number from POST
-$serviceNumber = trim($_POST['service_number'] ?? '');
+$serviceNumber = trim($_POST['svcNo'] ?? '');
 
 if (empty($serviceNumber)) {
     echo '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> Invalid service number provided.</div>';
@@ -32,11 +32,11 @@ try {
     
     // Get staff basic info
     $staffStmt = $pdo->prepare("
-        SELECT s.id, s.service_number, s.first_name, s.last_name, 
-               r.abbreviation as rank_abbr, r.name as rank_name
+        SELECT s.id, s.svcNo, s.fName, s.lName, 
+               r.rankId as rank_abbr, r.rankId as rank_name
         FROM staff s
-        LEFT JOIN ranks r ON s.rank_id = r.id
-        WHERE s.service_number = ?
+    LEFT JOIN ranks r ON s.rankId = r.rankId
+        WHERE s.svcNo = ?
         LIMIT 1
     ");
     $staffStmt->execute([$serviceNumber]);
@@ -54,20 +54,20 @@ try {
                at.type_name as appointment_type_name,
                at.is_temporary,
                CASE 
-                   WHEN sa.end_date IS NULL THEN 'Active (Permanent)'
-                   WHEN sa.end_date >= CURDATE() THEN 'Active'
+                   WHEN sa.endDate IS NULL THEN 'Active (Permanent)'
+                   WHEN sa.endDate >= CURDATE() THEN 'Active'
                    ELSE 'Ended'
                END as status,
                CASE 
-                   WHEN sa.end_date IS NULL OR sa.end_date >= CURDATE() THEN 1
+                   WHEN sa.endDate IS NULL OR sa.endDate >= CURDATE() THEN 1
                    ELSE 0
                END as is_current,
-               DATEDIFF(COALESCE(sa.end_date, CURDATE()), sa.appointment_date) as duration_days
+               DATEDIFF(COALESCE(sa.endDate, CURDATE()), sa.appointment_date) as duration_days
         FROM staff_appointment sa
-        LEFT JOIN units u ON sa.unit_id = u.id
+        LEFT JOIN unit u ON sa.unitId = u.unitId
         LEFT JOIN appointment_type at ON sa.appointment_type = at.id
-        WHERE sa.service_number = ?
-        ORDER BY sa.appointment_date DESC, sa.created_at DESC
+        WHERE sa.svcNo = ?
+        ORDER BY sa.appointment_date DESC, sa.createdAt DESC
     ");
     $apptStmt->execute([$serviceNumber]);
     $appointments = $apptStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -75,7 +75,7 @@ try {
     // Display staff info header
     echo '<div class="mb-3">';
     echo '<h6 class="mb-2"><strong>Service Number:</strong> ' . htmlspecialchars($serviceNumber) . '</h6>';
-    echo '<h6 class="mb-2"><strong>Name:</strong> ' . htmlspecialchars($staff['first_name'] . ' ' . $staff['last_name']) . '</h6>';
+    echo '<h6 class="mb-2"><strong>Name:</strong> ' . htmlspecialchars($staff['fName'] . ' ' . $staff['lName']) . '</h6>';
     echo '<h6 class="mb-0"><strong>Rank:</strong> ' . htmlspecialchars($staff['rank_abbr'] ?? $staff['rank_name'] ?? 'N/A') . '</h6>';
     echo '</div>';
     
@@ -150,7 +150,7 @@ try {
         
         // Format dates
         $apptDate = $appt['appointment_date'] ? date('d M Y', strtotime($appt['appointment_date'])) : 'N/A';
-        $endDate = $appt['end_date'] ? date('d M Y', strtotime($appt['end_date'])) : '<em class="text-muted">Ongoing</em>';
+        $endDate = $appt['endDate'] ? date('d M Y', strtotime($appt['endDate'])) : '<em class="text-muted">Ongoing</em>';
         
         // Get position/role from appointment_id field
         $position = htmlspecialchars($appt['appointment_id'] ?? 'N/A');

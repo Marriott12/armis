@@ -98,13 +98,51 @@ class ARMISFormManager {
         const rankSelect = document.getElementById('rankSelect');
         if (!rankSelect) return;
         
-        const options = rankSelect.querySelectorAll('option');
-        options.forEach(option => {
+        // Normalize category names for comparison
+        const normalizeCategory = (cat) => {
+            if (!cat) return '';
+            cat = cat.trim().toLowerCase();
+            if (cat === 'nco' || cat === 'non-commissioned officer') return 'nco';
+            if (cat === 'civilian employee' || cat === 'ce' || cat === 'civilian') return 'civilian';
+            if (cat === 'officer') return 'officer';
+            if (cat === 'officer cadet') return 'officer cadet';
+            if (cat === 'recruit') return 'recruit';
+            return cat;
+        };
+        
+        const normalizedSelectedCategory = normalizeCategory(category);
+        
+        // Show/hide optgroups based on category
+        const optgroups = rankSelect.querySelectorAll('optgroup');
+        optgroups.forEach(optgroup => {
+            const optgroupCategory = normalizeCategory(optgroup.dataset.category || optgroup.label);
+            
+            if (normalizedSelectedCategory === '' || optgroupCategory === normalizedSelectedCategory) {
+                optgroup.style.display = 'block';
+                // Enable all options in this optgroup
+                const options = optgroup.querySelectorAll('option');
+                options.forEach(opt => {
+                    opt.disabled = false;
+                    opt.style.display = 'block';
+                });
+            } else {
+                optgroup.style.display = 'none';
+                // Disable all options in this optgroup
+                const options = optgroup.querySelectorAll('option');
+                options.forEach(opt => {
+                    opt.disabled = true;
+                    opt.style.display = 'none';
+                });
+            }
+        });
+        
+        // Also handle standalone options (not in optgroups)
+        const standaloneOptions = rankSelect.querySelectorAll('option:not(optgroup option)');
+        standaloneOptions.forEach(option => {
             if (option.value === '') return; // Keep placeholder
             
-            const optionCategory = option.dataset.category;
-            if (category === '' || optionCategory === category || 
-                (category === 'Civilian Employee' && optionCategory === 'Civilian')) {
+            const optionCategory = normalizeCategory(option.dataset.category);
+            if (normalizedSelectedCategory === '' || optionCategory === normalizedSelectedCategory) {
                 option.style.display = 'block';
                 option.disabled = false;
             } else {

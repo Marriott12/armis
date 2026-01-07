@@ -15,7 +15,7 @@ if ($wantJson) {
 error_log("ajax_staff_profile.php called with: " . json_encode($_GET));
 
 // Validate service number
-$serviceNumber = $_GET['service_number'] ?? '';
+$serviceNumber = $_GET['svcNo'] ?? '';
 if (!$serviceNumber || !preg_match('/^[A-Z0-9\/-]+$/i', $serviceNumber)) {
     if ($wantJson) {
         echo json_encode([
@@ -39,17 +39,17 @@ try {
             s.*, 
             s.attestDate as attestation_date,
             s.subWef as sub_wef,
-            r.name as rank_name, 
-            r.abbreviation as rank_short_name,
+            r.rankId as rank_name, 
+            r.rankId as rank_short_name,
             u.name as unit_name,
             u.code as unit_code
         FROM staff s 
-        LEFT JOIN ranks r ON s.rank_id = r.id
-        LEFT JOIN units u ON s.unit_id = u.id
-        WHERE s.service_number = ? 
+        LEFT JOIN `rank` r ON s.rankId = r.rankId
+        LEFT JOIN unit u ON s.unitId = u.unitId
+        WHERE s.svcNo = ? 
         LIMIT 1
     ';
-    error_log("ajax_staff_profile.php: Executing query: $sql with service_number=$serviceNumber");
+    error_log("ajax_staff_profile.php: Executing query: $sql with svcNo=$serviceNumber");
     $stmt = $pdo->prepare($sql);
     $stmt->execute([$serviceNumber]);
     $staff = $stmt->fetch(PDO::FETCH_OBJ);
@@ -74,8 +74,8 @@ try {
     $apptSql = '
         SELECT appointment_date
         FROM staff_appointment
-        WHERE service_number = ?
-          AND (end_date IS NULL OR end_date >= CURDATE())
+        WHERE svcNo = ?
+          AND (endDate IS NULL OR endDate >= CURDATE())
         ORDER BY appointment_date DESC
         LIMIT 1
     ';
@@ -89,15 +89,15 @@ try {
     $stmt = $pdo->prepare('
         SELECT 
             sp.*, 
-            r1.name as old_rank_name, 
+            r1.rankId as old_rank_name, 
             r1.abbreviation as old_rank_short_name,
-            r2.name as new_rank_name,
+            r2.rankId as new_rank_name,
             r2.abbreviation as new_rank_short_name
         FROM staff_promotions sp
-        LEFT JOIN ranks r1 ON sp.current_rank = r1.id
-        LEFT JOIN ranks r2 ON sp.new_rank = r2.id
-        WHERE sp.staff_id = (SELECT id FROM staff WHERE service_number = ?)
-        ORDER BY sp.date_to DESC
+        LEFT JOIN `rank` r1 ON sp.currentRank = r1.rankId
+        LEFT JOIN `rank` r2 ON sp.newRank = r2.rankId
+        WHERE sp.svcNo = (SELECT id FROM staff WHERE svcNo = ?)
+        ORDER BY sp.dateTo DESC
         LIMIT 5
     ');
     $stmt->execute([$serviceNumber]);
@@ -140,8 +140,8 @@ try {
                 $formattedName = formatMilitaryName(
                     $staff->rank_name ?? '',
                     $staff->rank_short_name ?? '',
-                    $staff->first_name ?? '',
-                    $staff->last_name ?? '',
+                    $staff->fName ?? '',
+                    $staff->lName ?? '',
                     $staff->category ?? ''
                 );
                 // Get current appointment and unit (if available)
@@ -149,8 +149,8 @@ try {
                 $currentUnit = $staff->unit_name ?? '';
             ?>
             <h5 class="staff-name"><?=htmlspecialchars($formattedName)?></h5>
-            <p><strong>Service Number:</strong> <span class="service-number"><?=htmlspecialchars($staff->service_number)?></span></p>
-            <p><strong>Rank:</strong> <span class="rank"><?=htmlspecialchars($staff->rank_short_name ?? $staff->rank_name ?? $staff->rank_id)?></span></p>
+            <p><strong>Service Number:</strong> <span class="service-number"><?=htmlspecialchars($staff->svcNo)?></span></p>
+            <p><strong>Rank:</strong> <span class="rank"><?=htmlspecialchars($staff->rank_short_name ?? $staff->rank_name ?? $staff->rankId)?></span></p>
             <p><strong>Unit:</strong> <span class="unit"><?=htmlspecialchars($currentUnit)?></span></p>
             <p><strong>Current Appointment:</strong> <span class="appointment"><?=htmlspecialchars($currentAppointment)?></span></p>
             <p><strong>Appointment Date:</strong> <span class="appointment-date">
@@ -196,7 +196,7 @@ try {
                     <tbody>
                         <?php foreach ($promotionHistory as $p): ?>
                         <tr>
-                            <td><?=htmlspecialchars(date('d-M-Y', strtotime($p->date_to)))?></td>
+                            <td><?=htmlspecialchars(date('d-M-Y', strtotime($p->dateTo)))?></td>
                             <td><?=htmlspecialchars(ucfirst($p->type))?></td>
                             <td><?=htmlspecialchars($p->old_rank_name)?></td>
                             <td><?=htmlspecialchars($p->new_rank_name)?></td>

@@ -153,7 +153,7 @@ class AuditLogger {
         try {
             $stmt = $this->pdo->prepare("
                 INSERT INTO audit_trail (
-                    action_type, table_name, record_id, staff_id,
+                    action_type, table_name, record_id, svcNo,
                     user_id, user_name, ip_address, user_agent,
                     before_value, after_value, description
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -192,7 +192,7 @@ class AuditLogger {
         try {
             $stmt = $this->pdo->prepare("
                 INSERT INTO staff_promotion_history (
-                    promotion_id, staff_id, action, snapshot, user_id
+                    promotion_id, svcNo, action, snapshot, user_id
                 ) VALUES (?, ?, ?, ?, ?)
             ");
             
@@ -220,8 +220,8 @@ class AuditLogger {
         try {
             $stmt = $this->pdo->prepare("
                 SELECT * FROM audit_trail 
-                WHERE staff_id = ? 
-                ORDER BY created_at DESC 
+                WHERE svcNo = ? 
+                ORDER BY createdAt DESC 
                 LIMIT ?
             ");
             $stmt->execute([$staffId, $limit]);
@@ -242,7 +242,7 @@ class AuditLogger {
         try {
             $stmt = $this->pdo->prepare("
                 SELECT * FROM staff_promotion_history 
-                WHERE staff_id = ? 
+                WHERE svcNo = ? 
                 ORDER BY timestamp DESC
             ");
             $stmt->execute([$staffId]);
@@ -262,17 +262,17 @@ class AuditLogger {
     public function getRollbackablePromotions($hours = 24) {
         try {
             $stmt = $this->pdo->prepare("
-                SELECT sp.*, s.service_number, s.first_name, s.last_name,
+                SELECT sp.*, s.svcNo, s.fName, s.lName,
                        r_from.name as from_rank_name, r_to.name as to_rank_name,
-                       TIMESTAMPDIFF(MINUTE, sp.created_at, NOW()) as minutes_since_creation
+                       TIMESTAMPDIFF(MINUTE, sp.createdAt, NOW()) as minutes_since_creation
                 FROM staff_promotions sp
-                JOIN staff s ON sp.staff_id = s.id
+                JOIN staff s ON sp.svcNo = s.id
                 LEFT JOIN ranks r_from ON sp.rank_from = r_from.id
                 LEFT JOIN ranks r_to ON sp.rank_to = r_to.id
                 WHERE sp.can_rollback = 1 
-                AND sp.created_at >= DATE_SUB(NOW(), INTERVAL ? HOUR)
+                AND sp.createdAt >= DATE_SUB(NOW(), INTERVAL ? HOUR)
                 AND sp.rolled_back_at IS NULL
-                ORDER BY sp.created_at DESC
+                ORDER BY sp.createdAt DESC
             ");
             $stmt->execute([$hours]);
             return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -305,7 +305,7 @@ class AuditLogger {
     /**
      * Generate audit report
      * 
-     * @param array $filters Filter criteria (date_from, date_to, action_type, user_id)
+     * @param array $filters Filter criteria (dateFrom, dateTo, action_type, user_id)
      * @return array Audit trail entries matching filters
      */
     public function generateAuditReport($filters = []) {
@@ -313,14 +313,14 @@ class AuditLogger {
             $where = ['1=1'];
             $params = [];
             
-            if (!empty($filters['date_from'])) {
-                $where[] = 'created_at >= ?';
-                $params[] = $filters['date_from'];
+            if (!empty($filters['dateFrom'])) {
+                $where[] = 'createdAt >= ?';
+                $params[] = $filters['dateFrom'];
             }
             
-            if (!empty($filters['date_to'])) {
-                $where[] = 'created_at <= ?';
-                $params[] = $filters['date_to'];
+            if (!empty($filters['dateTo'])) {
+                $where[] = 'createdAt <= ?';
+                $params[] = $filters['dateTo'];
             }
             
             if (!empty($filters['action_type'])) {
@@ -333,17 +333,17 @@ class AuditLogger {
                 $params[] = $filters['user_id'];
             }
             
-            if (!empty($filters['staff_id'])) {
-                $where[] = 'staff_id = ?';
-                $params[] = $filters['staff_id'];
+            if (!empty($filters['svcNo'])) {
+                $where[] = 'svcNo = ?';
+                $params[] = $filters['svcNo'];
             }
             
             $sql = "
-                SELECT at.*, s.service_number, s.first_name, s.last_name
+                SELECT at.*, s.svcNo, s.fName, s.lName
                 FROM audit_trail at
-                LEFT JOIN staff s ON at.staff_id = s.id
+                LEFT JOIN staff s ON at.svcNo = s.id
                 WHERE " . implode(' AND ', $where) . "
-                ORDER BY at.created_at DESC
+                ORDER BY at.createdAt DESC
             ";
             
             $stmt = $this->pdo->prepare($sql);

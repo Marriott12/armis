@@ -67,8 +67,8 @@ try {
             'status' => htmlspecialchars($_POST['status']),
             'priority' => htmlspecialchars($_POST['priority']),
             'location_id' => (int)$_POST['location_id'],
-            'start_date' => htmlspecialchars($_POST['start_date']),
-            'end_date' => htmlspecialchars($_POST['end_date'])
+            'startDate' => htmlspecialchars($_POST['startDate']),
+            'endDate' => htmlspecialchars($_POST['endDate'])
         ];
         
         $result = $operationsManager->updateMission($missionId, $missionData);
@@ -195,14 +195,14 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="start_date">Start Date</label>
-                                    <input type="date" class="form-control" id="start_date" name="start_date" value="<?php echo $mission['start_date']; ?>" required>
+                                    <label for="startDate">Start Date</label>
+                                    <input type="date" class="form-control" id="startDate" name="startDate" value="<?php echo $mission['startDate']; ?>" required>
                                 </div>
                             </div>
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="end_date">End Date</label>
-                                    <input type="date" class="form-control" id="end_date" name="end_date" value="<?php echo $mission['end_date']; ?>" required>
+                                    <label for="endDate">End Date</label>
+                                    <input type="date" class="form-control" id="endDate" name="endDate" value="<?php echo $mission['endDate']; ?>" required>
                                 </div>
                             </div>
                         </div>

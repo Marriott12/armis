@@ -43,14 +43,14 @@ function handlePasswordResetRequest() {
                 // Create staff_password_resets table if not exists
                 $conn->query('CREATE TABLE IF NOT EXISTS staff_password_resets (
                     id INT AUTO_INCREMENT PRIMARY KEY,
-                    staff_id INT NOT NULL,
+                    svcNo INT NOT NULL,
                     reset_token VARCHAR(128) NOT NULL,
                     expires_at DATETIME NOT NULL,
                     used TINYINT(1) DEFAULT 0,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
                 )');
                 // Insert token
-                $stmt2 = $conn->prepare('INSERT INTO staff_password_resets (staff_id, reset_token, expires_at) VALUES (?, ?, ?)');
+                $stmt2 = $conn->prepare('INSERT INTO staff_password_resets (svcNo, reset_token, expires_at) VALUES (?, ?, ?)');
                 $stmt2->bind_param('iss', $user['id'], $resetToken, $expiry);
                 $stmt2->execute();
                 // Send reset email
@@ -106,9 +106,9 @@ function handlePasswordReset() {
             if ($result->num_rows > 0) {
                 $resetRow = $result->fetch_assoc();
                 if (strtotime($resetRow['expires_at']) > time()) {
-                    $staffId = $resetRow['staff_id'];
+                    $staffId = $resetRow['svcNo'];
                     // Check password history (prevent reuse of last 3 passwords)
-                    $historyStmt = $conn->prepare('SELECT password_hash FROM staff_password_history WHERE staff_id = ? ORDER BY created_at DESC LIMIT 3');
+                    $historyStmt = $conn->prepare('SELECT password_hash FROM staff_password_history WHERE svcNo = ? ORDER BY createdAt DESC LIMIT 3');
                     $historyStmt->bind_param('i', $staffId);
                     $historyStmt->execute();
                     $historyResult = $historyStmt->get_result();
@@ -129,7 +129,7 @@ function handlePasswordReset() {
                         $updateStmt->bind_param('ssi', $hashedPassword, $now, $staffId);
                         $updateStmt->execute();
                         // Add to password history
-                        $historyInsertStmt = $conn->prepare('INSERT INTO staff_password_history (staff_id, password_hash) VALUES (?, ?)');
+                        $historyInsertStmt = $conn->prepare('INSERT INTO staff_password_history (svcNo, password_hash) VALUES (?, ?)');
                         $historyInsertStmt->bind_param('is', $staffId, $hashedPassword);
                         $historyInsertStmt->execute();
                         // Mark token as used
@@ -209,7 +209,7 @@ function handleTempPasswordChange() {
                     $updateStmt->execute();
                     
                     // Add to password history
-                    $historyStmt = $conn->prepare("INSERT INTO staff_password_history (staff_id, password_hash) VALUES (?, ?)");
+                    $historyStmt = $conn->prepare("INSERT INTO staff_password_history (svcNo, password_hash) VALUES (?, ?)");
                     $historyStmt->bind_param('is', $userId, $hashedPassword);
                     $historyStmt->execute();
                     
@@ -323,6 +323,6 @@ $pageTitle = 'Reset Password - ARMIS';
         </div>
     </div>
     
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Core JS (jQuery/Bootstrap) are loaded centrally in shared/footer.php. -->
 </body>
 </html>

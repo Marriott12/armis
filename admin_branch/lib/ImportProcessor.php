@@ -1,35 +1,24 @@
 <?php
-/**
- * Import Processor Class
- * Handles CSV/Excel parsing and staff record insertion
- * 
- * @package Armis
- * @subpackage AdminBranch
- * @version 2.0
- */
-
-// Load Composer autoloader for PhpSpreadsheet (if installed)
-if (file_exists(__DIR__ . '/../../vendor/autoload.php')) {
-    require_once __DIR__ . '/../../vendor/autoload.php';
-}
-
 require_once __DIR__ . '/ImportValidator.php';
 require_once __DIR__ . '/UserAccountGenerator.php';
-
+/**
+ * ImportProcessor
+ * Handles staff data import with auto-correction, temporal rank mapping, upsert logic, and quick-fix CSV generation.
+ */
 class ImportProcessor {
     private $pdo;
     private $validator;
     private $accountGenerator;
     private $userId;
-    
-    // Field name mappings - allows multiple column header variations
+
+    // Field name mappings
     const FIELD_MAPPINGS = [
-        'fornames' => ['fornames', 'FORENAMES', 'first_name', 'firstname', 'fname', 'first name', 'First Name'],
-        'surnames' => ['surnames', 'SURNAME', 'last_name', 'lastname', 'lname', 'surname', 'last name', 'Last Name'],
+        'fornames' => ['fornames', 'FORENAMES', 'fName', 'firstname', 'fname', 'first name', 'First Name'],
+        'surnames' => ['surnames', 'SURNAME', 'lName', 'lastname', 'lname', 'surname', 'last name', 'Last Name'],
         'email' => ['email', 'EMAIL', 'Email', 'e-mail', 'email_address', 'Email Address'],
         'dob' => ['dob', 'DOB', 'date_of_birth', 'dateofbirth', 'birth_date', 'Date of Birth'],
-        'service number' => ['service number', 'SVC NO', 'service_number', 'svc_no', 'svcNo', 'service no'],
-        'rank_id' => ['rank_id', 'RANK', 'rank', 'RANK PREFIX'],
+        'service number' => ['service number', 'SVC NO', 'svcNo', 'svc_no', 'service no'],
+        'rankId' => ['rankId', 'RANK', 'rank', 'RANK PREFIX'],
         'subRank' => ['subRank', 'SUB RANK', 'sub_rank', 'sub rank'],
         'subWef' => ['subWef', 'SUB RANK WEF', 'sub_rank_wef', 'sub wef'],
         'tempRank' => ['tempRank', 'TEMP RANK', 'temp_rank', 'temp rank'],
@@ -37,12 +26,12 @@ class ImportProcessor {
         'initials' => ['initials', 'INITIALS', 'Initials'],
         'titles' => ['titles', 'TITLES', 'Titles'],
         'attestDate' => ['attestDate', 'ATTESTATION DATE', 'attestation_date', 'attest_date'],
-        'unit_id' => ['unit_id', 'UNIT', 'unit', 'Unit'],
+        'unitId' => ['unitId', 'UNIT', 'unit', 'Unit'],
         'unitAtt' => ['unitAtt', 'UNIT ATTACHED', 'unit_attached', 'unit attached'],
         'appt' => ['appt', 'APPT', 'appointment', 'Appointment'],
         'gender' => ['gender', 'GENDER', 'Gender'],
         'province' => ['province', 'PROVINCE', 'Province'],
-        'corps_id' => ['corps_id', 'CORPS', 'corps', 'Corps'],
+        'corpsId' => ['corpsId', 'CORPS', 'corps', 'Corps'],
         'bloodGp' => ['bloodGp', 'BLOOD GP', 'blood_group', 'blood group'],
         'NRC' => ['NRC', 'nrc', 'Nrc'],
         'intake' => ['intake', 'INTAKE', 'Intake'],
@@ -50,228 +39,303 @@ class ImportProcessor {
         'tel' => ['tel', 'PHONE', 'phone', 'telephone', 'Tel', 'Phone'],
         'prefix' => ['prefix', 'PREFIX', 'RANK PREFIX', 'Prefix']
     ];
-    
+
     public function __construct($pdo, $userId = 0) {
         $this->pdo = $pdo;
         $this->validator = new ImportValidator($pdo);
         $this->accountGenerator = new UserAccountGenerator($pdo);
         $this->userId = $userId;
     }
-    
-    /**
-     * Normalize field names - map various column header formats to standard names
-     * 
-     * @param array $data Raw CSV row data with original headers
-     * @return array Normalized data with standardized field names
-     */
+
     private function normalizeFieldNames($data) {
         $normalized = [];
-        
-        // First pass: copy all data as-is
         foreach ($data as $key => $value) {
             $normalized[$key] = $value;
         }
-        
-        // Second pass: add normalized field names for known variations
         foreach (self::FIELD_MAPPINGS as $standardName => $variations) {
             foreach ($variations as $variation) {
                 if (isset($data[$variation])) {
                     $normalized[$standardName] = $data[$variation];
-                    break; // Use first match
+                    break;
                 }
             }
         }
-        
         return $normalized;
     }
-    
-    /**
-     * Strip special characters for comparison
-     * 
-     * @param string $str String to clean
-     * @return string Cleaned string (alphanumeric only)
-     */
+
     private function stripSpecialChars($str) {
         return preg_replace('/[^a-zA-Z0-9]/', '', strtoupper(trim($str)));
     }
-    
-    /**
-     * Find or create unit by code
-     * Compares unit code without special characters
-     * 
-     * @param string $unitCode Unit code from CSV
-     * @return int|null Unit ID or null if creation failed
-     */
+
     private function findOrCreateUnit($unitCode) {
-        if (empty($unitCode)) {
-            return null;
-        }
-        
+        if (empty($unitCode)) return null;
         $cleanCode = $this->stripSpecialChars($unitCode);
-        
-        // Try to find existing unit by comparing codes without special characters
-        $stmt = $this->pdo->query("SELECT id, code FROM units WHERE is_active = 1");
+        $stmt = $this->pdo->query("SELECT unitId, code FROM unit");
         $units = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
         foreach ($units as $unit) {
-            if ($this->stripSpecialChars($unit['code']) === $cleanCode) {
-                return (int)$unit['id'];
-            }
+            if ($this->stripSpecialChars($unit['code']) === $cleanCode) return $unit['unitId'];
         }
-        
-        // Unit not found, create new one
-        $stmt = $this->pdo->prepare("INSERT INTO units (name, code, is_active) VALUES (?, ?, 1)");
-        $stmt->execute([trim($unitCode), trim($unitCode)]);
-        
-        return (int)$this->pdo->lastInsertId();
+        $newUnitId = $cleanCode ?: strtoupper(trim($unitCode));
+        $checkStmt = $this->pdo->prepare("SELECT unitId FROM unit WHERE unitId = ?");
+        $checkStmt->execute([$newUnitId]);
+        if ($checkStmt->fetch()) return $newUnitId;
+        try {
+            $stmt = $this->pdo->prepare("INSERT INTO unit (unitId, code) VALUES (?, ?)");
+            $stmt->execute([$newUnitId, trim($unitCode)]);
+        } catch (PDOException $e) {
+            if ($e->getCode() == 23000) return $newUnitId;
+            throw $e;
+        }
+        return $newUnitId;
     }
-    
-    /**
-     * Find or create corps by abbreviation
-     * 
-     * @param string $corpsAbbr Corps abbreviation from CSV
-     * @return int|null Corps ID or null if creation failed
-     */
+
     private function findOrCreateCorps($corpsAbbr) {
-        if (empty($corpsAbbr)) {
-            return null;
-        }
-        
+        if (empty($corpsAbbr)) return null;
         $cleanAbbr = $this->stripSpecialChars($corpsAbbr);
-        
-        // Try to find existing corps by comparing abbreviations without special characters
-        $stmt = $this->pdo->query("SELECT id, abbreviation FROM corps");
+        $stmt = $this->pdo->query("SELECT corpsId AS id, abbreviation FROM corps");
         $corpsList = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
         foreach ($corpsList as $corps) {
-            if ($this->stripSpecialChars($corps['abbreviation']) === $cleanAbbr) {
-                return (int)$corps['id'];
-            }
+            if ($this->stripSpecialChars($corps['abbreviation']) === $cleanAbbr) return $corps['id'];
         }
-        
-        // Corps not found, create new one
-        $stmt = $this->pdo->prepare("INSERT INTO corps (name, abbreviation) VALUES (?, ?)");
-        $stmt->execute([trim($corpsAbbr), trim($corpsAbbr)]);
-        
-        return (int)$this->pdo->lastInsertId();
+        $newId = $cleanAbbr ?: strtoupper(trim($corpsAbbr));
+        $checkStmt = $this->pdo->prepare("SELECT corpsId FROM corps WHERE corpsId = ?");
+        $checkStmt->execute([$newId]);
+        if ($checkStmt->fetch()) return $newId;
+        try {
+            $stmt = $this->pdo->prepare("INSERT INTO corps (corpsId, abbreviation) VALUES (?, ?)");
+            $stmt->execute([$newId, trim($corpsAbbr)]);
+        } catch (PDOException $e) {
+            if ($e->getCode() == 23000) return $newId;
+            throw $e;
+        }
+        return $newId;
     }
-    
-    /**
-     * Find rank by abbreviation (ignoring special characters except for T/)
-     * 
-     * @param string $rankAbbr Rank abbreviation from CSV
-     * @param bool $isTemporal Is this a temporal rank? If true, searches for T/ version
-     * @return int|null Rank ID or null if not found
-     */
+
     private function findRankByAbbreviation($rankAbbr, $isTemporal = false) {
-        if (empty($rankAbbr)) {
-            return null;
-        }
-        
-        // For temporal ranks: If CSV has "Maj", search for "T/Maj" in database
-        // If CSV has "T/Maj" or "T/ Maj", normalize and search
-        // For substantive ranks: Search as-is
+        if (empty($rankAbbr)) return null;
         $searchValue = trim($rankAbbr);
-        
         if ($isTemporal) {
-            // Remove any existing T/ or T / prefix (normalize)
             $searchValue = preg_replace('/^T\s*\/\s*/i', '', $searchValue);
-            // Now add T/ prefix to search for temporal rank in database
             $searchValue = 'T/' . trim($searchValue);
         }
-        
-        // Get all ranks from database
-        $stmt = $this->pdo->query("SELECT id, abbreviation FROM ranks");
+        $stmt = $this->pdo->query("SELECT rankId AS id, rankId AS abbreviation FROM `rank`");
         $ranks = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        // Try to find matching rank
         foreach ($ranks as $rank) {
-            // For comparison, normalize both strings:
-            // 1. Remove extra spaces around slash: "T/ Maj" -> "T/Maj"
-            // 2. Keep forward slash
-            // 3. Remove other special characters (dots, hyphens)
-            // 4. Make uppercase
-            
             $normalizedSearch = $this->normalizeRankAbbreviation($searchValue);
             $normalizedDb = $this->normalizeRankAbbreviation($rank['abbreviation']);
-            
-            if ($normalizedSearch === $normalizedDb) {
-                return (int)$rank['id'];
-            }
+            if ($normalizedSearch === $normalizedDb) return $rank['id'];
         }
-        
         return null;
     }
-    
-    /**
-     * Normalize rank abbreviation for comparison
-     * Removes special chars except /, handles spacing around /
-     * 
-     * @param string $abbr Rank abbreviation
-     * @return string Normalized abbreviation
-     */
+
     private function normalizeRankAbbreviation($abbr) {
-        if (empty($abbr)) {
-            return '';
-        }
-        
+        if (empty($abbr)) return '';
         $normalized = trim($abbr);
-        
-        // Normalize spaces around forward slash: "T/ Maj" -> "T/Maj", "T / Maj" -> "T/Maj"
         $normalized = preg_replace('/\s*\/\s*/', '/', $normalized);
-        
-        // Remove other special characters (dots, hyphens) but keep letters, numbers, and /
         $normalized = preg_replace('/[^a-zA-Z0-9\/]/', '', $normalized);
-        
-        // Convert to uppercase for case-insensitive comparison
-        $normalized = strtoupper($normalized);
-        
-        return $normalized;
+        return strtoupper($normalized);
     }
-    
-    /**
-     * Process CSV file
-     * 
-     * @param string $filePath Path to uploaded file
-     * @return array Result array with success/error messages
-     */
-    public function processCSV($filePath) {
+
+    private function autoCorrectRows($rows) {
+        $provinceAbbr = [
+            'CB' => 'Copperbelt', 'CE' => 'Central', 'EA' => 'Eastern', 'LP' => 'Luapula',
+            'LK' => 'Lusaka', 'MU' => 'Muchinga', 'NO' => 'Northern', 'NW' => 'North-Western',
+            'SO' => 'Southern', 'WE' => 'Western'
+        ];
+        $validProvinces = array_values($provinceAbbr);
+        $validBloodGps = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+        $validMarital = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
+        $correctedRows = [];
+        foreach ($rows as $row) {
+            $row = $this->normalizeFieldNames($row);
+            // Province
+            if (!empty($row['province'])) {
+                $prov = strtoupper(str_replace(['-', ' '], '', $row['province']));
+                // Direct abbreviation
+                if (isset($provinceAbbr[$prov])) {
+                    $row['province'] = $provinceAbbr[$prov];
+                } else {
+                    // Find closest match using Levenshtein distance
+                    $bestMatch = '';
+                    $bestScore = 99;
+                    foreach ($validProvinces as $valid) {
+                        $score = levenshtein($prov, strtoupper(str_replace(['-', ' '], '', $valid)));
+                        if ($score < $bestScore) {
+                            $bestScore = $score;
+                            $bestMatch = $valid;
+                        }
+                    }
+                    // Accept match if reasonably close (score <= 3)
+                    if ($bestScore <= 3) {
+                        $row['province'] = $bestMatch;
+                    } else {
+                        $row['province'] = '';
+                    }
+                }
+                } // Closing the province if-block
+            // Blood group
+            if (!empty($row['bloodGp'])) {
+                $bg = strtoupper(str_replace([' ', '-', '0'], ['','','O'], $row['bloodGp']));
+                if ($bg === 'O+' || $bg === 'O-') {
+                    $row['bloodGp'] = $bg;
+                } else if ($bg === 'O') {
+                    $row['bloodGp'] = 'O+';
+                } else {
+                    // Remove extra trailing chars (e.g. O+B -> O+)
+                    foreach ($validBloodGps as $valid) {
+                        if (strpos($bg, str_replace(['+', '-'], '', $valid)) === 0) {
+                            $row['bloodGp'] = $valid;
+                            break;
+                        }
+                    }
+                }
+                // If still invalid, set empty
+                if (!in_array($row['bloodGp'], $validBloodGps)) {
+                    $row['bloodGp'] = '';
+                }
+            }
+            // Marital status
+            if (empty($row['marital']) || !in_array(ucfirst(strtolower(trim($row['marital']))), $validMarital)) {
+                $row['marital'] = 'Single';
+            } else {
+                $row['marital'] = ucfirst(strtolower(trim($row['marital'])));
+            }
+            // Date of birth
+            if (!empty($row['dob'])) {
+                $dob = trim($row['dob']);
+                // Fix double hyphens and other common errors
+                $dob = preg_replace('/-+/', '-', $dob);
+                // Convert slashes to dashes
+                $dob = str_replace('/', '-', $dob);
+                // Try to parse to Y-m-d
+                $ts = strtotime($dob);
+                if ($ts && date('Y-m-d', $ts) !== '1970-01-01') {
+                    $row['dob'] = date('Y-m-d', $ts);
+                } else {
+                    $row['dob'] = '';
+                }
+            } else {
+                $row['dob'] = '';
+            }
+            // AttestDate
+            if (!empty($row['attestDate'])) {
+                $ad = trim($row['attestDate']);
+                $ad = str_replace('/', '-', $ad);
+                $ts = strtotime($ad);
+                if ($ts && date('Y-m-d', $ts) !== '1970-01-01') {
+                    $row['attestDate'] = date('Y-m-d', $ts);
+                } else {
+                    $row['attestDate'] = '';
+                }
+            }
+            // subWef
+            if (!empty($row['subWef'])) {
+                $sw = trim($row['subWef']);
+                $sw = str_replace('/', '-', $sw);
+                $ts = strtotime($sw);
+                if ($ts && date('Y-m-d', $ts) !== '1970-01-01') {
+                    $row['subWef'] = date('Y-m-d', $ts);
+                } else {
+                    $row['subWef'] = '';
+                }
+            }
+            // NRC
+            if (!empty($row['NRC'])) {
+                $nrc = strtoupper(trim($row['NRC']));
+                if (in_array($nrc, ['N/A', 'NA', 'UNKNOWN', 'NONE', '-', 'NULL', 'NIL', '000000/00/0'])) {
+                    $nrc = '';
+                } elseif (preg_match('/^(\d{6}\/\d{2})$/', $nrc)) {
+                    $nrc .= '/1';
+                }
+                if (!preg_match('/^\d{6}\/\d{2}\/\d{1}$/', $nrc)) $nrc = '';
+                $row['NRC'] = $nrc;
+            }
+            // SERVICE NUMBER normalization and prefix extraction
+            if (!empty($row['service number'])) {
+                $svcRaw = trim($row['service number']);
+                // Extract up to two leading letters (if present)
+                if (preg_match('/^([A-Za-z]{1,2})(?:[-\s]*)/u', $svcRaw, $m)) {
+                    $lead = strtoupper($m[1]);
+                    $svcRest = preg_replace('/^' . preg_quote($m[1], '/') . '(?:[-\s]*)/u', '', $svcRaw);
+                    // Allowed leading sequences (max two letters)
+                    $allowed = ['W','S','SW','Q','QW'];
+                    // If the row already has a prefix and it's one of allowed, prefer existing prefix
+                    $existingPrefix = isset($row['prefix']) ? strtoupper(trim($row['prefix'])) : '';
+                    if (in_array($lead, $allowed)) {
+                        if (empty($existingPrefix) || !in_array($existingPrefix, $allowed)) {
+                            // Only set prefix if empty or not an allowed value
+                            $row['prefix'] = $lead;
+                        }
+                        // Remove leading letters from svc portion
+                        $svcRaw = $svcRest;
+                    } else {
+                        // Leading letters present but not allowed -> remove them
+                        $svcRaw = $svcRest;
+                    }
+                }
+                // If no leading letters matched or after removal, remove any stray non-digits
+                $digits = preg_replace('/\D/', '', $svcRaw);
+                // If the svc has fewer than 6 digits, left-pad with zeros to 6 digits
+                if ($digits === '') {
+                    $row['service number'] = '';
+                } else {
+                    if (strlen($digits) < 6) {
+                        $digits = str_pad($digits, 6, '0', STR_PAD_LEFT);
+                    }
+                    $row['service number'] = $digits;
+                }
+            }
+            // First name - do not auto-fill unknowns; leave empty to allow validator to reject
+            if (empty($row['fornames'])) {
+                if (!empty($row['full_name'])) {
+                    $parts = explode(' ', $row['full_name']);
+                    $row['fornames'] = $parts[0];
+                } else {
+                    $row['fornames'] = '';
+                }
+            }
+            // Surname correction - leave empty if missing so validator enforces requirement
+            if (empty($row['surnames'])) {
+                $row['surnames'] = '';
+            }
+            // Temporal rank mapping
+            if (!empty($row['tempWef']) && !empty($row['rankId'])) {
+                $row['rankId'] = $this->findRankByAbbreviation($row['rankId'], true);
+            }
+            // Gender inference from prefix when gender is missing/invalid
+            if (empty($row['gender']) || !in_array(strtolower(trim($row['gender'])), ['male', 'female', 'm', 'f'])) {
+                $prefixVal = '';
+                if (isset($row['prefix'])) $prefixVal = strtoupper(trim($row['prefix']));
+                // Also consider normalized prefix variants (e.g., 'W', 'Sw', 'Qw')
+                $femalePrefixes = ['SW', 'QW', 'W'];
+                if (in_array($prefixVal, $femalePrefixes)) {
+                    $row['gender'] = 'Female';
+                } else {
+                    $row['gender'] = 'Male';
+                }
+            }
+            $correctedRows[] = $row;
+        }
+        return $correctedRows;
+    }
+
+    public function processCSV($filePath, $importMode = 'skip', $dryRun = false) {
         $dataRows = [];
         $handle = fopen($filePath, 'r');
-        
-        if ($handle === false) {
-            return ['success' => [], 'errors' => ['Failed to open uploaded file']];
-        }
-        
+        if ($handle === false) return ['success' => [], 'errors' => ['Failed to open uploaded file']];
         $header = fgetcsv($handle);
-        if (!$header) {
-            fclose($handle);
-            return ['success' => [], 'errors' => ['CSV file is empty or invalid']];
-        }
-        
-        // Skip comment/instruction rows that start with #
+        if (!$header) { fclose($handle); return ['success' => [], 'errors' => ['CSV file is empty or invalid']]; }
         while (($row = fgetcsv($handle)) !== false) {
-            if (!empty($row[0]) && substr(trim($row[0]), 0, 1) === '#') {
-                continue; // Skip instruction rows
-            }
-            if (count($row) === count($header)) {
-                $dataRows[] = array_combine($header, $row);
-            }
+            if (!empty($row[0]) && substr(trim($row[0]), 0, 1) === '#') continue;
+            if (count($row) === count($header)) $dataRows[] = array_combine($header, $row);
         }
         fclose($handle);
-        
-        return $this->processData($dataRows, 'CSV');
+        $correctedRows = $this->autoCorrectRows($dataRows);
+        // Pass original rows alongside corrected rows so failed-rows CSV can mirror original file format
+        return $this->processData($correctedRows, 'CSV', $dataRows, $importMode, $dryRun);
     }
-    
-    /**
-     * Process Excel file (requires PhpSpreadsheet)
-     * Falls back to error if library not available
-     * 
-     * @param string $filePath Path to uploaded file
-     * @return array Result array with success/error messages
-     */
-    public function processExcel($filePath) {
-        // Check if PhpSpreadsheet is available
+
+    public function processExcel($filePath, $importMode = 'skip', $dryRun = false) {
         if (!class_exists('PhpOffice\PhpSpreadsheet\IOFactory')) {
             return [
                 'success' => [],
@@ -282,52 +346,35 @@ class ImportProcessor {
                 ]
             ];
         }
-        
         try {
             $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($filePath);
             $worksheet = $spreadsheet->getActiveSheet();
             $dataRows = [];
             $header = [];
-            
-            // Get header row
             foreach ($worksheet->getRowIterator(1, 1) as $row) {
                 foreach ($row->getCellIterator() as $cell) {
                     $header[] = $cell->getValue();
                 }
             }
-            
-            // Get data rows
             foreach ($worksheet->getRowIterator(2) as $row) {
                 $rowData = [];
                 $cellIterator = $row->getCellIterator();
                 $cellIterator->setIterateOnlyExistingCells(false);
-                
                 foreach ($cellIterator as $cell) {
                     $value = $cell->getValue();
-                    
-                    // Handle date values
                     if ($cell->getDataType() === \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_NUMERIC) {
                         if (\PhpOffice\PhpSpreadsheet\Shared\Date::isDateTime($cell)) {
                             $value = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($value)->format('Y-m-d');
                         }
                     }
-                    
                     $rowData[] = $value;
                 }
-                
-                // Skip comment/instruction rows
-                if (!empty($rowData[0]) && substr(trim($rowData[0]), 0, 1) === '#') {
-                    continue;
-                }
-                
-                // Skip empty rows
-                if (count(array_filter($rowData)) > 0) {
-                    $dataRows[] = array_combine($header, $rowData);
-                }
+                if (!empty($rowData[0]) && substr(trim($rowData[0]), 0, 1) === '#') continue;
+                if (count(array_filter($rowData)) > 0) $dataRows[] = array_combine($header, $rowData);
             }
-            
-            return $this->processData($dataRows, 'Excel');
-            
+            $correctedRows = $this->autoCorrectRows($dataRows);
+            // Pass original rows alongside corrected rows so failed-rows CSV can mirror original file format
+            return $this->processData($correctedRows, 'Excel', $dataRows, $importMode, $dryRun);
         } catch (Exception $e) {
             return [
                 'success' => [],
@@ -335,367 +382,396 @@ class ImportProcessor {
             ];
         }
     }
-    
-    /**
-     * Process data rows (main import logic)
-     * 
-     * @param array $dataRows Array of row data
-     * @param string $fileType Type of file (CSV/Excel)
-     * @return array Result array with success/error messages
-     */
-    private function processData($dataRows, $fileType = 'CSV') {
+
+    private function processData($dataRows, $fileType = 'CSV', $originalRows = null, $importMode = 'skip', $dryRun = false) {
         $success = [];
         $errors = [];
         $userCredentials = [];
-        
-        if (empty($dataRows)) {
-            return [
-                'success' => [],
-                'errors' => ['No data rows found in file']
-            ];
+        $debugQueries = [];
+        $validRows = [];
+        $dbDuplicatesCount = 0;
+        $preview = ['would_insert' => 0, 'would_update' => 0, 'would_skip' => 0];
+        $previewSample = [];
+
+        // If dryRun requested, start a transaction that we'll roll back at the end
+        $weStartedTx = false;
+        if ($dryRun) {
+            if (!$this->pdo->inTransaction()) {
+                $this->pdo->beginTransaction();
+                $weStartedTx = true;
+            }
         }
-        
-        // Column mapping
-        $dbMap = [
-            'prefix' => 'prefix',
-            'service number' => 'service_number',
-            'subRank' => 'subRank',
-            'subWef' => 'subWef',
-            'tempRank' => 'tempRank',
-            'tempWef' => 'tempWef',
-            'initials' => 'initials',
-            'fornames' => 'first_name',
-            'surnames' => 'last_name',
-            'titles' => 'titles',
-            'attestDate' => 'attestDate',
-            'unit_id' => 'unit_id',
-            'unitAtt' => 'unitAtt',
-            'appt' => 'appt',
-            'dob' => 'DOB',
-            'gender' => 'gender',
-            'province' => 'province',
-            'corps_id' => 'corps_id',
-            'bloodGp' => 'bloodGp',
-            'NRC' => 'NRC',
-            'intake' => 'intake',
-            'marital' => 'marital',
-            'email' => 'email',
-            'tel' => 'tel',
-            'rank_id' => 'rank_id'
-        ];
-        
-        // Start transaction for all-or-nothing import
-        $this->pdo->beginTransaction();
-        
+
+        // Perform rankId update from tempRank as part of the run.
+        // For dryRun we run without managing transaction so the caller's transaction (started above) will roll it back.
+        $rankUpdateRes = ['affected' => 0, 'backup' => null];
         try {
-            $rowNum = 1;
-            $skippedRows = 0;
-            
-            foreach ($dataRows as $data) {
-                $rowNum++;
-                
-                if (!is_array($data)) {
-                    continue;
+            if ($dryRun) {
+                // run without internal transaction so it is rolled back with caller transaction
+                $rankUpdateRes = $this->updateRankIdsFromTempRank(false);
+            } else {
+                // run with its own transaction and commit (real run)
+                $rankUpdateRes = $this->updateRankIdsFromTempRank(true);
+            }
+            if (isset($rankUpdateRes['affected']) && $rankUpdateRes['affected'] > 0) {
+                $debugQueries[] = ['type' => 'rank_update', 'detail' => $rankUpdateRes];
+            }
+        } catch (Exception $e) {
+            $errors[] = 'Rank update failed: ' . $e->getMessage();
+        }
+
+        // Pre-validate all rows and check for duplicates within the file and against DB
+        $rowNum = 1;
+        $seenEmails = [];
+        $seenSvcNos = [];
+        $seenNRCs = [];
+        $failedRows = [];
+        $total = count($dataRows);
+        for ($i = 0; $i < $total; $i++) {
+            $rowNum = $i + 2; // header is row 1, data starts at row 2
+            $data = $dataRows[$i];
+            if (!is_array($data)) continue;
+            $origRow = null;
+            if (is_array($originalRows) && isset($originalRows[$i])) $origRow = $originalRows[$i];
+            $data = $this->normalizeFieldNames($data);
+            $data = $this->validator->sanitizeData($data);
+
+            $rowErrors = $this->validator->validateRow($data, $rowNum);
+
+            // file-level duplicates
+            if (!empty($data['email'])) {
+                $emailKey = strtolower(trim($data['email']));
+                if (in_array($emailKey, $seenEmails)) {
+                    $rowErrors[] = "Row $rowNum: Duplicate email '{$data['email']}' in import file";
+                } else {
+                    $seenEmails[] = $emailKey;
                 }
-                
-                // Normalize field names to handle different CSV column header variations
-                $data = $this->normalizeFieldNames($data);
-                
-                // Sanitize data
-                $data = $this->validator->sanitizeData($data);
-                
-                // Validate row
-                $rowErrors = $this->validator->validateRow($data, $rowNum);
-                
-                if (!empty($rowErrors)) {
-                    // Collect all errors for this row
-                    $errors = array_merge($errors, $rowErrors);
-                    continue;
+            }
+            if (!empty($data['service number'])) {
+                $svc = trim($data['service number']);
+                $svcDigits = preg_replace('/\D/', '', $svc);
+                $normalizedSvc = str_pad($svcDigits ?: $svc, 6, '0', STR_PAD_LEFT);
+                if (in_array($normalizedSvc, $seenSvcNos)) {
+                    $rowErrors[] = "Row $rowNum: Duplicate service number '$normalizedSvc' in import file";
+                } else {
+                    $seenSvcNos[] = $normalizedSvc;
+                    $data['service number'] = $normalizedSvc;
                 }
-                
-                // === SMART LOOKUPS AND AUTO-CREATION ===
-                
-                // 1. Handle UNIT - Find or create unit by code (ignore special characters)
-                if (isset($data['unit_id']) && !empty($data['unit_id']) && !is_numeric($data['unit_id'])) {
-                    $unitId = $this->findOrCreateUnit($data['unit_id']);
-                    if ($unitId) {
-                        $data['unit_id'] = $unitId;
+            }
+            if (!empty($data['NRC'])) {
+                $nrcNorm = trim($data['NRC']);
+                if (in_array($nrcNorm, $seenNRCs)) {
+                    $rowErrors[] = "Row $rowNum: Duplicate NRC '$nrcNorm' in import file";
+                } else {
+                    $seenNRCs[] = $nrcNorm;
+                }
+            }
+
+            // Determine mapped rank for preview purposes (try tempRank then subRank)
+            $mappedRank = null;
+            if (!empty($data['tempRank'])) {
+                $mappedRank = $this->findRankByAbbreviation($data['tempRank'], true);
+            }
+            if (empty($mappedRank) && !empty($data['subRank'])) {
+                $mappedRank = $this->findRankByAbbreviation($data['subRank'], false);
+            }
+            $data['__mapped_rank'] = $mappedRank;
+
+            if (!empty($rowErrors)) {
+                // Merge errors for UI
+                $errors = array_merge($errors, $rowErrors);
+                // If the errors are duplicates within the file, DO NOT include them in the downloadable CSV
+                $hasDuplicate = false;
+                foreach ($rowErrors as $re) {
+                    if (stripos($re, 'Duplicate email') !== false || stripos($re, 'Duplicate service number') !== false || stripos($re, 'Duplicate NRC') !== false) {
+                        $hasDuplicate = true;
+                        break;
                     }
                 }
-                
-                // 2. Handle CORPS - Find or create corps by abbreviation
-                if (isset($data['corps_id']) && !empty($data['corps_id']) && !is_numeric($data['corps_id'])) {
-                    $corpsId = $this->findOrCreateCorps($data['corps_id']);
-                    if ($corpsId) {
-                        $data['corps_id'] = $corpsId;
+                if (!$hasDuplicate) {
+                    // Map error messages to column labels for highlighting
+                    $errorCols = [];
+                    foreach ($rowErrors as $re) {
+                        $r = strtolower($re);
+                        if (strpos($r, 'first name') !== false || strpos($r, 'fornames') !== false) $errorCols[] = 'FORENAMES';
+                        if (strpos($r, 'surname') !== false || strpos($r, 'surnames') !== false) $errorCols[] = 'SURNAME';
+                        if (strpos($r, 'service number') !== false || strpos($r, 'svcno') !== false) $errorCols[] = 'SVC NO';
+                        if (strpos($r, 'email') !== false) $errorCols[] = 'EMAIL';
+                        if (strpos($r, 'nrc') !== false) $errorCols[] = 'NRC';
+                        if (strpos($r, 'date') !== false || strpos($r, 'dob') !== false) $errorCols[] = 'DOB';
+                        if (strpos($r, 'rank') !== false) $errorCols[] = 'RANK PREFIX';
+                        if (strpos($r, 'unit') !== false) $errorCols[] = 'UNIT';
+                        if (strpos($r, 'corps') !== false) $errorCols[] = 'CORPS';
+                        if (strpos($r, 'phone') !== false || strpos($r, 'tel') !== false || strpos($r, 'mobile') !== false) $errorCols[] = 'MOBILE';
+                        if (strpos($r, 'gender') !== false) $errorCols[] = 'GENDER';
+                        if (strpos($r, 'marital') !== false) $errorCols[] = 'MARITAL';
                     }
+                    $errorCols = array_values(array_unique($errorCols));
+                    $failedRows[] = ['__original' => $origRow ?: $data, '__normalized' => $data, '__errors' => implode(' | ', $rowErrors), '__error_cols' => $errorCols];
                 }
-                
-                // 3. Handle SUB RANK - If subRank is not empty, find rank by abbreviation
-                if (isset($data['subRank']) && !empty($data['subRank'])) {
-                    $rankId = $this->findRankByAbbreviation($data['subRank'], false);
-                    if ($rankId) {
-                        $data['rank_id'] = $rankId;
-                        // Keep subRank and subWef as-is (they will be inserted)
-                    }
-                }
-                
-                // 4. Handle TEMP RANK - If tempRank is not empty, remove T/ and find rank
-                if (isset($data['tempRank']) && !empty($data['tempRank'])) {
-                    $tempRankId = $this->findRankByAbbreviation($data['tempRank'], true);
-                    if ($tempRankId) {
-                        // For temporal ranks, we still set rank_id but also keep tempRank fields
-                        if (!isset($data['rank_id']) || empty($data['rank_id'])) {
-                            $data['rank_id'] = $tempRankId;
-                        }
-                        // Keep tempRank and tempWef as-is (they will be inserted)
-                    }
-                }
-                
-                // === DATA NORMALIZATION BEFORE INSERT ===
-                
-                // Normalize gender (case-insensitive) - convert to proper case
-                if (isset($data['gender']) && !empty($data['gender'])) {
-                    $data['gender'] = ucfirst(strtolower(trim($data['gender'])));
-                }
-                
-                // Normalize blood group (case-insensitive, handle placeholders)
-                if (isset($data['bloodGp']) && !empty($data['bloodGp'])) {
-                    $bloodGp = strtoupper(trim($data['bloodGp']));
-                    
-                    // Check for placeholder values
-                    $placeholders = ['N/A', 'NA', 'UNKNOWN', 'NONE', '-', 'NULL', 'NIL'];
-                    if (in_array($bloodGp, $placeholders)) {
-                        $data['bloodGp'] = null;
-                    } else {
-                        // Normalize blood group format variations
-                        $bloodGp = str_replace(['POSITIVE', 'NEGATIVE', 'POS', 'NEG', ' '], ['+', '-', '+', '-', ''], $bloodGp);
-                        
-                        // Handle blood groups without +/- sign (assume positive)
-                        if (in_array($bloodGp, ['A', 'B', 'AB', 'O'])) {
-                            $bloodGp = $bloodGp . '+';
-                        }
-                        
-                        $data['bloodGp'] = $bloodGp;
-                    }
-                }
-                
-                // Normalize province (remove hyphens, match case-insensitively, handle placeholders and abbreviations)
-                if (isset($data['province']) && !empty($data['province'])) {
-                    $province = trim($data['province']);
-                    
-                    // Check for placeholder values
-                    $placeholders = ['N/A', 'NA', 'UNKNOWN', 'NONE', '-', 'NULL', 'NIL'];
-                    if (in_array(strtoupper($province), $placeholders)) {
-                        $data['province'] = null;
-                    } else {
-                        // Province abbreviations mapping
-                        $abbreviations = [
-                            'CB' => 'Copperbelt',
-                            'CP' => 'Copperbelt',
-                            'NW' => 'North-Western',
-                            'NWP' => 'North-Western',
-                            'EP' => 'Eastern',
-                            'LP' => 'Luapula',
-                            'LK' => 'Lusaka',
-                            'LSK' => 'Lusaka',
-                            'MP' => 'Muchinga',
-                            'NP' => 'Northern',
-                            'SP' => 'Southern',
-                            'WP' => 'Western',
-                            'CT' => 'Central'
-                        ];
-                        
-                        // Check if it's an abbreviation
-                        $provinceUpper = strtoupper($province);
-                        if (isset($abbreviations[$provinceUpper])) {
-                            $data['province'] = $abbreviations[$provinceUpper];
+            } else {
+                // Ensure service number present - do not import rows without service number
+                if (empty($data['service number']) || trim($data['service number']) === '') {
+                    $err = "Row $rowNum: Missing service number - row will not be imported";
+                    $errors[] = $err;
+                    $failedRows[] = ['__original' => $origRow ?: $data, '__normalized' => $data, '__errors' => $err, '__error_cols' => ['SVC NO']];
+                } else {
+                    // If service number already exists in DB, treat as DB-duplicate: skip and count it
+                    $svcToCheck = $data['service number'];
+                    if ($this->validator->existsServiceNumber($svcToCheck)) {
+                        if ($importMode === 'skip') {
+                            $dbDuplicatesCount++;
+                            // skip
+                            $preview['would_skip']++;
+                            $data['__import_action'] = 'skip';
+                            // record sample if within first 20
+                            if (count($previewSample) < 20) {
+                                $previewSample[] = ['row' => $rowNum, 'svc' => $svcToCheck, 'action' => 'skip', 'mapped_rank' => $data['__mapped_rank'] ?? null];
+                            }
+                            continue;
                         } else {
-                            $validProvinces = ['Central', 'Copperbelt', 'Eastern', 'Luapula', 'Lusaka', 'Muchinga', 'Northern', 'North-Western', 'Southern', 'Western'];
-                            
-                            // Find matching province (case-insensitive, hyphen-insensitive, space-insensitive)
-                            $normalizedProvince = str_replace(['-', ' '], '', $province);
-                            foreach ($validProvinces as $validProvince) {
-                                $normalizedValid = str_replace(['-', ' '], '', $validProvince);
-                                if (strcasecmp($normalizedProvince, $normalizedValid) === 0) {
-                                    $data['province'] = $validProvince;
-                                    break;
-                                }
+                            // update or merge => include in validRows to be updated
+                            $data['__existing_svc'] = $svcToCheck;
+                            $data['__import_action'] = ($importMode === 'merge') ? 'merge' : 'update';
+                            $validRows[] = $data;
+                            $preview['would_update']++;
+                            if (count($previewSample) < 20) {
+                                $previewSample[] = ['row' => $rowNum, 'svc' => $svcToCheck, 'action' => ($importMode === 'merge' ? 'merge' : 'update'), 'mapped_rank' => $data['__mapped_rank'] ?? null];
                             }
                         }
+                    } else {
+                        $data['__import_action'] = 'insert';
+                        $validRows[] = $data;
+                        $preview['would_insert']++;
+                        if (count($previewSample) < 20) {
+                            $previewSample[] = ['row' => $rowNum, 'svc' => $data['service number'] ?? '', 'action' => 'insert', 'mapped_rank' => $data['__mapped_rank'] ?? null];
+                        }
                     }
                 }
-                
-                // Normalize NRC (handle placeholders)
-                if (isset($data['NRC']) && !empty($data['NRC'])) {
+            }
+        }
+        // Continue: we will insert validRows and return failedRows for download
+
+        $dbMap = [
+            'prefix' => 'prefix', 'service number' => 'svcNo', 'subRank' => 'subRank', 'subWef' => 'subWef',
+            'tempRank' => 'tempRank', 'tempWef' => 'tempWef', 'initials' => 'initials', 'fornames' => 'fName',
+            'surnames' => 'lName', 'titles' => 'titles', 'attestDate' => 'attestDate', 'unitId' => 'unitId',
+            'unitAtt' => 'unitAtt', 'appt' => 'apptId', 'dob' => 'DOB', 'gender' => 'gender', 'province' => 'province',
+            'corpsId' => 'corpsId', 'bloodGp' => 'bloodGp', 'NRC' => 'NRC', 'intake' => 'intake', 'marital' => 'marital',
+            'email' => 'email', 'tel' => 'tel', 'rankId' => 'rankId'
+        ];
+
+        try {
+            // We will perform inserts/updates per-row; validation errors do not roll back already-inserted rows.
+            $rowNum = 1;
+            foreach ($validRows as $data) {
+                $rowNum++;
+                // smart lookups
+                if (isset($data['unitId']) && !empty($data['unitId']) && !is_numeric($data['unitId'])) {
+                    $unitId = $this->findOrCreateUnit($data['unitId']);
+                    if ($unitId) $data['unitId'] = $unitId;
+                }
+                if (isset($data['corpsId']) && !empty($data['corpsId']) && !is_numeric($data['corpsId'])) {
+                    $corpsId = $this->findOrCreateCorps($data['corpsId']);
+                    if ($corpsId) $data['corpsId'] = $corpsId;
+                }
+
+                // Map subRank then tempRank override
+                if (isset($data['subRank']) && !empty($data['subRank'])) {
+                    $subRankId = $this->findRankByAbbreviation($data['subRank'], false);
+                    if ($subRankId) $data['rankId'] = $subRankId;
+                }
+                if (isset($data['tempRank']) && !empty($data['tempRank'])) {
+                    $tempRankId = $this->findRankByAbbreviation($data['tempRank'], true);
+                    if ($tempRankId) $data['rankId'] = $tempRankId;
+                }
+
+                // normalize placeholders
+                if (isset($data['NRC']) && $data['NRC'] !== '') {
                     $nrc = trim($data['NRC']);
                     $placeholders = ['N/A', 'NA', 'UNKNOWN', 'NONE', '-', 'NULL', 'NIL', '000000/00/0'];
-                    if (in_array(strtoupper($nrc), $placeholders)) {
-                        $data['NRC'] = null;
-                    }
+                    if (in_array(strtoupper($nrc), $placeholders)) $data['NRC'] = null;
                 }
-                
-                // Normalize service number (extract digits only, pad to 6 digits)
                 if (isset($data['service number']) && !empty($data['service number'])) {
                     $serviceNum = trim($data['service number']);
-                    // Extract only digits
                     $digitsOnly = preg_replace('/\D/', '', $serviceNum);
-                    // Pad to 6 digits with leading zeros
-                    if (!empty($digitsOnly)) {
-                        $data['service number'] = str_pad($digitsOnly, 6, '0', STR_PAD_LEFT);
-                    }
+                    if (!empty($digitsOnly)) $data['service number'] = str_pad($digitsOnly, 6, '0', STR_PAD_LEFT);
                 }
-                
-                // Prepare insert fields and values
-                $fields = [];
-                $placeholders = [];
-                $values = [];
-                
+
+                // Build a mapping of DB field => value to preserve ordering when filtering for merge
+                $fieldValues = [];
                 foreach ($dbMap as $csvField => $dbField) {
                     if (isset($data[$csvField]) && $data[$csvField] !== '' && $data[$csvField] !== null) {
-                        $fields[] = $dbField;
-                        $placeholders[] = '?';
-                        $values[] = $data[$csvField];
+                        $fieldValues[$dbField] = $data[$csvField];
                     }
                 }
-                
-                if (empty($fields)) {
-                    $errors[] = "Row $rowNum: No valid data to insert";
+                if (empty($fieldValues)) {
+                    $err = "Row $rowNum: No fields to insert for this row";
+                    $errors[] = $err;
+                    $failedRows[] = ['__original' => $data, '__normalized' => $data, '__errors' => $err];
                     continue;
                 }
-                
-                // Insert staff record
-                $sql = 'INSERT INTO staff (' . implode(',', $fields) . ') VALUES (' . implode(',', $placeholders) . ')';
-                $insert = $this->pdo->prepare($sql);
-                
-                try {
-                    $insertSuccess = $insert->execute($values);
-                } catch (PDOException $e) {
-                    // Check if it's a duplicate entry error (for NRC, email, service number)
-                    if ($e->getCode() == 23000 || strpos($e->getMessage(), 'Duplicate entry') !== false) {
-                        // Skip this row - it's a duplicate
-                        $skippedRows++;
-                        continue;
-                    } else {
-                        // Other database error - add to errors
-                        $errors[] = "Row $rowNum: Database error - " . $e->getMessage();
+
+                // upsert detection
+                $whereClauses = [];
+                $whereValues = [];
+                if (!empty($data['NRC'])) { $whereClauses[] = 'NRC = ?'; $whereValues[] = $data['NRC']; }
+                if (!empty($data['service number'])) { $whereClauses[] = 'svcNo = ?'; $whereValues[] = $data['service number']; }
+                if (!empty($data['email'])) { $whereClauses[] = 'email = ?'; $whereValues[] = $data['email']; }
+
+                $svcNo = null;
+                if (!empty($data['service number'])) $svcNo = $data['service number'];
+                if (!empty($whereClauses)) {
+                    $sqlCheck = 'SELECT svcNo FROM staff WHERE ' . implode(' OR ', $whereClauses) . ' LIMIT 1';
+                    $stmtCheck = $this->pdo->prepare($sqlCheck);
+                    $stmtCheck->execute($whereValues);
+                    $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+                    if ($existing && isset($existing['svcNo'])) $svcNo = $existing['svcNo'];
+                }
+
+                if ($svcNo) {
+                    try {
+                        $updateFields = [];
+                        // Determine which DB fields will be updated and preserve corresponding values
+                        if (isset($data['__import_action']) && $data['__import_action'] === 'merge') {
+                            $allowedMergeDbFields = ['email', 'tel', 'rankId', 'unitId', 'corpsId', 'apptId', 'bloodGp', 'marital', 'province', 'prefix'];
+                            $fieldsToUpdate = array_values(array_intersect(array_keys($fieldValues), $allowedMergeDbFields));
+                        } else {
+                            $fieldsToUpdate = array_values(array_keys($fieldValues));
+                        }
+                        // Never allow updating the primary key `svcNo` via an UPDATE operation
+                        if (($idx = array_search('svcNo', $fieldsToUpdate)) !== false) {
+                            unset($fieldsToUpdate[$idx]);
+                            $fieldsToUpdate = array_values($fieldsToUpdate);
+                        }
+                        if (empty($fieldsToUpdate)) {
+                            throw new Exception("No fields to update for svcNo $svcNo (after merge filtering)");
+                        }
+                        foreach ($fieldsToUpdate as $field) $updateFields[] = "$field = ?";
+                        $sqlUpdate = 'UPDATE staff SET ' . implode(', ', $updateFields) . ' WHERE svcNo = ?';
+                        $stmtUpdate = $this->pdo->prepare($sqlUpdate);
+                        $updateValues = [];
+                        foreach ($fieldsToUpdate as $f) $updateValues[] = $fieldValues[$f];
+                        $updateValues[] = $svcNo;
+                        $stmtUpdate->execute($updateValues);
+                        $success[] = "Row $rowNum: Updated existing staff record (svcNo: $svcNo)";
+                        $debugQueries[] = ['type' => 'update', 'sql' => $sqlUpdate, 'values' => $updateValues];
+                    } catch (Exception $e) {
+                        $err = "Row $rowNum: Failed to update existing staff (svcNo: $svcNo) - " . $e->getMessage();
+                        $errors[] = $err;
+                        $failedRows[] = ['__original' => $data, '__normalized' => $data, '__errors' => $err];
                         continue;
                     }
-                }
-                
-                if ($insertSuccess) {
-                    $staffId = $this->pdo->lastInsertId();
-                    
-                    // Create user account - Only if email is provided
-                    if (isset($data['email']) && trim($data['email']) !== '') {
-                        try {
+                } else {
+                    try {
+                        // Prepare insert using fieldValues map to preserve alignment
+                        $insertFields = array_keys($fieldValues);
+                        $insertPlaceholders = array_fill(0, count($insertFields), '?');
+                        $insertValues = [];
+                        foreach ($insertFields as $f) $insertValues[] = $fieldValues[$f];
+                        $sql = 'INSERT INTO staff (' . implode(',', $insertFields) . ') VALUES (' . implode(',', $insertPlaceholders) . ')';
+                        $insert = $this->pdo->prepare($sql);
+                        $insertSuccess = $insert->execute($insertValues);
+                        $debugQueries[] = ['type' => 'insert', 'sql' => $sql, 'values' => $insertValues];
+                        if (!$insertSuccess) throw new Exception("Database insert failed for row $rowNum");
+
+                        $svcNo = $data['service number'] ?? null;
+                        if (!empty($data['email'])) {
                             $accountResult = $this->accountGenerator->createAccount(
-                                $staffId,
-                                $data['fornames'],
-                                $data['surnames'],
+                                $svcNo,
+                                $data['fornames'] ?? '',
+                                $data['surnames'] ?? '',
                                 $data['email']
                             );
-                            
-                            if ($accountResult['success']) {
+                            if (!empty($accountResult['success'])) {
                                 $userCredentials[] = [
-                                    'name' => $data['fornames'] . ' ' . $data['surnames'],
+                                    'name' => trim(($data['fornames'] ?? '') . ' ' . ($data['surnames'] ?? '')),
                                     'email' => $data['email'],
                                     'username' => $accountResult['username'],
                                     'password' => $accountResult['password']
                                 ];
-                                
-                                $success[] = "Row $rowNum: {$data['fornames']} {$data['surnames']} ({$data['email']}) imported successfully";
-                            } else {
-                                // Staff inserted but account creation failed
-                                $success[] = "Row $rowNum: {$data['fornames']} {$data['surnames']} imported (Warning: User account creation failed)";
                             }
-                        } catch (Exception $e) {
-                            $success[] = "Row $rowNum: {$data['fornames']} {$data['surnames']} imported (Warning: " . $e->getMessage() . ")";
                         }
-                        
-                        // Add to duplicate check lists for subsequent rows
-                        $this->validator->addToEmailCheck($data['email']);
-                    } else {
-                        // Staff imported without email - no user account created
-                        $success[] = "Row $rowNum: {$data['fornames']} {$data['surnames']} imported (No user account - email not provided)";
+
+                        $success[] = "Row $rowNum: " . trim(($data['fornames'] ?? '') . ' ' . ($data['surnames'] ?? '')) . " imported successfully";
+                        $this->validator->addToEmailCheck($data['email'] ?? '');
+                        if (isset($data['service number'])) $this->validator->addToServiceNumberCheck($data['service number']);
+                        if (isset($data['NRC'])) $this->validator->addToNRCCheck($data['NRC']);
+                    } catch (Exception $e) {
+                        $err = "Row $rowNum: Failed to insert staff - " . $e->getMessage();
+                        $errors[] = $err;
+                        $failedRows[] = ['__original' => $data, '__normalized' => $data, '__errors' => $err];
+                        continue;
                     }
-                    
-                    // Add to duplicate check lists for subsequent rows
-                    if (isset($data['service number'])) {
-                        $this->validator->addToServiceNumberCheck($data['service number']);
-                    }
-                    if (isset($data['NRC'])) {
-                        $this->validator->addToNRCCheck($data['NRC']);
-                    }
-                    
-                } else {
-                    $errors[] = "Row $rowNum: Database insert failed";
                 }
             }
-            
-            // Commit transaction - allow partial import even with errors
-            $this->pdo->commit();
-            
-            // Log import
-            $this->logImport($fileType, count($dataRows), count($success), count($errors));
-            
+
+            // If dryRun, roll back any DB changes we just made
+            if ($dryRun && $weStartedTx) {
+                try { $this->pdo->rollBack(); } catch (Exception $ex) {}
+                $transactionRolledBack = true;
+            } else {
+                $transactionRolledBack = false;
+            }
+
+            // After processing all valid rows, build CSV of failed rows and store for download
+            if (!empty($failedRows)) {
+                $_SESSION['quick_fix_csv'] = $this->exportFailedRows($failedRows, $errors);
+            } else {
+                unset($_SESSION['quick_fix_csv']);
+            }
+
+            $summaryMessage = count($success) . ' staff members imported. ' . count($failedRows) . ' rows failed and are available for download.';
+            if (!empty($dbDuplicatesCount)) {
+                $summaryMessage .= ' ' . $dbDuplicatesCount . ' rows matched existing records and were skipped.';
+                $errors[] = $dbDuplicatesCount . ' rows matched existing records and were skipped (duplicates in database).';
+            }
+            $summary = [
+                'title' => 'Import Completed',
+                'message' => $summaryMessage
+            ];
+            $this->logImport($fileType, count($dataRows), count($success), count($failedRows), $debugQueries);
             return [
                 'success' => $success,
                 'errors' => $errors,
-                'credentials' => $userCredentials
+                'credentials' => $userCredentials,
+                'summary' => $summary,
+                'transaction_rolled_back' => !empty($transactionRolledBack),
+                'failed_rows_count' => count($failedRows),
+                'preview' => $preview,
+                'rank_update' => $rankUpdateRes,
+                'preview_sample' => $previewSample
             ];
-            
+
         } catch (Exception $e) {
-            // Rollback on any exception
-            $this->pdo->rollBack();
+            try { if ($this->pdo->inTransaction()) $this->pdo->rollBack(); } catch (Exception $ex) {}
+            error_log("ImportProcessor unexpected error: " . $e->getMessage());
+            $errors[] = 'Import failed: ' . $e->getMessage();
+            $summary = [
+                'title' => 'Import Failed - Database Error',
+                'message' => 'Transaction rolled back - No records were imported.'
+            ];
+            $this->logImport($fileType, count($dataRows), 0, count($errors), $debugQueries);
             return [
                 'success' => [],
-                'errors' => ['Import failed: ' . $e->getMessage()],
-                'credentials' => []
+                'errors' => $errors,
+                'credentials' => [],
+                'summary' => $summary,
+                'transaction_rolled_back' => true
             ];
         }
     }
-    
-    /**
-     * Log import activity to audit trail
-     * 
-     * @param string $fileType Type of file
-     * @param int $totalRows Total rows processed
-     * @param int $successfulRows Successful imports
-     * @param int $failedRows Failed imports
-     */
-    private function logImport($fileType, $totalRows, $successfulRows, $failedRows) {
+
+    private function logImport($fileType, $totalRows, $successfulRows, $failedRows, $debugQueries = []) {
         try {
-            // Create import log table if it doesn't exist
-            $this->pdo->exec("
-                CREATE TABLE IF NOT EXISTS staff_imports (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    filename VARCHAR(255),
-                    file_type VARCHAR(50),
-                    imported_by INT,
-                    import_date DATETIME,
-                    total_rows INT,
-                    successful_rows INT,
-                    failed_rows INT,
-                    import_log TEXT,
-                    INDEX idx_import_date (import_date),
-                    INDEX idx_imported_by (imported_by)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            ");
-            
             $filename = $_FILES['csv_file']['name'] ?? 'unknown';
             $importLog = json_encode([
                 'user_id' => $this->userId,
                 'timestamp' => date('Y-m-d H:i:s'),
-                'file_type' => $fileType
+                'file_type' => $fileType,
+                'debug' => $debugQueries
             ]);
-            
-            $stmt = $this->pdo->prepare("
-                INSERT INTO staff_imports 
-                (filename, file_type, imported_by, import_date, total_rows, successful_rows, failed_rows, import_log)
-                VALUES (?, ?, ?, NOW(), ?, ?, ?, ?)
-            ");
-            
+            $stmt = $this->pdo->prepare("INSERT INTO staff_imports (filename, file_type, imported_by, import_date, total_rows, successful_rows, failed_rows, import_log) VALUES (?, ?, ?, NOW(), ?, ?, ?, ?)");
             $stmt->execute([
                 $filename,
                 $fileType,
@@ -705,37 +781,147 @@ class ImportProcessor {
                 $failedRows,
                 $importLog
             ]);
-            
         } catch (Exception $e) {
             error_log("Failed to log import: " . $e->getMessage());
         }
     }
-    
+
     /**
-     * Export failed rows to CSV for correction
-     * 
-     * @param array $failedRows Array of failed row data
-     * @param array $errors Array of error messages
-     * @return string CSV content
+     * Update staff.rankId for rows where rankId IS NULL and tempRank is present
+     * Uses rank.abbreviation = CONCAT('T', tempRank)
+     * Creates a backup CSV of affected rows in tmp/ before applying update
+     * Returns number of rows affected or throws on error
      */
-    public function exportFailedRows($failedRows, $errors) {
-        $csv = "# FAILED ROWS - Please correct and re-import\n";
-        $csv .= "# Errors encountered:\n";
-        foreach ($errors as $error) {
-            $csv .= "# " . str_replace("\n", "\n# ", $error) . "\n";
+    public function updateRankIdsFromTempRank($useTransaction = true) {
+        $backupFile = __DIR__ . '/../../tmp/rankid_update_backup_' . date('Ymd_His') . '.csv';
+        // Fetch affected rows for backup
+        $stmt = $this->pdo->prepare("SELECT s.* FROM staff s JOIN `rank` r ON r.rankId = CONCAT('T', s.tempRank) WHERE s.rankId IS NULL AND s.tempRank IS NOT NULL");
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (!empty($rows)) {
+            $fp = fopen($backupFile, 'w');
+            fputcsv($fp, array_keys($rows[0]));
+            foreach ($rows as $r) fputcsv($fp, $r);
+            fclose($fp);
         }
-        $csv .= "\n";
-        
-        // Add header
-        if (!empty($failedRows)) {
-            $csv .= implode(',', array_keys($failedRows[0])) . "\n";
-            
-            // Add failed rows
-            foreach ($failedRows as $row) {
-                $csv .= implode(',', $row) . "\n";
+
+        // Prepare the update SQL
+        $sql = "UPDATE staff s JOIN `rank` r ON r.rankId = CONCAT('T', s.tempRank) SET s.rankId = r.rankId WHERE s.rankId IS NULL AND s.tempRank IS NOT NULL";
+
+        // If caller asked us to manage a transaction but one is already active, use a SAVEPOINT
+        if ($useTransaction) {
+            if ($this->pdo->inTransaction()) {
+                $sp = 'sp_rank_update_' . time() . '_' . rand(1000,9999);
+                try {
+                    $this->pdo->exec("SAVEPOINT $sp");
+                    $affected = $this->pdo->exec($sql);
+                    $this->pdo->exec("RELEASE SAVEPOINT $sp");
+                    return ['affected' => $affected, 'backup' => file_exists($backupFile) ? $backupFile : null];
+                } catch (Exception $e) {
+                    try { $this->pdo->exec("ROLLBACK TO SAVEPOINT $sp"); } catch (Exception $ex) {}
+                    throw $e;
+                }
+            } else {
+                try {
+                    $this->pdo->beginTransaction();
+                    $affected = $this->pdo->exec($sql);
+                    $this->pdo->commit();
+                    return ['affected' => $affected, 'backup' => file_exists($backupFile) ? $backupFile : null];
+                } catch (Exception $e) {
+                    try { if ($this->pdo->inTransaction()) $this->pdo->rollBack(); } catch (Exception $ex) {}
+                    throw $e;
+                }
             }
+        } else {
+            // Run without managing transaction so caller (e.g. dry-run) can control rollback
+            $affected = $this->pdo->exec($sql);
+            return ['affected' => $affected, 'backup' => file_exists($backupFile) ? $backupFile : null];
         }
-        
+    }
+
+    public function exportFailedRows($failedRows, $errors) {
+        // Use an in-memory stream to build CSV with proper escaping
+        $fp = fopen('php://temp', 'r+');
+        // NOTE: Per request, do not output commented error messages at the top.
+        // We will include per-row 'ImportErrors' and 'ErrorColumns' fields instead.
+
+        if (empty($failedRows)) {
+            rewind($fp);
+            $csv = stream_get_contents($fp);
+            fclose($fp);
+            return $csv;
+        }
+
+        // Enforce strict header order as requested
+        $headerMap = [
+            'RANK PREFIX' => 'prefix',
+            'SVC NO' => 'service number',
+            'PREFIX NORMALIZED' => '__normalized_prefix',
+            'SVC NO NORMALIZED' => '__normalized_svc',
+            'SUB RANK' => 'subRank',
+            'SUB RANK WEF' => 'subWef',
+            'TEMP RANK' => 'tempRank',
+            'TEMP RANK WEF' => 'tempWef',
+            'INITIALS' => 'initials',
+            'FORENAMES' => 'fornames',
+            'SURNAME' => 'surnames',
+            'TITLES' => 'titles',
+            'ATTESTATION DATE' => 'attestDate',
+            'UNIT' => 'unitId',
+            'UNIT ATTACHED' => 'unitAtt',
+            'APPT' => 'appt',
+            'DOB' => 'dob',
+            'GENDER' => 'gender',
+            'PROVINCE' => 'province',
+            'CORPS' => 'corpsId',
+            'BLOOD GP' => 'bloodGp',
+            'NRC' => 'NRC',
+            'INTAKE' => 'intake',
+            'MARITAL' => 'marital',
+            'EMAIL' => 'email',
+            'MOBILE' => 'tel'
+        ];
+
+        // Build header row (map keys) and append ErrorColumns column only
+        $headerCols = array_keys($headerMap);
+        $headerCols[] = 'ErrorColumns';
+        fputcsv($fp, $headerCols);
+
+        // For each failed row, normalize the original row to standard keys and pull values in order
+        foreach ($failedRows as $row) {
+            $orig = isset($row['__original']) && is_array($row['__original']) ? $row['__original'] : [];
+            $normalized = $this->normalizeFieldNames($orig);
+            $line = [];
+            foreach ($headerMap as $label => $stdKey) {
+                $val = '';
+                // Special-case normalized placeholders that come from the processing step
+                if ($stdKey === '__normalized_prefix') {
+                    $val = isset($row['__normalized']['prefix']) ? $row['__normalized']['prefix'] : '';
+                } elseif ($stdKey === '__normalized_svc') {
+                    $val = isset($row['__normalized']['service number']) ? $row['__normalized']['service number'] : '';
+                } else {
+                    if (isset($normalized[$stdKey]) && $normalized[$stdKey] !== null) {
+                        $val = $normalized[$stdKey];
+                    } elseif (isset($orig[$label])) {
+                        // Fallback if original used exact header label
+                        $val = $orig[$label];
+                    } else {
+                        // Try case-insensitive lookup in original
+                        foreach ($orig as $k => $v) {
+                            if (strcasecmp($k, $label) === 0 || strcasecmp($k, $stdKey) === 0) { $val = $v; break; }
+                        }
+                    }
+                }
+                $line[] = $val;
+            }
+            // Append ErrorColumns list only (column-level highlighting)
+            $line[] = isset($row['__error_cols']) ? implode(',', $row['__error_cols']) : '';
+            fputcsv($fp, $line);
+        }
+
+        rewind($fp);
+        $csv = stream_get_contents($fp);
+        fclose($fp);
         return $csv;
     }
 }

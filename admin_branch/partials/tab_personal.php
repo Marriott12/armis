@@ -37,13 +37,24 @@ if (!isset($_SESSION['csrf_token'])) {
                 $currentCategory = '';
                 $seenCivilian = false;
                 $rankOptionsByCategory = [];
-                foreach ($ranks as $rank):
-                  $cat = trim($rank->category);
-                  // Normalize NCO category for optgroup
-                  if (strtolower($cat) === 'nco' || strtolower($cat) === 'non-commissioned officer') {
-                    $cat = 'Non-Commissioned Officer';
+                
+                // Helper function to normalize category names for display
+                $normalizeCategoryForDisplay = function($cat) {
+                  $cat = trim($cat);
+                  $catLower = strtolower($cat);
+                  if ($catLower === 'nco' || $catLower === 'non-commissioned officer' || $catLower === 'enlisted') {
+                    return 'Non-Commissioned Officer';
                   }
-                  if (strtolower($cat) === 'civilian employee' || strtolower($cat) === 'ce' || strtolower($cat) === 'civilian') {
+                  if ($catLower === 'ce' || $catLower === 'civilian employee' || $catLower === 'civilian') {
+                    return 'Civilian Employee';
+                  }
+                  return $cat; // Officer, Officer Cadet, Recruit keep original
+                };
+                
+                foreach ($ranks as $rank):
+                  $cat = $normalizeCategoryForDisplay($rank->category);
+                  
+                  if ($cat === 'Civilian Employee') {
                     if (!isset($rankOptionsByCategory['Civilian Employee'])) {
                       $rankOptionsByCategory['Civilian Employee'] = [
                         '<option value="mr" ' . (old('rankID')=='mr'?'selected':'') . '>Mr</option>',
@@ -58,15 +69,23 @@ if (!isset($_SESSION['csrf_token'])) {
                   <option value="<?=$rank->rankID?>" 
                       data-rankindex="<?=$rank->rankIndex ?? $rank->level ?? ''?>" 
                       data-category="<?=htmlspecialchars($rank->category)?>"
-                      data-abbreviation="<?=htmlspecialchars($rank->abbreviation ?? '')?>"
+                      data-abbreviation="<?=htmlspecialchars($rank->abbreviation ?? $rank->rankName ?? '')?>"
                       data-staff-count="<?=$rank->staff_count ?? 0?>"
                       <?=old('rankID')==$rank->rankID?'selected':''?>>
                     <?=htmlspecialchars($rank->rankName)?>
-                    <?php if (!empty($rank->abbreviation)): ?> (<?=htmlspecialchars($rank->abbreviation)?>)<?php endif; ?>
                   </option>
                   <?php
                   $rankOptionsByCategory[$cat][] = trim(ob_get_clean());
-                endforeach; 
+                endforeach;
+                
+                // Ensure Civilian Employee category always exists (even if no CE ranks in database)
+                if (!isset($rankOptionsByCategory['Civilian Employee'])) {
+                  $rankOptionsByCategory['Civilian Employee'] = [
+                    '<option value="mr" ' . (old('rankID')=='mr'?'selected':'') . '>Mr</option>',
+                    '<option value="ms" ' . (old('rankID')=='ms'?'selected':'') . '>Ms</option>'
+                  ];
+                }
+                
                 // Output all options for all categories, but hide with JS
                 foreach ($rankOptionsByCategory as $cat => $options) {
                   echo '<optgroup label="' . htmlspecialchars($cat) . '" data-category="' . htmlspecialchars($cat) . '">';
@@ -83,7 +102,7 @@ if (!isset($_SESSION['csrf_token'])) {
               <input type="text" name="lname" id="lname" class="form-control form-control-sm" required maxlength="100" aria-label="Surname" value="<?=old('lname')?>">
             </div>
             <div class="col-md-4 mb-2">
-              <label class="form-label form-label-sm" for="fname">Forename(s) Name *</label>
+              <label class="form-label form-label-sm" for="fname">Forname(s) *</label>
               <input type="text" name="fname" id="fname" class="form-control form-control-sm" required maxlength="100" aria-label="First Name" value="<?=old('fname')?>">
             </div>
             <div class="col-md-4 mb-2">

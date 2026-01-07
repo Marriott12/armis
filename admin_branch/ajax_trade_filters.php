@@ -31,25 +31,25 @@ switch ($type) {
     case 'trade':
         $sql = "SELECT DISTINCT trade FROM staff WHERE svcStatus = 'Active'";
         $params = [];
-        if ($unit) { $sql .= " AND unit_id = ?"; $params[] = $unit; }
-        if ($rank) { $sql .= " AND rank_id = ?"; $params[] = $rank; }
+        if ($unit) { $sql .= " AND unitId = ?"; $params[] = $unit; }
+        if ($rank) { $sql .= " AND rankId = ?"; $params[] = $rank; }
         if ($category) { $sql .= " AND category = ?"; $params[] = $category; }
         $sql .= " ORDER BY trade ASC";
         $options = fetchOptions($sql, $params, 'trade', 'trade');
         break;
     case 'rank':
-        $sql = "SELECT DISTINCT r.id, r.name FROM ranks r JOIN staff s ON s.rank_id = r.id WHERE s.svcStatus = 'Active'";
+        $sql = "SELECT DISTINCT r.rankId as id, COALESCE(r.rankId, r.rankId) as name FROM rank r JOIN staff s ON s.rankId = r.rankId WHERE s.svcStatus = 'Active'";
         $params = [];
-        if ($unit) { $sql .= " AND s.unit_id = ?"; $params[] = $unit; }
+        if ($unit) { $sql .= " AND s.unitId = ?"; $params[] = $unit; }
         if ($trade) { $sql .= " AND s.trade = ?"; $params[] = $trade; }
         if ($category) { $sql .= " AND s.category = ?"; $params[] = $category; }
-        $sql .= " ORDER BY r.name ASC";
-        $options = fetchOptions($sql, $params, 'id', 'name');
+    $sql .= " ORDER BY name ASC";
+    $options = fetchOptions($sql, $params, 'id', 'name');
         break;
     case 'unit':
-        $sql = "SELECT DISTINCT u.id, u.name FROM units u JOIN staff s ON s.unit_id = u.id WHERE s.svcStatus = 'Active'";
+        $sql = "SELECT DISTINCT u.unitId as id, u.code as name FROM unit u JOIN staff s ON s.unitId = u.unitId WHERE s.svcStatus = 'Active'";
         $params = [];
-        if ($rank) { $sql .= " AND s.rank_id = ?"; $params[] = $rank; }
+        if ($rank) { $sql .= " AND s.rankId = ?"; $params[] = $rank; }
         if ($trade) { $sql .= " AND s.trade = ?"; $params[] = $trade; }
         if ($category) { $sql .= " AND s.category = ?"; $params[] = $category; }
         $sql .= " ORDER BY u.name ASC";
@@ -58,8 +58,8 @@ switch ($type) {
     case 'category':
         $sql = "SELECT DISTINCT s.category FROM staff s WHERE s.category IS NOT NULL AND s.category <> '' AND s.svcStatus = 'Active'";
         $params = [];
-        if ($unit) { $sql .= " AND s.unit_id = ?"; $params[] = $unit; }
-        if ($rank) { $sql .= " AND s.rank_id = ?"; $params[] = $rank; }
+        if ($unit) { $sql .= " AND s.unitId = ?"; $params[] = $unit; }
+        if ($rank) { $sql .= " AND s.rankId = ?"; $params[] = $rank; }
         if ($trade) { $sql .= " AND s.trade = ?"; $params[] = $trade; }
         $sql .= " ORDER BY s.category ASC";
         $options = fetchOptions($sql, $params, 'category', 'category');

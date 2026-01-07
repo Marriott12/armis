@@ -17,7 +17,7 @@ class AdminBranchUtils {
      * Get all ranks for dropdowns
      */
     public static function getRanks($excludeSpecial = true) {
-        $sql = "SELECT id, name, level, abbreviation FROM ranks ORDER BY level ASC";
+        $sql = "SELECT rankId as id, rankId as name, level, abbreviation FROM `rank` ORDER BY level ASC";
         $ranks = fetchAll($sql);
         
         if ($excludeSpecial) {
@@ -33,7 +33,7 @@ class AdminBranchUtils {
      * Get all units for dropdowns
      */
     public static function getUnits() {
-        $sql = "SELECT id, name, code FROM units ORDER BY name ASC";
+        $sql = "SELECT unitId as id, code as name, code FROM unit ORDER BY code ASC";
         return fetchAll($sql);
     }
     
@@ -65,13 +65,13 @@ class AdminBranchUtils {
      * Get staff member by service number
      */
     public static function getStaffByServiceNumber($svcNo) {
-        $sql = "SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, r.level as rankIndex, u.name as unitName, c.name as corpsName, a.name as appointmentName
-                FROM staff s
-                LEFT JOIN ranks r ON s.rank_id = r.id
-                LEFT JOIN units u ON s.unit_id = u.id
-                LEFT JOIN corps c ON s.corps_id = c.id
-                LEFT JOIN appointments a ON s.appointment_id = a.id
-                WHERE s.service_number = ?";
+    $sql = "SELECT s.*, r.rankId as rankName, r.rankId as rankAbbr, r.level as rankIndex, u.name as unitName, c.corpsName as corpsName, a.name as appointmentName
+        FROM staff s
+        LEFT JOIN `rank` r ON s.rankId = r.rankId
+        LEFT JOIN units u ON s.unitId = u.id
+        LEFT JOIN corps c ON s.corpsId = c.corpsId
+        LEFT JOIN appointments a ON s.appointment_id = a.id
+        WHERE s.svcNo = ?";
         return fetchOne($sql, [$svcNo]);
     }
     
@@ -84,7 +84,7 @@ class AdminBranchUtils {
         
         // Build WHERE conditions
         if (!empty($filters['search'])) {
-            $where[] = "(s.service_number LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)";
+            $where[] = "(s.svcNo LIKE ? OR s.fName LIKE ? OR s.lName LIKE ?)";
             $searchTerm = '%' . $filters['search'] . '%';
             $params[] = $searchTerm;
             $params[] = $searchTerm;
@@ -92,12 +92,12 @@ class AdminBranchUtils {
         }
         
         if (!empty($filters['rankID'])) {
-            $where[] = "s.rank_id = ?";
+            $where[] = "s.rankId = ?";
             $params[] = $filters['rankID'];
         }
         
         if (!empty($filters['unitID'])) {
-            $where[] = "s.unit_id = ?";
+            $where[] = "s.unitId = ?";
             $params[] = $filters['unitID'];
         }
         
@@ -110,20 +110,20 @@ class AdminBranchUtils {
         $excludedRanks = EXCLUDED_RANKS;
         if (!empty($excludedRanks)) {
             $placeholders = str_repeat('?,', count($excludedRanks) - 1) . '?';
-            $where[] = "r.rankName NOT IN ($placeholders)";
+            $where[] = "r.rankId NOT IN ($placeholders)";
             $params = array_merge($params, $excludedRanks);
         }
         
         $whereClause = !empty($where) ? 'WHERE ' . implode(' AND ', $where) : '';
         
-        $sql = "SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, r.level as rankIndex, u.name as unitName, c.name as corpsName
-                FROM staff s
-                LEFT JOIN ranks r ON s.rank_id = r.id
-                LEFT JOIN units u ON s.unit_id = u.id
-                LEFT JOIN corps c ON s.corps_id = c.id
-                $whereClause
-                ORDER BY r.level ASC, s.last_name ASC, s.first_name ASC
-                LIMIT ? OFFSET ?";
+    $sql = "SELECT s.*, r.rankId as rankName, r.rankId as rankAbbr, r.level as rankIndex, u.code as unitName, c.corpsName as corpsName
+        FROM staff s
+        LEFT JOIN `rank` r ON s.rankId = r.rankId
+        LEFT JOIN unit u ON s.unitId = u.unitId
+        LEFT JOIN corps c ON s.corpsId = c.corpsId
+        $whereClause
+        ORDER BY r.level ASC, s.lName ASC, s.fName ASC
+        LIMIT ? OFFSET ?";
         
         $params[] = $limit;
         $params[] = $offset;
@@ -148,12 +148,12 @@ class AdminBranchUtils {
         }
         
         if (!empty($filters['rankID'])) {
-            $where[] = "s.rank_id = ?";
+            $where[] = "s.rankId = ?";
             $params[] = $filters['rankID'];
         }
         
         if (!empty($filters['unitID'])) {
-            $where[] = "s.unit_id = ?";
+            $where[] = "s.unitId = ?";
             $params[] = $filters['unitID'];
         }
         
@@ -166,16 +166,16 @@ class AdminBranchUtils {
         $excludedRanks = EXCLUDED_RANKS;
         if (!empty($excludedRanks)) {
             $placeholders = str_repeat('?,', count($excludedRanks) - 1) . '?';
-            $where[] = "r.rankName NOT IN ($placeholders)";
+            $where[] = "r.rankId NOT IN ($placeholders)";
             $params = array_merge($params, $excludedRanks);
         }
         
         $whereClause = !empty($where) ? 'WHERE ' . implode(' AND ', $where) : '';
         
-        $sql = "SELECT COUNT(*) as total
-                FROM staff s
-                LEFT JOIN ranks r ON s.rank_id = r.id
-                $whereClause";
+    $sql = "SELECT COUNT(*) as total
+        FROM staff s
+        LEFT JOIN `rank` r ON s.rankId = r.rankId
+        $whereClause";
         
         $result = fetchOne($sql, $params);
         return $result ? $result->total : 0;
@@ -232,7 +232,7 @@ class AdminBranchUtils {
         $stats['active_personnel'] = $result ? $result->total : 0;
         
         // New recruits (last 30 days)
-        $result = fetchOne("SELECT COUNT(*) as total FROM staff WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)");
+        $result = fetchOne("SELECT COUNT(*) as total FROM staff WHERE createdAt >= DATE_SUB(NOW(), INTERVAL 30 DAY)");
         $stats['new_recruits'] = $result ? $result->total : 0;
         
         // On leave
@@ -255,7 +255,7 @@ class AdminBranchUtils {
      */
     public static function getRecentActivities($limit = 10) {
         $sql = "SELECT * FROM activity_log 
-                ORDER BY created_at DESC 
+                ORDER BY createdAt DESC 
                 LIMIT ?";
         return fetchAll($sql, [$limit]);
     }

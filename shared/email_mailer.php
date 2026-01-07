@@ -154,14 +154,14 @@ class ARMISMailer {
             return ['success' => false, 'message' => 'Email template not found'];
         }
         
-        // Prepare variables for template
+        // Prepare variables for template - map to expected template variable names
         $variables = [
             'rank' => $staffData['rank_name'] ?? 'Staff',
-            'last_name' => $staffData['lname'] ?? $staffData['last_name'],
-            'first_name' => $staffData['fname'] ?? $staffData['first_name'],
+            'last_name' => $staffData['lname'] ?? $staffData['lName'] ?? '',
+            'first_name' => $staffData['fname'] ?? $staffData['fName'] ?? '',
             'username' => $staffData['username'],
             'temp_password' => $tempPassword,
-            'service_number' => $staffData['svcNo'] ?? $staffData['service_number'],
+            'service_number' => $staffData['svcNo'] ?? '',
             'login_url' => 'http://localhost/Armis2/login.php' // Update for production
         ];
         
@@ -184,7 +184,7 @@ class ARMISMailer {
         
         $variables = [
             'rank' => $staffData['rank_name'] ?? 'Staff',
-            'last_name' => $staffData['lname'] ?? $staffData['last_name'],
+            'lName' => $staffData['lname'] ?? $staffData['lName'],
             'reset_url' => 'http://localhost/Armis2/reset_password.php?token=' . $resetToken
         ];
         
@@ -205,13 +205,18 @@ class ARMISMailer {
                 throw new Exception("Database connection failed");
             }
             
-            $stmt = $conn->prepare("SELECT * FROM email_templates WHERE template_name = ?");
+            $stmt = $conn->prepare("SELECT * FROM email_templates WHERE templateName = ?");
             $stmt->bind_param('s', $templateName);
             $stmt->execute();
             $result = $stmt->get_result();
             
             if ($result->num_rows > 0) {
-                return $result->fetch_assoc();
+                $template = $result->fetch_assoc();
+                // Map camelCase column names to snake_case for backward compatibility
+                $template['template_name'] = $template['templateName'];
+                $template['body_html'] = $template['bodyHtml'];
+                $template['body_text'] = $template['bodyText'] ?? '';
+                return $template;
             }
             
             return null;

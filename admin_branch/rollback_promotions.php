@@ -73,10 +73,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rollback_promotion'])
             
             // Get promotion details
             $stmt = $pdo->prepare("
-                SELECT sp.*, s.service_number, s.first_name, s.last_name, s.rank_id,
+                SELECT sp.*, s.svcNo, s.fName, s.lName, s.rankId,
                        r_from.name as from_rank_name, r_to.name as to_rank_name
                 FROM staff_promotions sp
-                JOIN staff s ON sp.staff_id = s.id
+                JOIN staff s ON sp.svcNo = s.id
                 LEFT JOIN ranks r_from ON sp.rank_from = r_from.id
                 LEFT JOIN ranks r_to ON sp.rank_to = r_to.id
                 WHERE sp.id = ? AND sp.can_rollback = 1 AND sp.rolled_back_at IS NULL
@@ -89,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rollback_promotion'])
             }
             
             // Check time window (24 hours)
-            $createdAt = strtotime($promotion['created_at']);
+            $createdAt = strtotime($promotion['createdAt']);
             $now = time();
             $hoursSince = ($now - $createdAt) / 3600;
             
@@ -99,17 +99,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rollback_promotion'])
             
             // Store current state for audit
             $beforeData = [
-                'staff_rank_id' => $promotion['rank_id'],
+                'staff_rank_id' => $promotion['rankId'],
                 'promotion_status' => 'completed'
             ];
             
             // Revert staff rank
             $updateStmt = $pdo->prepare("
                 UPDATE staff 
-                SET rank_id = ? 
+                SET rankId = ? 
                 WHERE id = ?
             ");
-            $updateStmt->execute([$promotion['rank_from'], $promotion['staff_id']]);
+            $updateStmt->execute([$promotion['rank_from'], $promotion['svcNo']]);
             
             // Mark promotion as rolled back
             $rollbackStmt = $pdo->prepare("
@@ -137,16 +137,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rollback_promotion'])
             $description = sprintf(
                 "Rolled back %s for %s %s (Service: %s) from %s to %s. Reason: %s",
                 $promotion['type'],
-                $promotion['first_name'],
-                $promotion['last_name'],
-                $promotion['service_number'],
+                $promotion['fName'],
+                $promotion['lName'],
+                $promotion['svcNo'],
                 $promotion['to_rank_name'],
                 $promotion['from_rank_name'],
                 $reason
             );
             
             $auditLogger->logRollback(
-                $promotion['staff_id'],
+                $promotion['svcNo'],
                 $promotionId,
                 $beforeData,
                 $afterData,
@@ -156,7 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rollback_promotion'])
             // Save snapshot
             $auditLogger->saveSnapshot(
                 $promotionId,
-                $promotion['staff_id'],
+                $promotion['svcNo'],
                 'rolled_back',
                 $promotion
             );
@@ -166,8 +166,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rollback_promotion'])
             $successMessage = sprintf(
                 "Successfully rolled back %s for %s %s from %s to %s.",
                 $promotion['type'],
-                $promotion['first_name'],
-                $promotion['last_name'],
+                $promotion['fName'],
+                $promotion['lName'],
                 $promotion['to_rank_name'],
                 $promotion['from_rank_name']
             );
@@ -286,15 +286,15 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                             <div class="card promotion-card">
                                                 <div class="card-body">
                                                     <h6 class="card-title">
-                                                        <?= htmlspecialchars($promo['service_number']) ?> - 
-                                                        <?= htmlspecialchars($promo['first_name'] . ' ' . $promo['last_name']) ?>
+                                                        <?= htmlspecialchars($promo['svcNo']) ?> - 
+                                                        <?= htmlspecialchars($promo['fName'] . ' ' . $promo['lName']) ?>
                                                     </h6>
                                                     <p class="card-text">
                                                         <strong>Type:</strong> <?= ucfirst($promo['type']) ?><br>
                                                         <strong>From:</strong> <?= htmlspecialchars($promo['from_rank_name']) ?><br>
                                                         <strong>To:</strong> <?= htmlspecialchars($promo['to_rank_name']) ?><br>
-                                                        <strong>Date:</strong> <?= date('d M Y H:i', strtotime($promo['created_at'])) ?><br>
-                                                        <strong>Effective:</strong> <?= date('d M Y', strtotime($promo['date_to'])) ?>
+                                                        <strong>Date:</strong> <?= date('d M Y H:i', strtotime($promo['createdAt'])) ?><br>
+                                                        <strong>Effective:</strong> <?= date('d M Y', strtotime($promo['dateTo'])) ?>
                                                     </p>
                                                     <div class="d-flex justify-content-between align-items-center">
                                                         <span class="badge bg-<?= $timeClass ?> time-badge">
@@ -302,7 +302,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                         </span>
                                                         <button type="button" class="btn btn-sm btn-danger rollback-btn" 
                                                                 data-promotion-id="<?= $promo['id'] ?>"
-                                                                data-staff-name="<?= htmlspecialchars($promo['first_name'] . ' ' . $promo['last_name']) ?>"
+                                                                data-staff-name="<?= htmlspecialchars($promo['fName'] . ' ' . $promo['lName']) ?>"
                                                                 data-from-rank="<?= htmlspecialchars($promo['from_rank_name']) ?>"
                                                                 data-to-rank="<?= htmlspecialchars($promo['to_rank_name']) ?>"
                                                                 data-type="<?= htmlspecialchars($promo['type']) ?>">
@@ -366,8 +366,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Core JS (jQuery/Bootstrap) are loaded centrally in shared/footer.php. -->
 
 <script>
 $(document).ready(function() {

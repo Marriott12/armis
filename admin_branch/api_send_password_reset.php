@@ -53,14 +53,14 @@ $expires = date('Y-m-d H:i:s', strtotime('+1 hour'));
 // Store token in DB (create table staff_password_resets if not exists)
 $conn->query('CREATE TABLE IF NOT EXISTS staff_password_resets (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    staff_id INT NOT NULL,
+    svcNo INT NOT NULL,
     reset_token VARCHAR(128) NOT NULL,
     expires_at DATETIME NOT NULL,
     used TINYINT(1) DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
 )');
 
-$stmt2 = $conn->prepare('INSERT INTO staff_password_resets (staff_id, reset_token, expires_at) VALUES (?, ?, ?)');
+$stmt2 = $conn->prepare('INSERT INTO staff_password_resets (svcNo, reset_token, expires_at) VALUES (?, ?, ?)');
 $stmt2->bind_param('iss', $staffData['id'], $resetToken, $expires);
 $stmt2->execute();
 

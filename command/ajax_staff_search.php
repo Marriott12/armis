@@ -16,11 +16,11 @@ if ($search !== '') {
 $db = DB::getInstance();
 $staffList = $db->query(
     "SELECT s.svcNo, s.fname, s.lname, s.category,
-            IFNULL(r.rankAbb, 'Unknown') as rankAbb, IFNULL(r.rankName, 'Unknown') as rankName,
+            IFNULL(r.rankId, 'Unknown') as rankAbb, IFNULL(r.rankId, 'Unknown') as rankName,
             IFNULL(u.unitName, 'Unknown') as unitName
      FROM staff s
-     LEFT JOIN ranks r ON s.rankID = r.rankID
-     LEFT JOIN units u ON s.unitID = u.unitID
+     LEFT JOIN rank r ON s.rankId = r.rankId
+     LEFT JOIN unit u ON s.unitId = u.unitId
      $where
      ORDER BY s.lname ASC
      LIMIT 100",

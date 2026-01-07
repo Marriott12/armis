@@ -111,7 +111,7 @@ $searchResults = filterDeployments($_GET['status'] ?? null, $_GET['location'] ??
                                 <li class="list-group-item<?php echo $note['is_read'] ? '' : ' list-group-item-warning'; ?>">
                                     <?php echo htmlspecialchars($note['message']); ?>
                                     <span class="badge bg-secondary"><?php echo $note['type']; ?></span>
-                                    <small class="text-muted float-end"><?php echo $note['created_at']; ?></small>
+                                    <small class="text-muted float-end"><?php echo $note['createdAt']; ?></small>
                                 </li>
                             <?php endforeach; ?>
                         </ul>
@@ -138,7 +138,7 @@ $searchResults = filterDeployments($_GET['status'] ?? null, $_GET['location'] ??
                                     <td><?php echo htmlspecialchars($log['username'] ?? 'Unknown'); ?></td>
                                     <td><?php echo htmlspecialchars($log['action']); ?></td>
                                     <td><?php echo htmlspecialchars($log['details']); ?></td>
-                                    <td><?php echo htmlspecialchars($log['created_at']); ?></td>
+                                    <td><?php echo htmlspecialchars($log['createdAt']); ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -184,8 +184,8 @@ $searchResults = filterDeployments($_GET['status'] ?? null, $_GET['location'] ??
                                     <td><?php echo htmlspecialchars($dep['deployment_name']); ?></td>
                                     <td><?php echo htmlspecialchars($dep['location_id']); ?></td>
                                     <td><?php echo htmlspecialchars($dep['status']); ?></td>
-                                    <td><?php echo htmlspecialchars($dep['start_date']); ?></td>
-                                    <td><?php echo htmlspecialchars($dep['end_date']); ?></td>
+                                    <td><?php echo htmlspecialchars($dep['startDate']); ?></td>
+                                    <td><?php echo htmlspecialchars($dep['endDate']); ?></td>
                                     <td><?php echo htmlspecialchars($dep['personnel_count'] ?? ''); ?></td>
                                 </tr>
                             <?php endforeach; ?>
@@ -234,8 +234,8 @@ $searchResults = filterDeployments($_GET['status'] ?? null, $_GET['location'] ??
                     'deployment_type' => $_POST['deployment_type'],
                     'location' => $_POST['location'],
                     'status' => $_POST['status'],
-                    'start_date' => $_POST['start_date'],
-                    'end_date' => $_POST['end_date'],
+                    'startDate' => $_POST['startDate'],
+                    'endDate' => $_POST['endDate'],
                     'description' => $_POST['description']
                 ];
                 $operationsManager->addDeployment($deploymentData);
@@ -251,8 +251,8 @@ $searchResults = filterDeployments($_GET['status'] ?? null, $_GET['location'] ??
                     'deployment_type' => $_POST['deployment_type'],
                     'location' => $_POST['location'],
                     'status' => $_POST['status'],
-                    'start_date' => $_POST['start_date'],
-                    'end_date' => $_POST['end_date'],
+                    'startDate' => $_POST['startDate'],
+                    'endDate' => $_POST['endDate'],
                     'description' => $_POST['description']
                 ];
                 $operationsManager->updateDeployment($deploymentData);
@@ -327,12 +327,12 @@ $searchResults = filterDeployments($_GET['status'] ?? null, $_GET['location'] ??
                             </div>
                             <div class="row mt-3">
                                 <div class="col-md-6">
-                                    <label for="start_date" class="form-label">Start Date</label>
-                                    <input type="date" name="start_date" id="start_date" class="form-control" required>
+                                    <label for="startDate" class="form-label">Start Date</label>
+                                    <input type="date" name="startDate" id="startDate" class="form-control" required>
                                 </div>
                                 <div class="col-md-6">
-                                    <label for="end_date" class="form-label">End Date</label>
-                                    <input type="date" name="end_date" id="end_date" class="form-control" required>
+                                    <label for="endDate" class="form-label">End Date</label>
+                                    <input type="date" name="endDate" id="endDate" class="form-control" required>
                                 </div>
                             </div>
                             <div class="row mt-3">
@@ -386,11 +386,11 @@ $searchResults = filterDeployments($_GET['status'] ?? null, $_GET['location'] ??
                             <div class="row mt-3">
                                 <div class="col-md-6">
                                     <label for="edit_start_date" class="form-label">Start Date</label>
-                                    <input type="date" name="start_date" id="edit_start_date" class="form-control" value="<?= htmlspecialchars($editDeployment['start_date']) ?>" required>
+                                    <input type="date" name="startDate" id="edit_start_date" class="form-control" value="<?= htmlspecialchars($editDeployment['startDate']) ?>" required>
                                 </div>
                                 <div class="col-md-6">
                                     <label for="edit_end_date" class="form-label">End Date</label>
-                                    <input type="date" name="end_date" id="edit_end_date" class="form-control" value="<?= htmlspecialchars($editDeployment['end_date']) ?>" required>
+                                    <input type="date" name="endDate" id="edit_end_date" class="form-control" value="<?= htmlspecialchars($editDeployment['endDate']) ?>" required>
                                 </div>
                             </div>
                             <div class="row mt-3">
@@ -424,9 +424,9 @@ $searchResults = filterDeployments($_GET['status'] ?? null, $_GET['location'] ??
                             <dt class="col-sm-3">Status</dt>
                             <dd class="col-sm-9"><?= htmlspecialchars(ucfirst($viewDeployment['status'])) ?></dd>
                             <dt class="col-sm-3">Start Date</dt>
-                            <dd class="col-sm-9"><?= htmlspecialchars($viewDeployment['start_date']) ?></dd>
+                            <dd class="col-sm-9"><?= htmlspecialchars($viewDeployment['startDate']) ?></dd>
                             <dt class="col-sm-3">End Date</dt>
-                            <dd class="col-sm-9"><?= htmlspecialchars($viewDeployment['end_date']) ?></dd>
+                            <dd class="col-sm-9"><?= htmlspecialchars($viewDeployment['endDate']) ?></dd>
                             <dt class="col-sm-3">Description</dt>
                             <dd class="col-sm-9"><?= htmlspecialchars($viewDeployment['description']) ?></dd>
                         </dl>
@@ -509,8 +509,8 @@ $searchResults = filterDeployments($_GET['status'] ?? null, $_GET['location'] ??
                                     <td><?= htmlspecialchars($deployment['deployment_type']) ?></td>
                                     <td><?= htmlspecialchars($deployment['location']) ?></td>
                                     <td><?= htmlspecialchars(ucfirst($deployment['status'])) ?></td>
-                                    <td><?= htmlspecialchars($deployment['start_date']) ?></td>
-                                    <td><?= htmlspecialchars($deployment['end_date']) ?></td>
+                                    <td><?= htmlspecialchars($deployment['startDate']) ?></td>
+                                    <td><?= htmlspecialchars($deployment['endDate']) ?></td>
                                     <td><?= htmlspecialchars($deployment['description']) ?></td>
                                     <td>
                                         <a href="deployments.php?action=view&id=<?= $deployment['deployment_id'] ?>" class="btn btn-info btn-sm">View</a>

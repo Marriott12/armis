@@ -30,7 +30,7 @@ class OperationsManager {
                  LEFT JOIN operations_mission_personnel p ON m.mission_id = p.mission_id
                  WHERE m.status = 'active'
                  GROUP BY m.mission_id
-                 ORDER BY m.start_date DESC
+                 ORDER BY m.startDate DESC
                  LIMIT :limit";
         
         $stmt = $this->db->prepare($query);
@@ -48,7 +48,7 @@ class OperationsManager {
                     u.username as created_by_name
                  FROM operations_missions m
                  LEFT JOIN operations_locations l ON m.location_id = l.location_id
-                     LEFT JOIN staff u ON m.created_by = u.id
+                     LEFT JOIN staff u ON m.createdBy = u.id
                  WHERE m.mission_id = :mission_id";
         
         $stmt = $this->db->prepare($query);
@@ -80,10 +80,10 @@ class OperationsManager {
      * Get mission personnel
      */
     public function getMissionPersonnel($missionId) {
-        $query = "SELECT p.*, s.first_name, s.last_name, s.rank, s.service_number,
+        $query = "SELECT p.*, s.fName, s.lName, s.rank, s.svcNo,
                     r.role_name
                  FROM operations_mission_personnel p
-                 LEFT JOIN staff s ON p.staff_id = s.id
+                 LEFT JOIN staff s ON p.svcNo = s.id
                      LEFT JOIN operations_personnel_roles r ON p.role_id = r.role_id
                  WHERE p.mission_id = :mission_id";
         
@@ -103,12 +103,12 @@ class OperationsManager {
         try {
             $query = "INSERT INTO operations_missions (
                         mission_name, mission_code, description, status, 
-                        priority, location_id, start_date, end_date,
-                        created_by, created_at, updated_at
+                        priority, location_id, startDate, endDate,
+                        createdBy, createdAt, updatedAt
                     ) VALUES (
                         :mission_name, :mission_code, :description, :status,
-                        :priority, :location_id, :start_date, :end_date,
-                        :created_by, NOW(), NOW()
+                        :priority, :location_id, :startDate, :endDate,
+                        :createdBy, NOW(), NOW()
                     )";
             
             $stmt = $this->db->prepare($query);
@@ -118,9 +118,9 @@ class OperationsManager {
             $stmt->bindValue(':status', $data['status'], PDO::PARAM_STR);
             $stmt->bindValue(':priority', $data['priority'], PDO::PARAM_STR);
             $stmt->bindValue(':location_id', $data['location_id'], PDO::PARAM_INT);
-            $stmt->bindValue(':start_date', $data['start_date'], PDO::PARAM_STR);
-            $stmt->bindValue(':end_date', $data['end_date'], PDO::PARAM_STR);
-            $stmt->bindValue(':created_by', $this->userId, PDO::PARAM_INT);
+            $stmt->bindValue(':startDate', $data['startDate'], PDO::PARAM_STR);
+            $stmt->bindValue(':endDate', $data['endDate'], PDO::PARAM_STR);
+            $stmt->bindValue(':createdBy', $this->userId, PDO::PARAM_INT);
             $stmt->execute();
             
             $missionId = $this->db->lastInsertId();
@@ -157,9 +157,9 @@ class OperationsManager {
                         status = :status,
                         priority = :priority,
                         location_id = :location_id,
-                        start_date = :start_date,
-                        end_date = :end_date,
-                        updated_at = NOW()
+                        startDate = :startDate,
+                        endDate = :endDate,
+                        updatedAt = NOW()
                     WHERE mission_id = :mission_id";
             
             $stmt = $this->db->prepare($query);
@@ -169,8 +169,8 @@ class OperationsManager {
             $stmt->bindValue(':status', $data['status'], PDO::PARAM_STR);
             $stmt->bindValue(':priority', $data['priority'], PDO::PARAM_STR);
             $stmt->bindValue(':location_id', $data['location_id'], PDO::PARAM_INT);
-            $stmt->bindValue(':start_date', $data['start_date'], PDO::PARAM_STR);
-            $stmt->bindValue(':end_date', $data['end_date'], PDO::PARAM_STR);
+            $stmt->bindValue(':startDate', $data['startDate'], PDO::PARAM_STR);
+            $stmt->bindValue(':endDate', $data['endDate'], PDO::PARAM_STR);
             $stmt->bindValue(':mission_id', $missionId, PDO::PARAM_INT);
             $stmt->execute();
             
@@ -213,7 +213,7 @@ class OperationsManager {
                  LEFT JOIN operations_deployment_personnel p ON d.deployment_id = p.deployment_id
                  WHERE d.status = 'active'
                  GROUP BY d.deployment_id
-                 ORDER BY d.start_date DESC
+                 ORDER BY d.startDate DESC
                  LIMIT :limit";
         
         $stmt = $this->db->prepare($query);
@@ -318,7 +318,7 @@ class OperationsManager {
      */
     private function logActivity($actionType, $entityId, $description) {
         $query = "INSERT INTO operations_activity_log (
-                    user_id, action_type, entity_id, description, created_at
+                    user_id, action_type, entity_id, description, createdAt
                 ) VALUES (
                     :user_id, :action_type, :entity_id, :description, NOW()
                 )";
@@ -365,7 +365,7 @@ class OperationsManager {
      * Get all missions
      */
     public function getAllMissions() {
-        $query = "SELECT * FROM operations_missions ORDER BY start_date DESC";
+        $query = "SELECT * FROM operations_missions ORDER BY startDate DESC";
         $stmt = $this->db->prepare($query);
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -375,7 +375,7 @@ class OperationsManager {
      * Get all deployments
      */
     public function getAllDeployments() {
-        $query = "SELECT * FROM operations_deployments ORDER BY start_date DESC";
+        $query = "SELECT * FROM operations_deployments ORDER BY startDate DESC";
         $stmt = $this->db->prepare($query);
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -387,7 +387,7 @@ class OperationsManager {
     public function getAvailableStaff($excludeMissionId = null) {
         $query = "SELECT s.* FROM staff s
             WHERE s.id NOT IN (
-                SELECT staff_id FROM operations_mission_personnel
+                SELECT svcNo FROM operations_mission_personnel
                 WHERE status IN ('assigned','active')
                 " . ($excludeMissionId ? "AND mission_id != :excludeMissionId" : "") . "
             )";
@@ -405,8 +405,8 @@ class OperationsManager {
     public function assignStaffToMission($missionId, $staffId, $roleId = null, $startDate = null, $endDate = null) {
         // Check for double-booking
         $query = "SELECT COUNT(*) FROM operations_mission_personnel
-                  WHERE staff_id = :staffId AND status IN ('assigned','active')
-                  AND ((start_date <= :endDate AND end_date >= :startDate) OR (start_date IS NULL OR end_date IS NULL))";
+                  WHERE svcNo = :staffId AND status IN ('assigned','active')
+                  AND ((startDate <= :endDate AND endDate >= :startDate) OR (startDate IS NULL OR endDate IS NULL))";
         $stmt = $this->db->prepare($query);
         $stmt->bindValue(':staffId', $staffId, PDO::PARAM_INT);
         $stmt->bindValue(':startDate', $startDate, PDO::PARAM_STR);
@@ -417,7 +417,7 @@ class OperationsManager {
         }
 
         $query = "INSERT INTO operations_mission_personnel
-                  (mission_id, staff_id, role_id, start_date, end_date, status)
+                  (mission_id, svcNo, role_id, startDate, endDate, status)
                   VALUES (:missionId, :staffId, :roleId, :startDate, :endDate, 'assigned')";
         $stmt = $this->db->prepare($query);
         $stmt->bindValue(':missionId', $missionId, PDO::PARAM_INT);
@@ -445,8 +445,8 @@ class OperationsManager {
         $query = "SELECT p.*, m.name AS mission_name, s.full_name AS staff_name
                   FROM operations_mission_personnel p
                   JOIN operations_missions m ON p.mission_id = m.id
-                  JOIN staff s ON p.staff_id = s.id
-                  ORDER BY p.start_date DESC";
+                  JOIN staff s ON p.svcNo = s.id
+                  ORDER BY p.startDate DESC";
         $stmt = $this->db->prepare($query);
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -526,7 +526,7 @@ class OperationsManager {
      * Get all notifications for a user
      */
     public function getUserNotifications($userId) {
-        $query = "SELECT * FROM operations_notifications WHERE user_id = :userId ORDER BY created_at DESC";
+        $query = "SELECT * FROM operations_notifications WHERE user_id = :userId ORDER BY createdAt DESC";
         $stmt = $this->db->prepare($query);
         $stmt->bindValue(':userId', $userId, PDO::PARAM_INT);
         $stmt->execute();
@@ -651,7 +651,7 @@ class OperationsManager {
      * Get all field operations
      */
     public function getAllFieldOperations() {
-        $query = "SELECT * FROM operations_field ORDER BY start_date DESC";
+        $query = "SELECT * FROM operations_field ORDER BY startDate DESC";
         $stmt = $this->db->prepare($query);
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -661,7 +661,7 @@ class OperationsManager {
      * Create a new field operation
      */
     public function createFieldOperation($name, $status, $location, $startDate, $endDate) {
-        $query = "INSERT INTO operations_field (name, status, location, start_date, end_date) VALUES (:name, :status, :location, :startDate, :endDate)";
+        $query = "INSERT INTO operations_field (name, status, location, startDate, endDate) VALUES (:name, :status, :location, :startDate, :endDate)";
         $stmt = $this->db->prepare($query);
         $stmt->bindValue(':name', $name, PDO::PARAM_STR);
         $stmt->bindValue(':status', $status, PDO::PARAM_STR);
@@ -675,7 +675,7 @@ class OperationsManager {
      * Update field operation
      */
     public function updateFieldOperation($id, $name, $status, $location, $startDate, $endDate) {
-        $query = "UPDATE operations_field SET name = :name, status = :status, location = :location, start_date = :startDate, end_date = :endDate WHERE id = :id";
+        $query = "UPDATE operations_field SET name = :name, status = :status, location = :location, startDate = :startDate, endDate = :endDate WHERE id = :id";
         $stmt = $this->db->prepare($query);
         $stmt->bindValue(':id', $id, PDO::PARAM_INT);
         $stmt->bindValue(':name', $name, PDO::PARAM_STR);

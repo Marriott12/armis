@@ -274,8 +274,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                 <td><?php echo $deployment['personnel_count']; ?></td>
                                                 <td>
                                                     <small>
-                                                        <?php echo date('M d, Y', strtotime($deployment['start_date'])); ?> -
-                                                        <?php echo date('M d, Y', strtotime($deployment['end_date'])); ?>
+                                                        <?php echo date('M d, Y', strtotime($deployment['startDate'])); ?> -
+                                                        <?php echo date('M d, Y', strtotime($deployment['endDate'])); ?>
                                                     </small>
                                                 </td>
                                             </tr>

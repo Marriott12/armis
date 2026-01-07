@@ -1,7 +1,33 @@
 <?php
+/**
+ * Staff Creation and Import Module
+ * 
+ * RANK LEVEL SYSTEM:
+ * - Levels 1-13:  Officers (1=General/highest, 13=2nd Lieutenant/lowest)
+ * - Level 14:     Officer Cadets (commissioning candidates)
+ * - Levels 15-26: Non-Commissioned Officers (15=WO1/highest, 26=Private/lowest)
+ * - Level 27:     Recruits (in basic training)
+ * - Level 28:     Civilian Employees (admin/support staff)
+ * 
+ * SENIORITY: Lower level = Higher rank (ORDER BY level ASC shows highest rank first)
+ * 
+ * See: /shared/rank_levels.php for helper functions
+ * See: /RANK_LEVELS_DOCUMENTATION.md for complete documentation
+ */
+
 // Start session for success messages and CSRF
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
+}
+
+// Quick-fix download endpoint for failed import rows
+if (isset($_GET['download_quick_fix']) && isset($_SESSION['quick_fix_csv'])) {
+    $csvContent = $_SESSION['quick_fix_csv'];
+    $filename = 'staff_import_failed_rows_' . date('Y-m-d_His') . '.csv';
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    echo $csvContent;
+    exit;
 }
 
 // Define module constants
@@ -12,6 +38,57 @@ define('ARMIS_DEVELOPMENT', true); // Set to false in production
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/analytics.php';
 require_once __DIR__ . '/partials/create_staff_config.php';
+
+// AJAX endpoint: return failed-rows CSV (base64) and filename as JSON for client-side download
+if (isset($_GET['ajax_get_quick_fix'])) {
+    header('Content-Type: application/json');
+    $has = isset($_SESSION['quick_fix_csv']) && $_SESSION['quick_fix_csv'];
+    if ($has) {
+        $csvContent = $_SESSION['quick_fix_csv'];
+        $filename = 'staff_import_failed_rows_' . date('Y-m-d_His') . '.csv';
+        echo json_encode([
+            'success' => true,
+            'filename' => $filename,
+            // base64 encode to safely transfer binary/CSV in JSON
+            'csv_base64' => base64_encode($csvContent)
+        ]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'No failed CSV stored in session.']);
+    }
+    exit;
+}
+
+// AJAX endpoint: clear failed-rows CSV from session (expects POST with CSRF)
+if (isset($_GET['ajax_clear_quick_fix']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Accept CSRF token via header X-CSRF-Token or as POST param 'csrf'
+    $provided = null;
+    if (!empty($_SERVER['HTTP_X_CSRF_TOKEN'])) {
+        $provided = $_SERVER['HTTP_X_CSRF_TOKEN'];
+    } elseif (isset($_POST['csrf'])) {
+        $provided = $_POST['csrf'];
+    }
+    header('Content-Type: application/json');
+    if (!isset($csrfToken) || !$provided || $provided !== $csrfToken) {
+        echo json_encode(['success' => false, 'message' => 'Invalid CSRF token.']);
+        exit;
+    }
+    unset($_SESSION['quick_fix_csv']);
+    echo json_encode(['success' => true, 'message' => 'Failed rows CSV cleared from session.']);
+    exit;
+}
+
+// Handle clearing of quick-fix CSV via POST (requires CSRF) - legacy non-AJAX fallback
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_quick_fix'])) {
+    if (!isset($_POST['csrf']) || $_POST['csrf'] !== $csrfToken) {
+        $_SESSION['success_message'] = 'Unable to clear failed CSV: invalid session token.';
+    } else {
+        unset($_SESSION['quick_fix_csv']);
+        $_SESSION['success_message'] = 'Failed rows CSV cleared from session.';
+    }
+    // Redirect to avoid form resubmission
+    header('Location: ' . $_SERVER['PHP_SELF']);
+    exit;
+}
 
 // Require authentication and admin branch access
 requireAuth();
@@ -67,21 +144,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_FILES['csv_file'])) {
                 $form_errors[$field] = $label . ' is required.';
             }
         }
-        // NRC validation (xxxxxx/xx/1 format)
-        if ($nrc && !preg_match('/^\d{6}\/\d{2}\/1$/', $nrc)) {
-            $form_errors['nrc'] = 'Invalid NRC format. Use format: 123456/78/1';
+        // NRC validation and auto-formatting (xxxxxx/xx/1 format)
+        if ($nrc) {
+            // Remove any spaces and normalize
+            $nrc = trim(str_replace(' ', '', $nrc));
+            
+            // Auto-format if only digits provided (e.g., 12345678 -> 123456/78/1)
+            if (preg_match('/^(\d{6})(\d{2})$/', $nrc, $matches)) {
+                $nrc = $matches[1] . '/' . $matches[2] . '/1';
+                $_POST['nrc'] = $nrc;
+            }
+            // Auto-append /1 if missing (e.g., 123456/78 -> 123456/78/1)
+            elseif (preg_match('/^(\d{6}\/\d{2})$/', $nrc)) {
+                $nrc = $nrc . '/1';
+                $_POST['nrc'] = $nrc;
+            }
+            // Validate final format
+            if (!preg_match('/^\d{6}\/\d{2}\/1$/', $nrc)) {
+                $form_errors['nrc'] = 'Invalid NRC format. Expected: 123456/78/1';
+            }
         }
         // Email format
         if ($email && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $form_errors['email'] = 'Invalid email address.';
         }
         
-        // Zambian phone format (+260 + 9 digits) - Enhanced validation
+        // Zambian phone format (+260 + 9 digits) - Auto-formatting
         if ($phone) {
             // Remove all non-digits first to normalize input
             $phone_digits = preg_replace('/[^0-9]/', '', $phone);
             
-            // Check if it starts with country code
+            // Auto-format based on input pattern
             if (substr($phone_digits, 0, 3) === '260' && strlen($phone_digits) === 12) {
                 // Has country code (260XXXXXXXXX) - add + prefix
                 $phone = '+' . $phone_digits;
@@ -90,30 +183,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_FILES['csv_file'])) {
                 // Local format (9 digits starting with 9, 7, or 5) - add +260 prefix
                 $phone = '+260' . $phone_digits;
                 $_POST['phone'] = $phone;
+            } elseif (substr($phone_digits, 0, 1) === '0' && strlen($phone_digits) === 10 && in_array($phone_digits[1], ['9', '7', '5'])) {
+                // Format with leading 0 (0976123456) - remove 0 and add +260
+                $phone = '+260' . substr($phone_digits, 1);
+                $_POST['phone'] = $phone;
             } else {
                 // Invalid format
-                $form_errors['phone'] = 'Invalid phone number. Must be 9 digits starting with 9, 7, or 5 (e.g., 976123456) or include country code +260.';
+                $form_errors['phone'] = 'Invalid phone. Use: 976123456, 0976123456, or +260976123456';
             }
         }
         
     // NOK NRC validation removed
-        // NOK phone format (Zambian: +260 + 9 digits) - Enhanced validation
+        // NOK phone format (Zambian: +260 + 9 digits) - Auto-formatting
         if ($nok_phone) {
-            // Remove all non-digits first to normalize input
             $nok_phone_digits = preg_replace('/[^0-9]/', '', $nok_phone);
             
-            // Check if it starts with country code
             if (substr($nok_phone_digits, 0, 3) === '260' && strlen($nok_phone_digits) === 12) {
-                // Has country code (260XXXXXXXXX) - add + prefix
                 $nok_phone = '+' . $nok_phone_digits;
                 $_POST['nok_tel'] = $nok_phone;
             } elseif (strlen($nok_phone_digits) === 9 && in_array($nok_phone_digits[0], ['9', '7', '5'])) {
-                // Local format (9 digits starting with 9, 7, or 5) - add +260 prefix
                 $nok_phone = '+260' . $nok_phone_digits;
                 $_POST['nok_tel'] = $nok_phone;
+            } elseif (substr($nok_phone_digits, 0, 1) === '0' && strlen($nok_phone_digits) === 10 && in_array($nok_phone_digits[1], ['9', '7', '5'])) {
+                $nok_phone = '+260' . substr($nok_phone_digits, 1);
+                $_POST['nok_tel'] = $nok_phone;
             } else {
-                // Invalid format
-                $form_errors['nok_tel'] = 'Invalid phone number for Next of Kin. Must be 9 digits starting with 9, 7, or 5 or include country code +260.';
+                $form_errors['nok_tel'] = 'Invalid NOK phone. Use: 976123456, 0976123456, or +260976123456';
             }
         }
         // NOK email format
@@ -121,23 +216,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_FILES['csv_file'])) {
             $form_errors['nok_email'] = 'Invalid email address for Next of Kin.';
         }
     // ALT NOK NRC validation removed
-        // ALT NOK phone format (Zambian: +260 + 9 digits) - Enhanced validation
+        // ALT NOK phone format (Zambian: +260 + 9 digits) - Auto-formatting
         if ($altnok_phone) {
-            // Remove all non-digits first to normalize input
             $altnok_phone_digits = preg_replace('/[^0-9]/', '', $altnok_phone);
             
-            // Check if it starts with country code
             if (substr($altnok_phone_digits, 0, 3) === '260' && strlen($altnok_phone_digits) === 12) {
-                // Has country code (260XXXXXXXXX) - add + prefix
                 $altnok_phone = '+' . $altnok_phone_digits;
                 $_POST['alt_nok_tel'] = $altnok_phone;
             } elseif (strlen($altnok_phone_digits) === 9 && in_array($altnok_phone_digits[0], ['9', '7', '5'])) {
-                // Local format (9 digits starting with 9, 7, or 5) - add +260 prefix
                 $altnok_phone = '+260' . $altnok_phone_digits;
                 $_POST['alt_nok_tel'] = $altnok_phone;
+            } elseif (substr($altnok_phone_digits, 0, 1) === '0' && strlen($altnok_phone_digits) === 10 && in_array($altnok_phone_digits[1], ['9', '7', '5'])) {
+                $altnok_phone = '+260' . substr($altnok_phone_digits, 1);
+                $_POST['alt_nok_tel'] = $altnok_phone;
             } else {
-                // Invalid format
-                $form_errors['alt_nok_tel'] = 'Invalid phone number for Alternate Next of Kin. Must be 9 digits starting with 9, 7, or 5 or include country code +260.';
+                $form_errors['alt_nok_tel'] = 'Invalid Alt NOK phone. Use: 976123456, 0976123456, or +260976123456';
             }
         }
         // ALT NOK email format
@@ -166,8 +259,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_FILES['csv_file'])) {
 
         // Service number validation (must be integer and > 0)
         if (isset($_POST['svcNo'])) {
-            $service_number = $_POST['svcNo'];
-            if (!ctype_digit($service_number) || intval($service_number) < 1) {
+            $svcNo = $_POST['svcNo'];
+            if (!ctype_digit($svcNo) || intval($svcNo) < 1) {
                 $form_errors['svcNo'] = 'Service number must be numbers.';
             }
         }
@@ -184,7 +277,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_FILES['csv_file'])) {
             }
         }
         if (empty($form_errors) && !$duplicate) {
-            require_once __DIR__ . '/partials/create_staff_handler_simple.php';
+            require_once __DIR__ . '/partials/create_staff_handler.php';
         }
     }
 }
@@ -207,14 +300,38 @@ $csv_import_credentials = [];
 require_once __DIR__ . '/lib/ImportProcessor.php';
 
 // Handle CSV/Excel import POST with enhanced validation and transaction management
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['csv_file'])) {
+// Accept either a fresh upload or an "apply_temp" submission which uses the previously stored temp file
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_FILES['csv_file']) || isset($_POST['apply_temp']))) {
     if (!isset($_POST['csrf']) || $_POST['csrf'] !== $csrfToken) {
         $csv_import_errors[] = 'Invalid CSRF token.';
-    } elseif ($_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
-        $csv_import_errors[] = 'File upload error: ' . $_FILES['csv_file']['error'];
     } else {
-        $csvFile = $_FILES['csv_file']['tmp_name'];
-        $fileType = strtolower(pathinfo($_FILES['csv_file']['name'], PATHINFO_EXTENSION));
+        // Determine source file: either the uploaded file or a previously stored temp file (apply_temp)
+        $csvFile = null; $fileType = null;
+        if (isset($_POST['apply_temp']) && $_POST['apply_temp'] == '1') {
+            if (empty($_SESSION['import_temp_file']) || !file_exists($_SESSION['import_temp_file'])) {
+                $csv_import_errors[] = 'No uploaded file available to apply. Please re-upload.';
+            } else {
+                $csvFile = $_SESSION['import_temp_file'];
+                $fileType = strtolower(pathinfo($_SESSION['import_temp_name'] ?? $csvFile, PATHINFO_EXTENSION));
+            }
+        } elseif (isset($_FILES['csv_file'])) {
+            if ($_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
+                $csv_import_errors[] = 'File upload error: ' . $_FILES['csv_file']['error'];
+            } else {
+                // Move uploaded file to tmp so it can be re-used for a confirm/apply action
+                $origName = basename($_FILES['csv_file']['name']);
+                $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+                $tmpName = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'armis_import_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+                if (!move_uploaded_file($_FILES['csv_file']['tmp_name'], $tmpName)) {
+                    $csv_import_errors[] = 'Failed to move uploaded file to temporary storage.';
+                } else {
+                    $_SESSION['import_temp_file'] = $tmpName;
+                    $_SESSION['import_temp_name'] = $origName;
+                    $csvFile = $tmpName;
+                    $fileType = $ext;
+                }
+            }
+        }
         
         // Get database connection
         require_once dirname(__DIR__) . '/shared/database_connection.php';
@@ -222,15 +339,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['csv_file'])) {
         // Create import processor
         $userId = $_SESSION['user_id'] ?? 0;
         $processor = new ImportProcessor($pdo, $userId);
-        
-        // Check if this is validation-only mode
-        $validateOnly = isset($_POST['validate_only']) && $_POST['validate_only'] === 'on';
-        
+
+        // Read import options from form
+        $importMode = isset($_POST['import_mode']) ? $_POST['import_mode'] : 'skip';
+        $dryRun = isset($_POST['dry_run']) && $_POST['dry_run'] === 'on';
+
+        // Rank updates are handled inside the import processor so previews include tempRank -> rankId mapping.
+
         // Process file based on type
-        if ($fileType === 'csv') {
-            $result = $processor->processCSV($csvFile);
-        } elseif ($fileType === 'xlsx' || $fileType === 'xls') {
-            $result = $processor->processExcel($csvFile);
+        if ($csvFile && ($fileType === 'csv' || $fileType === 'xlsx' || $fileType === 'xls')) {
+            if ($fileType === 'csv') {
+                $result = $processor->processCSV($csvFile, $importMode, $dryRun);
+            } else {
+                $result = $processor->processExcel($csvFile, $importMode, $dryRun);
+            }
         } else {
             $result = [
                 'success' => [],
@@ -247,6 +369,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['csv_file'])) {
         // Store credentials in session for display
         if (!empty($csv_import_credentials)) {
             $_SESSION['import_credentials'] = $csv_import_credentials;
+        }
+
+        // Clear dashboard session cache so dashboard reflects recent import changes
+        if (session_status() === PHP_SESSION_NONE) session_start();
+        if (!empty($csv_import_success) || !empty($rankUpdateRes['affected'])) {
+            unset($_SESSION['dashboard_cache']);
+            // Mark that dashboard should be refreshed on next view
+            $_SESSION['dashboard_refresh_needed'] = true;
+        }
+
+        // If this was a real import (not dry run) and it used a temp upload, remove the temp file
+        if (!$dryRun && !empty($_SESSION['import_temp_file']) && file_exists($_SESSION['import_temp_file'])) {
+            @unlink($_SESSION['import_temp_file']);
+            unset($_SESSION['import_temp_file']);
+            unset($_SESSION['import_temp_name']);
         }
     }
 }
@@ -351,11 +488,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <p class="text-muted mb-0">Complete the form below to add a new staff member to the system</p>
                             </div>
                             <div class="d-flex gap-2">
-                                <!-- Load Draft button removed -->
                                 <button type="button" class="btn btn-outline-secondary btn-sm" id="clearFormBtn">
                                     <i class="fa fa-refresh"></i> Clear Form
                                 </button>
-                                <!-- Save Draft button removed -->
                             </div>
                     </div>
                             
@@ -521,10 +656,38 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                     <thead><tr><th>ID</th><th>Rank</th><th>Abbr</th></tr></thead>
                                                     <tbody>
                                                     <?php
-                                                    require_once dirname(__DIR__) . '/shared/database_connection.php';
-                                                    $ranksStmt = $pdo->query("SELECT id, name, abbreviation FROM ranks ORDER BY level ASC");
-                                                    while ($r = $ranksStmt->fetch(PDO::FETCH_ASSOC)) {
-                                                        echo "<tr><td>{$r['id']}</td><td>{$r['name']}</td><td>{$r['abbreviation']}</td></tr>";
+                                                    // Use ranks loaded by partial (create_staff_config.php) where possible.
+                                                    // The partial provides $ranks as an array of objects; support multiple shapes for compatibility.
+                                                    if (!empty($ranks)) {
+                                                        foreach ($ranks as $r) {
+                                                            // Support both object and associative array shapes safely
+                                                            if (is_object($r)) {
+                                                                $id = $r->rankID ?? ($r->id ?? '');
+                                                                $name = $r->rankName ?? ($r->name ?? '');
+                                                                $abbr = $r->abbreviation ?? '';
+                                                            } elseif (is_array($r)) {
+                                                                $id = $r['rankID'] ?? ($r['id'] ?? '');
+                                                                $name = $r['rankName'] ?? ($r['name'] ?? '');
+                                                                $abbr = $r['abbreviation'] ?? '';
+                                                            } else {
+                                                                $id = '';
+                                                                $name = '';
+                                                                $abbr = '';
+                                                            }
+                                                            echo "<tr><td>" . htmlspecialchars($id) . "</td><td>" . htmlspecialchars($name) . "</td><td>" . htmlspecialchars($abbr) . "</td></tr>";
+                                                        }
+                                                    } else {
+                                                        // Fallback to a safe query with try/catch in case partial failed to load ranks
+                                                        try {
+                                                            require_once dirname(__DIR__) . '/shared/database_connection.php';
+                                                            $ranksStmt = $pdo->query("SELECT rankId as id, rankId as name, rankId as rankId as abbreviation FROM rank ORDER BY level ASC");
+                                                            while ($r = $ranksStmt->fetch(PDO::FETCH_ASSOC)) {
+                                                                echo "<tr><td>" . htmlspecialchars($r['id']) . "</td><td>" . htmlspecialchars($r['name']) . "</td><td>" . htmlspecialchars($r['abbreviation']) . "</td></tr>";
+                                                            }
+                                                        } catch (Exception $e) {
+                                                            error_log('create_staff: ranks lookup failed: ' . $e->getMessage());
+                                                            // show nothing to avoid fatal errors
+                                                        }
                                                     }
                                                     ?>
                                                     </tbody>
@@ -538,9 +701,34 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                     <thead><tr><th>ID</th><th>Unit</th><th>Code</th></tr></thead>
                                                     <tbody>
                                                     <?php
-                                                    $unitsStmt = $pdo->query("SELECT id, name, code FROM units ORDER BY name ASC");
-                                                    while ($u = $unitsStmt->fetch(PDO::FETCH_ASSOC)) {
-                                                        echo "<tr><td>{$u['id']}</td><td>{$u['name']}</td><td>{$u['code']}</td></tr>";
+                                                    // Use units loaded by partial (create_staff_config.php) where possible.
+                                                    if (!empty($units)) {
+                                                        foreach ($units as $u) {
+                                                            if (is_object($u)) {
+                                                                $id = $u->unitID ?? ($u->id ?? '');
+                                                                $name = $u->unitName ?? ($u->name ?? '');
+                                                                $code = $u->unitCode ?? ($u->code ?? '');
+                                                            } elseif (is_array($u)) {
+                                                                $id = $u['unitID'] ?? ($u['id'] ?? '');
+                                                                $name = $u['unitName'] ?? ($u['name'] ?? '');
+                                                                $code = $u['unitCode'] ?? ($u['code'] ?? '');
+                                                            } else {
+                                                                $id = '';
+                                                                $name = '';
+                                                                $code = '';
+                                                            }
+                                                            echo "<tr><td>" . htmlspecialchars($id) . "</td><td>" . htmlspecialchars($name) . "</td><td>" . htmlspecialchars($code) . "</td></tr>";
+                                                        }
+                                                    } else {
+                                                        try {
+                                                            $unitsStmt = $pdo->query("SELECT unitId as id, code as name, code FROM unit ORDER BY code ASC");
+                                                            while ($u = $unitsStmt->fetch(PDO::FETCH_ASSOC)) {
+                                                                echo "<tr><td>" . htmlspecialchars($u['id']) . "</td><td>" . htmlspecialchars($u['name']) . "</td><td>" . htmlspecialchars($u['code']) . "</td></tr>";
+                                                            }
+                                                        } catch (Exception $e) {
+                                                            error_log('create_staff: units lookup failed: ' . $e->getMessage());
+                                                            // silent fallback
+                                                        }
                                                     }
                                                     ?>
                                                     </tbody>
@@ -554,9 +742,31 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                     <thead><tr><th>ID</th><th>Corps</th></tr></thead>
                                                     <tbody>
                                                     <?php
-                                                    $corpsStmt = $pdo->query("SELECT id, name FROM corps ORDER BY name ASC");
-                                                    while ($c = $corpsStmt->fetch(PDO::FETCH_ASSOC)) {
-                                                        echo "<tr><td>{$c['id']}</td><td>{$c['name']}</td></tr>";
+                                                    // Use $corps populated by partial when available
+                                                    if (!empty($corps)) {
+                                                        foreach ($corps as $c) {
+                                                            if (is_object($c)) {
+                                                                $id = $c->corpsID ?? ($c->id ?? ($c->corpsID ?? ''));
+                                                                $name = $c->corpsName ?? ($c->name ?? ($c->corps ?? ''));
+                                                            } elseif (is_array($c)) {
+                                                                $id = $c['corpsID'] ?? ($c['id'] ?? ($c['corpsID'] ?? ''));
+                                                                $name = $c['corpsName'] ?? ($c['name'] ?? ($c['corps'] ?? ''));
+                                                            } else {
+                                                                $id = '';
+                                                                $name = '';
+                                                            }
+                                                            echo "<tr><td>" . htmlspecialchars($id) . "</td><td>" . htmlspecialchars($name) . "</td></tr>";
+                                                        }
+                                                    } else {
+                                                        try {
+                                                            // corps table uses corpsId as primary key and abbreviation for name
+                                                            $corpsStmt = $pdo->query("SELECT corpsId as id, abbreviation as name FROM corps ORDER BY abbreviation ASC");
+                                                            while ($c = $corpsStmt->fetch(PDO::FETCH_ASSOC)) {
+                                                                echo "<tr><td>" . htmlspecialchars($c['id']) . "</td><td>" . htmlspecialchars($c['name']) . "</td></tr>";
+                                                            }
+                                                        } catch (Exception $e) {
+                                                            error_log('create_staff: corps lookup failed: ' . $e->getMessage());
+                                                        }
                                                     }
                                                     ?>
                                                     </tbody>
@@ -590,11 +800,18 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label d-block">&nbsp;</label>
-                                        <div class="form-check">
-                                            <input class="form-check-input" type="checkbox" name="validate_only" id="validateOnly">
-                                            <label class="form-check-label" for="validateOnly">
-                                                <i class="fa fa-check-circle text-info"></i> Validate Only (Don't Import)
-                                            </label>
+                                        
+                                        <div class="mt-2">
+                                            <label for="importMode" class="form-label">Import Mode</label>
+                                            <select name="import_mode" id="importMode" class="form-select">
+                                                <option value="skip" selected>Skip existing (safe)</option>
+                                                <option value="update">Update existing (overwrite)</option>
+                                                <option value="merge">Merge existing (selective fields)</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-check mt-2">
+                                            <input class="form-check-input" type="checkbox" name="dry_run" id="dryRun">
+                                            <label class="form-check-label" for="dryRun">Dry Run (preview only, no DB changes)</label>
                                         </div>
                                         <small class="text-muted">Check file for errors without saving</small>
                                     </div>
@@ -625,9 +842,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             <script>
                             function downloadEnhancedTemplate() {
                                 const cols = [
-                                    'service number', 'rank_id', 'fornames', 'surnames', 'email', 'dob', 
-                                    'gender', 'marital', 'NRC', 'tel', 'unit_id', 
-                                    'corps_id', 'attestDate', 'subWef', 'tempWef', 'province', 
+                                    'service number', 'rankId', 'fornames', 'surnames', 'email', 'dob', 
+                                    'gender', 'marital', 'NRC', 'tel', 'unitId', 
+                                    'corpsId', 'attestDate', 'subWef', 'tempWef', 'province', 
                                     'bloodGp', 'intake', 'prefix', 'initials', 'titles', 
                                     'subRank', 'tempRank', 'unitAtt', 'appt'
                                 ];
@@ -638,7 +855,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 // Example row with proper formats
                                 const example = [
                                     '12345',                  // service number
-                                    '5',                      // rank_id (see reference table)
+                                    '5',                      // rankId (see reference table)
                                     'John',                   // fornames (REQUIRED)
                                     'Banda',                  // surnames (REQUIRED)
                                     'john.banda@army.zm',     // email (REQUIRED)
@@ -647,8 +864,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                     'Married',                // marital (Single/Married/Divorced/Widowed/Separated)
                                     '123456/78/1',            // NRC (123456/78/9 format)
                                     '+260977123456',          // tel (+260XXXXXXXXX)
-                                    '3',                      // unit_id (see reference table)
-                                    '2',                      // corps_id (see reference table)
+                                    '3',                      // unitId (see reference table)
+                                    '2',                      // corpsId (see reference table)
                                     '2015-06-01',             // attestDate (YYYY-MM-DD)
                                     '2020-01-01',             // subWef (YYYY-MM-DD)
                                     '',                       // tempWef (YYYY-MM-DD or leave blank)
@@ -668,11 +885,11 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 
                                 // Instructions
                                 csv += '\n# INSTRUCTIONS:\n';
-                                csv += '# 1. REQUIRED FIELDS: fornames, surnames, email, dob (rows will fail without these)\n';
+                                csv += '# 1. REQUIRED FIELDS: fornames, surnames, service number (email and dob are optional)\n';
                                 csv += '# 2. DATE FORMAT: YYYY-MM-DD (e.g., 2015-06-30)\n';
                                 csv += '# 3. NRC FORMAT: 123456/78/9 (exactly this pattern)\n';
                                 csv += '# 4. PHONE FORMAT: +260977123456 (include country code)\n';
-                                csv += '# 5. Use IDs from reference tables for rank_id, unit_id, corps_id\n';
+                                csv += '# 5. Use IDs from reference tables for rankId, unitId, corpsId\n';
                                 csv += '# 6. Delete this instruction section and the example row before importing\n';
                                 csv += '# 7. Keep the header row (first row with column names)\n';
                                 
@@ -765,11 +982,46 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 </script>
                                 <?php endif; ?>
                             <?php endif; ?>
+                            <?php if (!empty($result) && !empty($result['preview'])): ?>
+                                <div class="alert alert-secondary mt-3">
+                                    <h6><i class="fas fa-eye"></i> Import Preview</h6>
+                                    <p>Dry run preview (no changes applied):</p>
+                                    <ul>
+                                        <li>Would insert: <?= intval($result['preview']['would_insert'] ?? 0) ?></li>
+                                        <li>Would update: <?= intval($result['preview']['would_update'] ?? 0) ?></li>
+                                        <li>Would skip: <?= intval($result['preview']['would_skip'] ?? 0) ?></li>
+                                    </ul>
+                                </div>
+                                <?php if (isset($dryRun) && $dryRun): ?>
+                                    <form method="post" class="mt-2" onsubmit="return confirm('Proceed with importing the file? This will apply the changes.');">
+                                        <input type="hidden" name="csrf" value="<?=htmlspecialchars($csrfToken)?>">
+                                        <input type="hidden" name="apply_temp" value="1">
+                                        <input type="hidden" name="import_mode" value="<?=htmlspecialchars($importMode ?? 'skip')?>">
+                                        <button type="submit" class="btn btn-primary"><i class="fa fa-play"></i> Proceed with Import</button>
+                                    </form>
+                                <?php endif; ?>
+                                <?php if (!empty($result['rank_update'])): ?>
+                                    <div class="mt-2">
+                                        <?php $ru = $result['rank_update']; ?>
+                                        <?php if (!empty($ru['affected'])): ?>
+                                            <div class="alert alert-info mt-2">
+                                                <strong>Rank Update:</strong> <?=intval($ru['affected'])?> rows would be updated by tempRank mapping.
+                                                <?php if (!empty($ru['backup'])): 
+                                                    $bn = basename($ru['backup']);
+                                                    $link = '/Armis2/tmp/' . rawurlencode($bn);
+                                                ?>
+                                                    Backup: <a href="<?= htmlspecialchars($link) ?>" download><?=htmlspecialchars($bn)?></a>
+                                                <?php endif; ?>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endif; ?>
+                            <?php endif; ?>
                             
                             <?php if (!empty($csv_import_errors)): ?>
                                 <div class="alert alert-danger alert-dismissible fade show">
-                                    <h6><i class="fas fa-exclamation-triangle"></i> Import Failed - Validation Errors Found</h6>
-                                    <p><strong>Transaction rolled back - No records were imported.</strong></p>
+                                    <h6><i class="fas fa-exclamation-triangle"></i> Import Completed With Errors</h6>
+                                    <p><strong>Some rows failed validation and were not imported.</strong></p>
                                     <p>Please fix the following errors and try again:</p>
                                     <div style="max-height: 400px; overflow-y: auto; background: #fff; padding: 10px; border-radius: 4px;">
                                         <ul class="mb-0">
@@ -784,10 +1036,20 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                             <li>Check that all required fields (fornames, surnames, email, dob) are filled</li>
                                             <li>Verify date format is YYYY-MM-DD (e.g., 1990-05-15)</li>
                                             <li>Ensure emails are valid and unique</li>
-                                            <li>Check that rank_id, unit_id, corps_id exist in reference tables</li>
+                                            <li>Check that rankId, unitId, corpsId exist in reference tables</li>
                                             <li>Verify NRC format is 123456/78/9</li>
                                         </ul>
                                     </div>
+                                    <?php if (!empty($_SESSION['quick_fix_csv'])): ?>
+                                    <div class="mt-3 d-flex gap-2">
+                                        <button type="button" id="btnDownloadFailedCsv" class="btn btn-secondary">
+                                            <i class="fa fa-download"></i> Download failed rows CSV for correction
+                                        </button>
+                                        <button type="button" id="btnClearFailedCsv" data-csrf="<?=htmlspecialchars($csrfToken)?>" class="btn btn-outline-danger">
+                                            <i class="fa fa-trash"></i> Clear failed CSV
+                                        </button>
+                                    </div>
+                                    <?php endif; ?>
                                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                                 </div>
                             <?php endif; ?>
@@ -954,6 +1216,77 @@ Generated: ${new Date().toLocaleString()}
                         }
                     }, 3000);
                 }
+                </script>
+                <script>
+                (function(){
+                    async function fetchFailedCsv() {
+                        try {
+                            const res = await fetch('?ajax_get_quick_fix=1', { credentials: 'same-origin' });
+                            const data = await res.json();
+                            if (!data || !data.success) {
+                                alert(data && data.message ? data.message : 'No failed CSV available.');
+                                return;
+                            }
+                            const csvText = atob(data.csv_base64);
+                            const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = data.filename || 'failed_rows.csv';
+                            document.body.appendChild(a);
+                            a.click();
+                            a.remove();
+                            URL.revokeObjectURL(url);
+                        } catch (err) {
+                            console.error('fetchFailedCsv error', err);
+                            alert('Error fetching failed CSV: ' + (err.message || err));
+                        }
+                    }
+
+                    async function clearFailedCsv(csrf) {
+                        if (!confirm('Clear the failed rows CSV from session? This cannot be undone.')) return;
+                        try {
+                            const params = new URLSearchParams();
+                            params.append('csrf', csrf || '');
+                            const res = await fetch('?ajax_clear_quick_fix=1', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                                body: params.toString(),
+                                credentials: 'same-origin'
+                            });
+                            const data = await res.json();
+                                    if (data && data.success) {
+                                        // Update UI without reload: disable buttons and show temporary success toast
+                                        alert(data.message || 'Cleared failed CSV.');
+                                        const dlBtn = document.getElementById('btnDownloadFailedCsv');
+                                        const clrBtn = document.getElementById('btnClearFailedCsv');
+                                        if (dlBtn) {
+                                            dlBtn.disabled = true;
+                                            dlBtn.innerHTML = '<i class="fa fa-download"></i> No failed rows';
+                                        }
+                                        if (clrBtn) {
+                                            clrBtn.disabled = true;
+                                            clrBtn.innerHTML = '<i class="fa fa-check"></i> Cleared';
+                                        }
+                                        // Also hide the Quick Fix notes container if present
+                                        const quickFixContainer = clrBtn ? clrBtn.closest('.mt-3') : null;
+                                        if (quickFixContainer) quickFixContainer.classList.add('opacity-50');
+                                    } else {
+                                        alert(data && data.message ? data.message : 'Failed to clear failed CSV.');
+                                    }
+                        } catch (err) {
+                            console.error('clearFailedCsv error', err);
+                            alert('Error clearing failed CSV: ' + (err.message || err));
+                        }
+                    }
+
+                    document.addEventListener('DOMContentLoaded', function() {
+                        const dl = document.getElementById('btnDownloadFailedCsv');
+                        if (dl) dl.addEventListener('click', fetchFailedCsv);
+                        const clr = document.getElementById('btnClearFailedCsv');
+                        if (clr) clr.addEventListener('click', function() { clearFailedCsv(this.dataset.csrf); });
+                    });
+                })();
                 </script>
             </div>
             </div>

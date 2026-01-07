@@ -24,8 +24,8 @@ $missions = $manager->searchMissions($name, $status, $priority);
             <td><?= htmlspecialchars($mission['priority']) ?></td>
             <td>
                 <small>
-                    <?= date('M d, Y', strtotime($mission['start_date'])) ?> -
-                    <?= date('M d, Y', strtotime($mission['end_date'])) ?>
+                    <?= date('M d, Y', strtotime($mission['startDate'])) ?> -
+                    <?= date('M d, Y', strtotime($mission['endDate'])) ?>
                 </small>
             </td>
             <td>

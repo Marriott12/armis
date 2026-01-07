@@ -20,7 +20,7 @@ require_once dirname(__DIR__) . '/shared/database_connection.php';
 
 try {
     // Get rank ID from request
-    $rankId = isset($_GET['rank_id']) ? (int)$_GET['rank_id'] : 0;
+    $rankId = isset($_GET['rankId']) ? (int)$_GET['rankId'] : 0;
     
     // Validate rank ID
     if ($rankId <= 0) {
@@ -36,8 +36,8 @@ try {
     // Get database connection
     $pdo = getDbConnection();
     
-    // Verify rank exists
-    $rankCheck = $pdo->prepare("SELECT id, name, level, category FROM ranks WHERE id = ?");
+    // Verify rank exists (using `rank` table with rankId)
+    $rankCheck = $pdo->prepare("SELECT rankId as id, rankId as name, level, category FROM `rank` WHERE rankId = ?");
     $rankCheck->execute([$rankId]);
     $rankData = $rankCheck->fetch(PDO::FETCH_OBJ);
     
@@ -55,26 +55,26 @@ try {
     $stmt = $pdo->prepare("
         SELECT 
             s.id,
-            s.service_number,
-            s.first_name,
-            s.last_name,
-            CONCAT(s.first_name, ' ', s.last_name) as full_name,
+            s.svcNo,
+            s.fName,
+            s.lName,
+            CONCAT(s.fName, ' ', s.lName) as full_name,
             s.DOB,
             s.attestDate,
-            s.rank_id,
-            s.unit_id,
+            s.rankId,
+            s.unitId,
             u.name as unit_name,
             u.code as unit_code,
-            r.name as rank_name,
-            r.abbreviation as rank_abbr,
+            COALESCE(r.rankId, r.rankId) as rank_name,
+            r.rankId as rank_abbr,
             r.level as rank_level,
             YEAR(CURDATE()) - YEAR(s.DOB) - (DATE_FORMAT(CURDATE(), '%m%d') < DATE_FORMAT(s.DOB, '%m%d')) as age,
             TIMESTAMPDIFF(YEAR, s.attestDate, CURDATE()) as years_of_service
         FROM staff s
-        LEFT JOIN units u ON s.unit_id = u.id
-        LEFT JOIN ranks r ON s.rank_id = r.id
-        WHERE s.rank_id = ? AND s.status = 'active'
-        ORDER BY s.attestDate ASC, s.last_name ASC, s.first_name ASC
+        LEFT JOIN unit u ON s.unitId = u.unitId
+        LEFT JOIN `rank` r ON s.rankId = r.rankId
+        WHERE s.rankId = ? AND s.status = 'active'
+        ORDER BY s.attestDate ASC, s.lName ASC, s.fName ASC
     ");
     
     $stmt->execute([$rankId]);

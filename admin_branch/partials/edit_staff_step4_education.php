@@ -68,10 +68,10 @@
                     <input type="text" class="form-control" name="milcourse_institution[]" placeholder="Institution" value="<?= old('milcourse_institution', $milcourse[$i]->institution ?? '') ?>">
                 </div>
                 <div class="col">
-                    <input type="date" class="form-control" name="milcourse_start[]" placeholder="Start" value="<?= old('milcourse_start', $milcourse[$i]->start_date ?? '') ?>">
+                    <input type="date" class="form-control" name="milcourse_start[]" placeholder="Start" value="<?= old('milcourse_start', $milcourse[$i]->startDate ?? '') ?>">
                 </div>
                 <div class="col">
-                    <input type="date" class="form-control" name="milcourse_end[]" placeholder="End" value="<?= old('milcourse_end', $milcourse[$i]->end_date ?? '') ?>">
+                    <input type="date" class="form-control" name="milcourse_end[]" placeholder="End" value="<?= old('milcourse_end', $milcourse[$i]->endDate ?? '') ?>">
                 </div>
                 <div class="col">
                     <input type="text" class="form-control" name="milcourse_result[]" placeholder="Result" value="<?= old('milcourse_result', $milcourse[$i]->result ?? '') ?>">
@@ -108,10 +108,10 @@
                     </select>
                 </div>
                 <div class="col">
-                    <input type="date" class="form-control" name="appointment_start[]" placeholder="Start" value="<?= old('appointment_start', $appointments[$i]->start_date ?? '') ?>">
+                    <input type="date" class="form-control" name="appointment_start[]" placeholder="Start" value="<?= old('appointment_start', $appointments[$i]->startDate ?? '') ?>">
                 </div>
                 <div class="col">
-                    <input type="date" class="form-control" name="appointment_end[]" placeholder="End" value="<?= old('appointment_end', $appointments[$i]->end_date ?? '') ?>">
+                    <input type="date" class="form-control" name="appointment_end[]" placeholder="End" value="<?= old('appointment_end', $appointments[$i]->endDate ?? '') ?>">
                 </div>
                 <div class="col">
                     <input type="text" class="form-control" name="appointment_authority[]" placeholder="Authority" value="<?= old('appointment_authority', $appointments[$i]->authority ?? '') ?>">

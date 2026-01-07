@@ -22,8 +22,8 @@ $fields = $manager->searchFieldOperations($name, $status, $location);
             <td><?= htmlspecialchars($f['name']) ?></td>
             <td><?= htmlspecialchars($f['status']) ?></td>
             <td><?= htmlspecialchars($f['location']) ?></td>
-            <td><?= htmlspecialchars($f['start_date']) ?></td>
-            <td><?= htmlspecialchars($f['end_date']) ?></td>
+            <td><?= htmlspecialchars($f['startDate']) ?></td>
+            <td><?= htmlspecialchars($f['endDate']) ?></td>
         </tr>
     <?php endforeach; ?>
     </tbody>

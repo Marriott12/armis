@@ -29,12 +29,12 @@ class ImportValidator {
     
     // Field name mappings - allows multiple column header variations
     const FIELD_MAPPINGS = [
-        'fornames' => ['fornames', 'FORENAMES', 'first_name', 'firstname', 'fname', 'first name', 'First Name'],
-        'surnames' => ['surnames', 'SURNAME', 'last_name', 'lastname', 'lname', 'surname', 'last name', 'Last Name'],
+        'fornames' => ['fornames', 'FORENAMES', 'fName', 'firstname', 'fname', 'first name', 'First Name'],
+        'surnames' => ['surnames', 'SURNAME', 'lName', 'lastname', 'lname', 'surname', 'last name', 'Last Name'],
         'email' => ['email', 'EMAIL', 'Email', 'e-mail', 'email_address', 'Email Address'],
         'dob' => ['dob', 'DOB', 'date_of_birth', 'dateofbirth', 'birth_date', 'Date of Birth'],
-        'service number' => ['service number', 'SVC NO', 'service_number', 'svc_no', 'svcNo', 'service no'],
-        'rank_id' => ['rank_id', 'RANK', 'rank', 'RANK PREFIX'],
+        'service number' => ['service number', 'SVC NO', 'svcNo', 'svc_no', 'svcNo', 'service no'],
+        'rankId' => ['rankId', 'RANK', 'rank', 'RANK PREFIX'],
         'subRank' => ['subRank', 'SUB RANK', 'sub_rank', 'sub rank'],
         'subWef' => ['subWef', 'SUB RANK WEF', 'sub_rank_wef', 'sub wef'],
         'tempRank' => ['tempRank', 'TEMP RANK', 'temp_rank', 'temp rank'],
@@ -42,12 +42,12 @@ class ImportValidator {
         'initials' => ['initials', 'INITIALS', 'Initials'],
         'titles' => ['titles', 'TITLES', 'Titles'],
         'attestDate' => ['attestDate', 'ATTESTATION DATE', 'attestation_date', 'attest_date'],
-        'unit_id' => ['unit_id', 'UNIT', 'unit', 'Unit'],
+        'unitId' => ['unitId', 'UNIT', 'unit', 'Unit'],
         'unitAtt' => ['unitAtt', 'UNIT ATTACHED', 'unit_attached', 'unit attached'],
         'appt' => ['appt', 'APPT', 'appointment', 'Appointment'],
         'gender' => ['gender', 'GENDER', 'Gender'],
         'province' => ['province', 'PROVINCE', 'Province'],
-        'corps_id' => ['corps_id', 'CORPS', 'corps', 'Corps'],
+        'corpsId' => ['corpsId', 'CORPS', 'corps', 'Corps'],
         'bloodGp' => ['bloodGp', 'BLOOD GP', 'blood_group', 'blood group'],
         'NRC' => ['NRC', 'nrc', 'Nrc'],
         'intake' => ['intake', 'INTAKE', 'Intake'],
@@ -94,9 +94,11 @@ class ImportValidator {
      */
     private function loadValidForeignKeys() {
         try {
-            $this->validRanks = $this->pdo->query('SELECT id FROM ranks')->fetchAll(PDO::FETCH_COLUMN);
-            $this->validUnits = $this->pdo->query('SELECT id FROM units')->fetchAll(PDO::FETCH_COLUMN);
-            $this->validCorps = $this->pdo->query('SELECT id FROM corps')->fetchAll(PDO::FETCH_COLUMN);
+            // Ranks table is named `rank` and uses rankId as primary key
+            $this->validRanks = $this->pdo->query('SELECT rankId FROM `rank`')->fetchAll(PDO::FETCH_COLUMN);
+            $this->validUnits = $this->pdo->query('SELECT unitId FROM unit')->fetchAll(PDO::FETCH_COLUMN);
+            // Corps uses corpsId (varchar) as primary key
+            $this->validCorps = $this->pdo->query('SELECT corpsId FROM corps')->fetchAll(PDO::FETCH_COLUMN);
         } catch (Exception $e) {
             error_log("Failed to load foreign keys: " . $e->getMessage());
         }
@@ -108,7 +110,7 @@ class ImportValidator {
     private function loadExistingRecords() {
         try {
             $this->existingEmails = $this->pdo->query('SELECT email FROM staff WHERE email IS NOT NULL')->fetchAll(PDO::FETCH_COLUMN);
-            $this->existingServiceNumbers = $this->pdo->query('SELECT service_number FROM staff WHERE service_number IS NOT NULL')->fetchAll(PDO::FETCH_COLUMN);
+            $this->existingServiceNumbers = $this->pdo->query('SELECT svcNo FROM staff WHERE svcNo IS NOT NULL')->fetchAll(PDO::FETCH_COLUMN);
             $this->existingNRCs = $this->pdo->query('SELECT NRC FROM staff WHERE NRC IS NOT NULL')->fetchAll(PDO::FETCH_COLUMN);
         } catch (Exception $e) {
             error_log("Failed to load existing records: " . $e->getMessage());
@@ -128,51 +130,48 @@ class ImportValidator {
         // Normalize field names first
         $data = $this->normalizeFieldNames($data);
         
-        // Required fields validation - Only fornames, surnames, and dob are required
-        // Email and phone are now optional to allow import of incomplete records
-        $required = ['fornames', 'surnames', 'dob'];
+        // Required fields validation - only fornames and surnames are mandatory
+        $required = ['fornames', 'surnames'];
         $fieldLabels = [
             'fornames' => 'First Name (fornames/firstname/fname)',
-            'surnames' => 'Surname (surnames/lastname/lname)',
-            'dob' => 'Date of Birth (dob/DOB)'
+            'surnames' => 'Surname (surnames/lastname/lname)'
         ];
-        
+
         foreach ($required as $field) {
             if (empty($data[$field]) || trim($data[$field]) === '') {
                 $label = $fieldLabels[$field] ?? $field;
                 $errors[] = "Row $rowNum: Missing required field '$label'";
             }
         }
+
+        // Do not return early here; other fields (email, dob) are optional and validated if present
         
-        // If required fields missing, return early
-        if (!empty($errors)) {
-            return $errors;
-        }
-        
-        // Email validation - Only validate if email is provided
+        // Email validation (optional). If provided, validate format and uniqueness
         if (isset($data['email']) && trim($data['email']) !== '') {
             if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
                 $errors[] = "Row $rowNum: Invalid email format '{$data['email']}'";
-            }
-            
-            // Check duplicate email
-            if (in_array(strtolower($data['email']), array_map('strtolower', $this->existingEmails))) {
-                $errors[] = "Row $rowNum: Email '{$data['email']}' already exists in database";
+            } else {
+                // Check duplicate email in DB
+                if (in_array(strtolower($data['email']), array_map('strtolower', $this->existingEmails))) {
+                    $errors[] = "Row $rowNum: Email '{$data['email']}' already exists in database";
+                }
             }
         }
         
-        // Date of Birth validation
-        $dobDate = DateTime::createFromFormat('Y-m-d', $data['dob']);
-        if (!$dobDate || $dobDate->format('Y-m-d') !== $data['dob']) {
-            $errors[] = "Row $rowNum: Invalid date of birth format (expected YYYY-MM-DD, got '{$data['dob']}')";
-        } else {
-            // Age validation (must be 18+)
-            $age = $dobDate->diff(new DateTime('now'))->y;
-            if ($age < 18) {
-                $errors[] = "Row $rowNum: Staff member must be at least 18 years old (current age: $age)";
-            }
-            if ($age > 100) {
-                $errors[] = "Row $rowNum: Invalid age (over 100 years old)";
+        // Date of Birth validation (optional). If provided, must be YYYY-MM-DD and reasonable age
+        if (isset($data['dob']) && trim($data['dob']) !== '') {
+            $dobDate = DateTime::createFromFormat('Y-m-d', $data['dob']);
+            if (!$dobDate || $dobDate->format('Y-m-d') !== $data['dob']) {
+                $errors[] = "Row $rowNum: Invalid date of birth format (expected YYYY-MM-DD, got '{$data['dob']}')";
+            } else {
+                // Age validation (must be 18+)
+                $age = $dobDate->diff(new DateTime('now'))->y;
+                if ($age < 18) {
+                    $errors[] = "Row $rowNum: Staff member must be at least 18 years old (current age: $age)";
+                }
+                if ($age > 100) {
+                    $errors[] = "Row $rowNum: Invalid age (over 100 years old)";
+                }
             }
         }
         
@@ -189,15 +188,14 @@ class ImportValidator {
                 // Pad to 6 digits with leading zeros
                 $normalizedServiceNum = str_pad($digitsOnly, 6, '0', STR_PAD_LEFT);
                 
-                // Check duplicate service number
-                if (in_array($normalizedServiceNum, $this->existingServiceNumbers)) {
-                    $errors[] = "Row $rowNum: Service number '$normalizedServiceNum' already exists in database";
-                }
-                
-                // Store normalized value back to data
+                // Do not treat existing DB service-numbers as a blocking validation error here.
+                // The importer will choose how to handle DB-duplicates (skip, update, or report a summary).
+                // Store normalized value back to data for later checks.
                 $data['service number'] = $normalizedServiceNum;
             }
         }
+
+    
         
         // NRC validation (Zambian format: 123456/78/9, optional)
         if (isset($data['NRC']) && trim($data['NRC']) !== '') {
@@ -258,7 +256,8 @@ class ImportValidator {
                 // Set to NULL or empty for placeholders
                 $data['bloodGp'] = null;
             } else {
-                // Normalize blood group format variations
+                // Normalize common variants and mis-typed zeros
+                $bloodGp = str_replace('0', 'O', $bloodGp); // map zero to letter O
                 $bloodGp = str_replace(['POSITIVE', 'NEGATIVE', 'POS', 'NEG', ' '], ['+', '-', '+', '-', ''], $bloodGp);
                 
                 // Handle blood groups without +/- sign (assume positive)
@@ -333,34 +332,34 @@ class ImportValidator {
             }
         }
         
-        // Foreign key validation - rank_id
-        if (isset($data['rank_id']) && trim($data['rank_id']) !== '') {
-            $rankId = trim($data['rank_id']);
+        // Foreign key validation - rankId
+        if (isset($data['rankId']) && trim($data['rankId']) !== '') {
+            $rankId = trim($data['rankId']);
             if (!ctype_digit($rankId)) {
-                $errors[] = "Row $rowNum: rank_id must be a number (got '$rankId')";
+                $errors[] = "Row $rowNum: rankId must be a number (got '$rankId')";
             } elseif (!in_array((int)$rankId, $this->validRanks)) {
-                $errors[] = "Row $rowNum: Invalid rank_id '$rankId' (does not exist in ranks table)";
+                $errors[] = "Row $rowNum: Invalid rankId '$rankId' (does not exist in rank table)";
             }
         }
         
-        // Foreign key validation - unit_id
-        // Note: unit_id can be text (unit code) - ImportProcessor will find or create
-        if (isset($data['unit_id']) && trim($data['unit_id']) !== '') {
-            $unitId = trim($data['unit_id']);
+        // Foreign key validation - unitId
+        // Note: unitId can be text (unit code) - ImportProcessor will find or create
+        if (isset($data['unitId']) && trim($data['unitId']) !== '') {
+            $unitId = trim($data['unitId']);
             // Only validate if it's already a numeric ID
             if (ctype_digit($unitId) && !in_array((int)$unitId, $this->validUnits)) {
-                $errors[] = "Row $rowNum: Invalid unit_id '$unitId' (does not exist in units table)";
+                $errors[] = "Row $rowNum: Invalid unitId '$unitId' (does not exist in unit table)";
             }
             // If it's text, ImportProcessor will handle lookup/creation
         }
         
-        // Foreign key validation - corps_id
-        // Note: corps_id can be text (corps abbreviation) - ImportProcessor will find or create
-        if (isset($data['corps_id']) && trim($data['corps_id']) !== '') {
-            $corpsId = trim($data['corps_id']);
+        // Foreign key validation - corpsId
+        // Note: corpsId can be text (corps abbreviation) - ImportProcessor will find or create
+        if (isset($data['corpsId']) && trim($data['corpsId']) !== '') {
+            $corpsId = trim($data['corpsId']);
             // Only validate if it's already a numeric ID
             if (ctype_digit($corpsId) && !in_array((int)$corpsId, $this->validCorps)) {
-                $errors[] = "Row $rowNum: Invalid corps_id '$corpsId' (does not exist in corps table)";
+                $errors[] = "Row $rowNum: Invalid corpsId '$corpsId' (does not exist in corps table)";
             }
             // If it's text, ImportProcessor will handle lookup/creation
         }
@@ -434,6 +433,15 @@ class ImportValidator {
         }
         
         return $sanitized;
+    }
+
+    /**
+     * Check whether a service number exists in the loaded existing records
+     * @param string $svc normalized service number
+     * @return bool
+     */
+    public function existsServiceNumber($svc) {
+        return in_array($svc, $this->existingServiceNumbers);
     }
     
     /**

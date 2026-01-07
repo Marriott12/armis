@@ -1,6 +1,7 @@
 <?php
 /**
- * Simplified Working Form Handler for Staff Creation
+ * Comprehensive Staff Creation Handler
+ * Handles all staff table fields with proper validation
  */
 
 if (!defined('ARMIS_ADMIN_BRANCH')) {
@@ -102,7 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $activationToken = ARMISMailer::generateActivationToken();
             
             // Check if username already exists
-            $checkStmt = $conn->prepare("SELECT id FROM staff WHERE username = ? OR service_number = ?");
+            $checkStmt = $conn->prepare("SELECT id FROM staff WHERE username = ? OR svcNo = ?");
             $checkStmt->bind_param('ss', $username, $serviceNumber);
             $checkStmt->execute();
             $existing = $checkStmt->get_result();
@@ -110,45 +111,113 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($existing->num_rows > 0) {
                 $errors['svcNo'] = 'Service number already exists in the system';
             } else {
-                // Prepare data for insertion (enhanced with user account fields)
+                // Prepare comprehensive data for insertion
                 $insertData = [
-                    'first_name' => trim($_POST['fname']),
-                    'last_name' => trim($_POST['lname']),
+                    // Required Personal Information
+                    'fName' => trim($_POST['fname']),
+                    'lName' => trim($_POST['lname']),
                     'email' => trim($_POST['email']),
                     'tel' => trim($_POST['phone']),
                     'DOB' => $_POST['DOB'],
                     'gender' => $_POST['gender'],
-                    'service_number' => $serviceNumber, // Store original service number
-                    'category' => $_POST['category'], // Add the selected category
-                    'rank_id' => $_POST['rankID'], // Add the selected rank
+                    
+                    // Service Information
+                    'svcNo' => $serviceNumber,
+                    'category' => $_POST['category'],
+                    'rankId' => $_POST['rankID'],
+                    'svcStatus' => 'Active',
+                    
+                    // Location Information
                     'province' => $_POST['province'],
                     'district' => $_POST['district'],
                     'religion' => $_POST['religion'],
                     'village' => $_POST['village'],
-                    'username' => $username, // Username with prefix
+                    
+                    // User Account Fields
+                    'username' => $username,
                     'password' => $hashedPassword,
-                    'role' => 'user', // Default role for all new staff members
-                    'svcStatus' => 'active',
-                    'accStatus' => 'active', // Set to active since we're sending credentials
-                    'dateCreated' => date('Y-m-d H:i:s'),
-                    'createdBy' => $_SESSION['userID'] ?? 1,
-                    'is_first_login' => 1 // Flag to require password change on first login
+                    'role' => 'user',
+                    'accStatus' => 'Active',
+                    'createdBy' => $_SESSION['user_id'] ?? $_SESSION['userID'] ?? 1,
+                    'isFirstLogin' => 1
                 ];
                 
-                // Add optional fields if provided
-                if (!empty($_POST['prefix'])) {
-                    $insertData['prefix'] = trim($_POST['prefix']);
+                // Add optional personal fields
+                if (!empty($_POST['prefix'])) $insertData['prefix'] = trim($_POST['prefix']);
+                if (!empty($_POST['initials'])) $insertData['initials'] = trim($_POST['initials']);
+                if (!empty($_POST['titles'])) $insertData['titles'] = trim($_POST['titles']);
+                if (!empty($_POST['blood_group'])) $insertData['bloodGp'] = trim($_POST['blood_group']);
+                if (!empty($_POST['height'])) $insertData['height'] = trim($_POST['height']);
+                if (!empty($_POST['maritalStatus']) || !empty($_POST['marital'])) {
+                    $insertData['marital'] = trim($_POST['maritalStatus'] ?? $_POST['marital']);
                 }
-                if (!empty($_POST['blood_group'])) {
-                    $insertData['bloodGp'] = trim($_POST['blood_group']); // Database column is 'bloodGp'
+                if (!empty($_POST['address'])) $insertData['address'] = trim($_POST['address']);
+                
+                // Add identification documents
+                if (!empty($_POST['nrc']) || !empty($_POST['NRC'])) {
+                    $insertData['NRC'] = trim($_POST['nrc'] ?? $_POST['NRC']);
                 }
-                if (!empty($_POST['height'])) {
-                    $insertData['height'] = trim($_POST['height']);
+                if (!empty($_POST['passport'])) $insertData['passPort'] = trim($_POST['passport']);
+                if (!empty($_POST['passport_expiry'])) $insertData['passExp'] = $_POST['passport_expiry'];
+                if (!empty($_POST['digitalId'])) $insertData['digitalId'] = trim($_POST['digitalId']);
+                
+                // Add service details
+                if (!empty($_POST['unitID']) || !empty($_POST['unitId'])) {
+                    $insertData['unitId'] = trim($_POST['unitID'] ?? $_POST['unitId']);
                 }
-                if (!empty($_POST['maritalStatus'])) {
-                    $insertData['maritalStatus'] = trim($_POST['maritalStatus']);
+                if (!empty($_POST['corps']) || !empty($_POST['corpsId'])) {
+                    $insertData['corpsId'] = trim($_POST['corps'] ?? $_POST['corpsId']);
                 }
-                // Remove any fields not present in the form
+                if (!empty($_POST['apptId'])) $insertData['apptId'] = trim($_POST['apptId']);
+                if (!empty($_POST['attestDate'])) $insertData['attestDate'] = $_POST['attestDate'];
+                if (!empty($_POST['intake'])) $insertData['intake'] = trim($_POST['intake']);
+                if (!empty($_POST['trade'])) $insertData['trade'] = trim($_POST['trade']);
+                if (!empty($_POST['profession'])) $insertData['profession'] = trim($_POST['profession']);
+                if (!empty($_POST['unitAtt'])) $insertData['unitAtt'] = trim($_POST['unitAtt']);
+                
+                // Add uniform/sizing information
+                if (!empty($_POST['bootSize'])) $insertData['bootSize'] = trim($_POST['bootSize']);
+                if (!empty($_POST['shoeSize'])) $insertData['shoeSize'] = trim($_POST['shoeSize']);
+                if (!empty($_POST['hDress'])) $insertData['hDress'] = trim($_POST['hDress']);
+                if (!empty($_POST['combatSize'])) $insertData['combatSize'] = trim($_POST['combatSize']);
+                
+                // Add rank progression fields
+                if (!empty($_POST['subRank'])) $insertData['subRank'] = trim($_POST['subRank']);
+                if (!empty($_POST['subWef'])) $insertData['subWef'] = $_POST['subWef'];
+                if (!empty($_POST['tempRank'])) $insertData['tempRank'] = trim($_POST['tempRank']);
+                if (!empty($_POST['tempWef'])) $insertData['tempWef'] = $_POST['tempWef'];
+                if (!empty($_POST['localRank'])) $insertData['localRank'] = trim($_POST['localRank']);
+                if (!empty($_POST['localWef'])) $insertData['localWef'] = $_POST['localWef'];
+                
+                // Add Next of Kin information
+                if (!empty($_POST['nokName']) || !empty($_POST['nok'])) {
+                    $insertData['nok'] = trim($_POST['nokName'] ?? $_POST['nok']);
+                }
+                if (!empty($_POST['nokNRC']) || !empty($_POST['nokNrc'])) {
+                    $insertData['nokNrc'] = trim($_POST['nokNRC'] ?? $_POST['nokNrc']);
+                }
+                if (!empty($_POST['nokRelationship']) || !empty($_POST['nokRelat'])) {
+                    $insertData['nokRelat'] = trim($_POST['nokRelationship'] ?? $_POST['nokRelat']);
+                }
+                if (!empty($_POST['nokPhone']) || !empty($_POST['nokTel']) || !empty($_POST['nok_tel'])) {
+                    $insertData['nokTel'] = trim($_POST['nokPhone'] ?? $_POST['nokTel'] ?? $_POST['nok_tel']);
+                }
+                
+                // Add Alternate Next of Kin information
+                if (!empty($_POST['altNokName']) || !empty($_POST['altNok'])) {
+                    $insertData['altNok'] = trim($_POST['altNokName'] ?? $_POST['altNok']);
+                }
+                if (!empty($_POST['altNokNrc'])) $insertData['altNokNrc'] = trim($_POST['altNokNrc']);
+                if (!empty($_POST['altNokRelat'])) $insertData['altNokRelat'] = trim($_POST['altNokRelat']);
+                if (!empty($_POST['altNokTel']) || !empty($_POST['alt_nok_tel'])) {
+                    $insertData['altNokTel'] = trim($_POST['altNokTel'] ?? $_POST['alt_nok_tel']);
+                }
+                
+                // Add profile photo if uploaded
+                if (!empty($_POST['profilePhoto'])) $insertData['profilePhoto'] = trim($_POST['profilePhoto']);
+                
+                // Add renewal date if provided
+                if (!empty($_POST['renewDate'])) $insertData['renewDate'] = $_POST['renewDate'];
                 
                 // Build insert query
                 $fields = array_keys($insertData);
@@ -173,17 +242,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Prepare staff data for email
                     $staffData = [
                         'rank_name' => '', // Will be populated from rank lookup
-                        'first_name' => trim($_POST['fname']),
-                        'last_name' => trim($_POST['lname']),
+                        'fName' => trim($_POST['fname']),
+                        'lName' => trim($_POST['lname']),
                         'username' => $username,
                         'email' => trim($_POST['email']),
-                        'service_number' => trim($_POST['svcNo'])
+                        'svcNo' => trim($_POST['svcNo'])
                     ];
                     
-                    // Get rank name for email
+                    // Get rank name for email (rank table only has rankId and level)
                     if (!empty($_POST['rankID'])) {
-                        $rankStmt = $conn->prepare("SELECT name as rankName FROM ranks WHERE id = ?");
-                        $rankStmt->bind_param("i", $_POST['rankID']);
+                        $rankStmt = $conn->prepare("SELECT rankId as rankName FROM rank WHERE rankId = ?");
+                        $rankStmt->bind_param("s", $_POST['rankID']);
                         $rankStmt->execute();
                         $rankResult = $rankStmt->get_result();
                         if ($rankRow = $rankResult->fetch_assoc()) {

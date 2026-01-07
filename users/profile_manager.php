@@ -16,17 +16,17 @@ class UserProfileManager {
                 return [];
             }
             $stmt = $this->pdo->prepare("
-                SELECT sa.id, sa.staff_id, sa.appointment_id, sa.appointment_type, at.name as appointment_type_name, at.is_temporary,
-                       sa.rank_id, r.abbreviation as rank_abbr, r.name as rank_name,
-                       sa.unit_id, u.name as unit_name, sa.location,
-                       sa.service_number, sa.appointment_date, sa.start_date, sa.end_date, sa.duration_months,
-                       sa.posting_order_reference, sa.comment, sa.remarks, sa.created_by, sa.created_at, sa.updated_at
+          SELECT sa.id, sa.svcNo, sa.appointment_id, sa.appointment_type, at.name as appointment_type_name, at.is_temporary,
+              sa.rankId, r.rankId as rank_abbr, r.rankId as rank_name,
+                       sa.unitId, u.name as unit_name, sa.location,
+                       sa.svcNo, sa.appointment_date, sa.startDate, sa.endDate, sa.durationMonths,
+                       sa.posting_order_reference, sa.comment, sa.remarks, sa.createdBy, sa.createdAt, sa.updatedAt
                 FROM staff_appointment sa
                 LEFT JOIN appointment_types at ON sa.appointment_type = at.id
-                LEFT JOIN units u ON sa.unit_id = u.id
-                LEFT JOIN ranks r ON sa.rank_id = r.id
-                WHERE sa.staff_id = ?
-                ORDER BY sa.appointment_date DESC, sa.created_at DESC
+                LEFT JOIN unit u ON sa.unitId = u.unitId
+                LEFT JOIN `rank` r ON sa.rankId = r.rankId
+                WHERE sa.svcNo = ?
+                ORDER BY sa.appointment_date DESC, sa.createdAt DESC
             ");
             $stmt->execute([$this->userId]);
             return $stmt->fetchAll(PDO::FETCH_OBJ);
@@ -51,7 +51,7 @@ class UserProfileManager {
     private function loadUserInfo() {
         try {
             // Try different possible column names for service number
-            $possibleColumns = ['svcNo', 'service_number', 'serviceNo', 'service_no', 'svc_no', 'svc_number', 'staff_number', 'emp_no', 'employee_number'];
+            $possibleColumns = ['svcNo', 'svcNo', 'serviceNo', 'service_no', 'svc_no', 'svc_number', 'staff_number', 'emp_no', 'employee_number'];
             
             foreach ($possibleColumns as $column) {
                 try {
@@ -95,9 +95,9 @@ class UserProfileManager {
             
             // Try to get rank information
             try {
-                if (!empty($profile->rank_id)) {
-                    $rankStmt = $this->pdo->prepare("SELECT name as rankName, abbreviation as rankAbbr FROM ranks WHERE id = ?");
-                    $rankStmt->execute([$profile->rank_id]);
+                if (!empty($profile->rankId)) {
+                    $rankStmt = $this->pdo->prepare("SELECT rankName as rankName, abbreviation as rankAbbr FROM rank WHERE rankId = ?");
+                    $rankStmt->execute([$profile->rankId]);
                     $rank = $rankStmt->fetch(PDO::FETCH_OBJ);
                     if ($rank) {
                         $profile->rankName = $rank->rankName;
@@ -110,9 +110,9 @@ class UserProfileManager {
             
             // Try to get unit information
             try {
-                if (!empty($profile->unit_id)) {
-                    $unitStmt = $this->pdo->prepare("SELECT name as unitName, code as unitCode, type as unitType FROM units WHERE id = ?");
-                    $unitStmt->execute([$profile->unit_id]);
+                if (!empty($profile->unitId)) {
+                    $unitStmt = $this->pdo->prepare("SELECT code as unitName, code as unitCode, level as unitType FROM unit WHERE unitId = ?");
+                    $unitStmt->execute([$profile->unitId]);
                     $unit = $unitStmt->fetch(PDO::FETCH_OBJ);
                     if ($unit) {
                         $profile->unitName = $unit->unitName;
@@ -141,16 +141,16 @@ class UserProfileManager {
             // Add calculated fields with proper error handling
             $profile->age = $this->calculateAge($profile->DOB ?? null);
             $profile->serviceYears = $this->calculateServiceYears($profile->attestDate ?? $profile->date_of_enlistment ?? null);
-            $profile->fullName = trim(($profile->first_name ?? '') . ' ' . ($profile->last_name ?? '')); // No prefix in name
+            $profile->fullName = trim(($profile->fName ?? '') . ' ' . ($profile->lName ?? '')); // No prefix in name
             $profile->displayRank = $profile->rankName ?? $profile->rankAbbr ?? 'N/A';
             
             // Add legacy field mappings for compatibility
-            $profile->fname = $profile->first_name ?? '';
-            $profile->lname = $profile->last_name ?? '';
+            $profile->fname = $profile->fName ?? '';
+            $profile->lname = $profile->lName ?? '';
             // Combine prefix with service number for display
-            $profile->svcNo = (!empty($profile->prefix) ? $profile->prefix : '') . ($profile->service_number ?? $profile->svcNo ?? '');
-            $profile->rankID = $profile->rank_id ?? null;
-            $profile->unitID = $profile->unit_id ?? null;
+            $profile->svcNo = (!empty($profile->prefix) ? $profile->prefix : '') . ($profile->svcNo ?? $profile->svcNo ?? '');
+            $profile->rankID = $profile->rankId ?? null;
+            $profile->unitID = $profile->unitId ?? null;
             
             // Ensure combat size has proper mapping
             if (empty($profile->combatSize) && !empty($profile->combat_size)) {
@@ -174,7 +174,7 @@ class UserProfileManager {
         try {
             $stmt = $this->pdo->prepare("
                 SELECT * FROM staff_education 
-                WHERE staff_id = ? 
+                WHERE svcNo = ? 
                 ORDER BY year_completed DESC, level DESC
             ");
             $stmt->execute([$this->userId]);
@@ -224,7 +224,7 @@ class UserProfileManager {
                 $submittedIds[] = $educationId;
                 
                 $data = [
-                    'staff_id' => $this->userId,
+                    'svcNo' => $this->userId,
                     'institution' => trim($education['institution'] ?? ''),
                     'qualification' => trim($education['qualification'] ?? ''),
                     'level' => $education['level'] ?? null,
@@ -242,7 +242,7 @@ class UserProfileManager {
                     
                     // Check for changes
                     foreach ($data as $key => $value) {
-                        if ($key !== 'staff_id' && $existing->$key != $value) {
+                        if ($key !== 'svcNo' && $existing->$key != $value) {
                             $hasChanges = true;
                             break;
                         }
@@ -253,7 +253,7 @@ class UserProfileManager {
                         $updateValues = [];
                         
                         foreach ($data as $key => $value) {
-                            if ($key !== 'staff_id') {
+                            if ($key !== 'svcNo') {
                                 $updateFields[] = "$key = ?";
                                 $updateValues[] = $value;
                             }
@@ -261,14 +261,14 @@ class UserProfileManager {
                         
                         $updateValues[] = $educationId;
                         
-                        $updateSQL = "UPDATE staff_education SET " . implode(', ', $updateFields) . ", updated_at = NOW() WHERE id = ?";
+                        $updateSQL = "UPDATE staff_education SET " . implode(', ', $updateFields) . ", updatedAt = NOW() WHERE id = ?";
                         $stmt = $this->pdo->prepare($updateSQL);
                         $stmt->execute($updateValues);
                         $updatedCount++;
                     }
                 } else {
                     // Insert new record
-                    $insertSQL = "INSERT INTO staff_education (staff_id, institution, qualification, level, field_of_study, year_started, year_completed, grade_obtained, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    $insertSQL = "INSERT INTO staff_education (svcNo, institution, qualification, level, field_of_study, year_started, year_completed, grade_obtained, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
                     $stmt = $this->pdo->prepare($insertSQL);
                     $stmt->execute(array_values($data));
                     $insertedCount++;
@@ -317,8 +317,8 @@ class UserProfileManager {
             
             // Define field mappings between form fields and database columns
             $fieldMappings = [
-                'first_name' => 'first_name',
-                'last_name' => 'last_name',
+                'fName' => 'fName',
+                'lName' => 'lName',
                 'middle_name' => 'middle_name',
                 'nrc' => 'nrc',
                 'DOB' => 'DOB',
@@ -381,7 +381,7 @@ class UserProfileManager {
             $updateValues[] = $this->userId;
             
             // Perform update
-            $updateSQL = "UPDATE staff SET " . implode(', ', $changedFields) . ", updated_at = NOW() WHERE id = ?";
+            $updateSQL = "UPDATE staff SET " . implode(', ', $changedFields) . ", updatedAt = NOW() WHERE id = ?";
             $stmt = $this->pdo->prepare($updateSQL);
             $result = $stmt->execute($updateValues);
             
@@ -408,7 +408,7 @@ class UserProfileManager {
         try {
             $stmt = $this->pdo->prepare("
                 SELECT * FROM staff_contact_info 
-                WHERE staff_id = ? 
+                WHERE svcNo = ? 
                 ORDER BY is_primary DESC, contact_type, id
             ");
             $stmt->execute([$this->userId]);
@@ -442,7 +442,7 @@ class UserProfileManager {
                 $contactId = !empty($contact['id']) ? (int)$contact['id'] : null;
                 $submittedIds[] = $contactId;
                 $data = [
-                    'staff_id' => $this->userId,
+                    'svcNo' => $this->userId,
                     'contact_type' => $contact['contact_type'],
                     'contact_value' => trim($contact['contact_value']),
                     'is_primary' => !empty($contact['is_primary']) ? 1 : 0,
@@ -453,7 +453,7 @@ class UserProfileManager {
                     $existing = $existingById[$contactId];
                     $hasChanges = false;
                     foreach ($data as $key => $value) {
-                        if ($key !== 'staff_id' && $existing->$key != $value) {
+                        if ($key !== 'svcNo' && $existing->$key != $value) {
                             $hasChanges = true;
                             break;
                         }
@@ -462,19 +462,19 @@ class UserProfileManager {
                         $updateFields = [];
                         $updateValues = [];
                         foreach ($data as $key => $value) {
-                            if ($key !== 'staff_id') {
+                            if ($key !== 'svcNo') {
                                 $updateFields[] = "$key = ?";
                                 $updateValues[] = $value;
                             }
                         }
                         $updateValues[] = $contactId;
-                        $updateSQL = "UPDATE staff_contact_info SET " . implode(', ', $updateFields) . ", updated_at = NOW() WHERE id = ?";
+                        $updateSQL = "UPDATE staff_contact_info SET " . implode(', ', $updateFields) . ", updatedAt = NOW() WHERE id = ?";
                         $stmt = $this->pdo->prepare($updateSQL);
                         $stmt->execute($updateValues);
                         $updatedCount++;
                     }
                 } else {
-                    $insertSQL = "INSERT INTO staff_contact_info (staff_id, contact_type, contact_value, is_primary, is_verified, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())";
+                    $insertSQL = "INSERT INTO staff_contact_info (svcNo, contact_type, contact_value, is_primary, is_verified, notes, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())";
                     $stmt = $this->pdo->prepare($insertSQL);
                     $stmt->execute(array_values($data));
                     $insertedCount++;
@@ -555,7 +555,7 @@ class UserProfileManager {
             if (move_uploaded_file($file['tmp_name'], $filepath)) {
                 // Try to update database - handle missing column gracefully
                 try {
-                    $stmt = $this->pdo->prepare("UPDATE staff SET profile_photo = ? WHERE id = ?");
+                    $stmt = $this->pdo->prepare("UPDATE staff SET profilePhoto = ? WHERE id = ?");
                     $stmt->execute([$filename, $this->userId]);
                 } catch (PDOException $e) {
                     // Column might not exist - that's OK, we'll use file-based system
@@ -612,7 +612,7 @@ class UserProfileManager {
                 
                 // Store CV record
                 $stmt = $this->pdo->prepare("
-                    INSERT INTO staff_cvs (staff_id, filename, original_name, file_type, file_size, extracted_data, upload_date) 
+                    INSERT INTO staff_cvs (svcNo, filename, original_name, file_type, file_size, extracted_data, upload_date) 
                     VALUES (?, ?, ?, ?, ?, ?, NOW())
                 ");
                 $stmt->execute([
@@ -823,8 +823,8 @@ class UserProfileManager {
         try {
             $stmt = $this->pdo->prepare("
                 SELECT * FROM training_records 
-                WHERE staff_id = ? 
-                ORDER BY start_date DESC
+                WHERE svcNo = ? 
+                ORDER BY startDate DESC
             ");
             $stmt->execute([$this->userId]);
             return $stmt->fetchAll(PDO::FETCH_OBJ);
@@ -841,7 +841,7 @@ class UserProfileManager {
         try {
             $stmt = $this->pdo->prepare("
                 SELECT * FROM staff_family_members 
-                WHERE staff_id = ? 
+                WHERE svcNo = ? 
                 ORDER BY is_emergency_contact DESC, relationship ASC
             ");
             $stmt->execute([$this->userId]);
@@ -859,7 +859,7 @@ class UserProfileManager {
         try {
             $stmt = $this->pdo->prepare("
                 SELECT * FROM staff_addresses 
-                WHERE staff_id = ? 
+                WHERE svcNo = ? 
                 ORDER BY is_primary DESC, address_type ASC
             ");
             $stmt->execute([$this->userId]);
@@ -877,8 +877,8 @@ class UserProfileManager {
         try {
             $stmt = $this->pdo->prepare("
                 SELECT * FROM staff_skills 
-                WHERE staff_id = ? 
-                ORDER BY skill_category ASC, proficiency_level DESC
+                WHERE svcNo = ? 
+                ORDER BY skillCategory ASC, proficiency_level DESC
             ");
             $stmt->execute([$this->userId]);
             return $stmt->fetchAll(PDO::FETCH_OBJ);
@@ -895,7 +895,7 @@ class UserProfileManager {
         try {
             $stmt = $this->pdo->prepare("
                 SELECT * FROM staff_awards 
-                WHERE staff_id = ? 
+                WHERE svcNo = ? 
                 ORDER BY date_awarded DESC
             ");
             $stmt->execute([$this->userId]);
@@ -913,8 +913,8 @@ class UserProfileManager {
         try {
             $stmt = $this->pdo->prepare("
                 SELECT * FROM staff_deployments 
-                WHERE staff_id = ? 
-                ORDER BY start_date DESC
+                WHERE svcNo = ? 
+                ORDER BY startDate DESC
             ");
             $stmt->execute([$this->userId]);
             return $stmt->fetchAll(PDO::FETCH_OBJ);
@@ -934,10 +934,10 @@ class UserProfileManager {
                     sm.*,
                     m.name as medal_name,
                     m.description as medal_description,
-                    m.image_path
+                    m.imagePath
                 FROM staff_medals sm
                 INNER JOIN medals m ON sm.medal_id = m.id
-                WHERE sm.staff_id = ? 
+                WHERE sm.svcNo = ? 
                 ORDER BY sm.award_date DESC
             ");
             $stmt->execute([$this->userId]);
@@ -961,10 +961,10 @@ class UserProfileManager {
                     r2.abbreviation as new_rank_abbr,
                     r2.level as new_rank_level
                 FROM staff_promotions sp
-                LEFT JOIN ranks r1 ON sp.current_rank = r1.id
-                LEFT JOIN ranks r2 ON sp.new_rank = r2.id
-                WHERE sp.staff_id = ? 
-                ORDER BY sp.date_from DESC
+                LEFT JOIN ranks r1 ON sp.currentRank = r1.id
+                LEFT JOIN ranks r2 ON sp.newRank = r2.id
+                WHERE sp.svcNo = ? 
+                ORDER BY sp.dateFrom DESC
             ");
             $stmt->execute([$this->userId]);
             return $stmt->fetchAll(PDO::FETCH_OBJ);
@@ -984,10 +984,10 @@ class UserProfileManager {
                 SELECT 
                     'Promotion' as record_type,
                     CONCAT('Promoted to ', new_value) as description,
-                    created_at as record_date,
+                    createdAt as record_date,
                     new_value as rank_name
                 FROM audit_log 
-                WHERE staff_id = ? AND field_name = 'rankID' AND action = 'update'
+                WHERE svcNo = ? AND field_name = 'rankID' AND action = 'update'
                 
                 UNION ALL
                 
@@ -1029,14 +1029,14 @@ class UserProfileManager {
      */
     public function getMedicalInfo($includeDetails = false) {
         try {
-            $fields = "medical_category, fitness_status, last_medical_exam, next_medical_due";
+            $fields = "medical_category, fitness_status, lastMedicalExam, next_medical_due";
             if ($includeDetails) {
                 $fields .= ", blood_group, height, weight, bmi, allergies";
             }
             
             $stmt = $this->pdo->prepare("
                 SELECT {$fields} FROM staff_medical_records 
-                WHERE staff_id = ?
+                WHERE svcNo = ?
             ");
             $stmt->execute([$this->userId]);
             return $stmt->fetch(PDO::FETCH_OBJ);
@@ -1056,10 +1056,10 @@ class UserProfileManager {
             // Recent training completions
             $stmt = $this->pdo->prepare("
                 SELECT 'Training Completed' as activity_type, course_name as details, 
-                       end_date as activity_date, status
+                       endDate as activity_date, status
                 FROM training_records 
-                WHERE staff_id = ? AND status = 'completed' AND end_date IS NOT NULL
-                ORDER BY end_date DESC LIMIT ?
+                WHERE svcNo = ? AND status = 'completed' AND endDate IS NOT NULL
+                ORDER BY endDate DESC LIMIT ?
             ");
             $stmt->execute([$this->userId, $limit]);
             $training = $stmt->fetchAll(PDO::FETCH_OBJ);
@@ -1077,22 +1077,22 @@ class UserProfileManager {
             
             // Recent profile updates (from audit log if available)
             $stmt = $this->pdo->prepare("
-                SELECT action, created_at, 
+                SELECT action, createdAt, 
                        CASE 
                            WHEN action = 'profile_update' THEN 'Profile Updated'
                            WHEN action = 'contact_update' THEN 'Contact Info Updated'
                            ELSE CONCAT(UPPER(SUBSTRING(action, 1, 1)), SUBSTRING(action, 2))
                        END as activity_type
                 FROM audit_log 
-                WHERE staff_id = ? AND table_name = 'staff'
-                ORDER BY created_at DESC LIMIT ?
+                WHERE svcNo = ? AND table_name = 'staff'
+                ORDER BY createdAt DESC LIMIT ?
             ");
             $stmt->execute([$this->userId, $limit]);
             $updates = $stmt->fetchAll(PDO::FETCH_OBJ);
             
             foreach ($updates as $u) {
                 $activities[] = [
-                    'date' => $u->created_at,
+                    'date' => $u->createdAt,
                     'type' => $u->activity_type,
                     'description' => 'Personal information modified',
                     'status' => 'Updated',
@@ -1135,7 +1135,7 @@ class UserProfileManager {
             }
             
             $updateValues[] = $this->userId;
-            $sql = "UPDATE staff SET " . implode(', ', $updateFields) . ", updated_at = NOW() WHERE id = ?";
+            $sql = "UPDATE staff SET " . implode(', ', $updateFields) . ", updatedAt = NOW() WHERE id = ?";
             
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($updateValues);
@@ -1160,12 +1160,12 @@ class UserProfileManager {
             $this->pdo->beginTransaction();
             
             // Clear existing contact info
-            $stmt = $this->pdo->prepare("DELETE FROM staff_contact_info WHERE staff_id = ?");
+            $stmt = $this->pdo->prepare("DELETE FROM staff_contact_info WHERE svcNo = ?");
             $stmt->execute([$this->userId]);
             
             // Insert new contact info
             $stmt = $this->pdo->prepare("
-                INSERT INTO staff_contact_info (staff_id, contact_type, contact_value, contact_name, relationship, is_primary, created_at) 
+                INSERT INTO staff_contact_info (svcNo, contact_type, contact_value, contact_name, relationship, is_primary, createdAt) 
                 VALUES (?, ?, ?, ?, ?, ?, NOW())
             ");
             
@@ -1215,7 +1215,7 @@ class UserProfileManager {
     public function validateNOKRules($familyData, $excludeMemberId = null) {
         try {
             // Get current NOK designations
-            $query = "SELECT id, is_next_of_kin, nok_type FROM staff_family_members WHERE staff_id = ? AND is_next_of_kin = 1";
+            $query = "SELECT id, is_next_of_kin, nok_type FROM staff_family_members WHERE svcNo = ? AND is_next_of_kin = 1";
             $params = [$this->userId];
             
             if ($excludeMemberId) {
@@ -1271,7 +1271,7 @@ class UserProfileManager {
             $stmt = $this->pdo->prepare("
                 SELECT name, nok_type 
                 FROM staff_family_members 
-                WHERE staff_id = ? AND is_next_of_kin = 1 
+                WHERE svcNo = ? AND is_next_of_kin = 1 
                 ORDER BY nok_type
             ");
             $stmt->execute([$this->userId]);
@@ -1336,7 +1336,7 @@ class UserProfileManager {
             }
             
             // Check for duplicate family member (by name and relationship for this user)
-            $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM staff_family_members WHERE staff_id = ? AND name = ? AND relationship = ?");
+            $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM staff_family_members WHERE svcNo = ? AND name = ? AND relationship = ?");
             $stmt->execute([
                 $this->userId,
                 $familyData['name'],
@@ -1348,7 +1348,7 @@ class UserProfileManager {
             
             $stmt = $this->pdo->prepare(
                 "INSERT INTO staff_family_members 
-                (staff_id, name, relationship, date_of_birth, phone, occupation, is_next_of_kin, nok_type, is_emergency_contact, created_at, updated_at) 
+                (svcNo, name, relationship, date_of_birth, phone, occupation, is_next_of_kin, nok_type, is_emergency_contact, createdAt, updatedAt) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())"
             );
             $stmt->execute([
@@ -1376,7 +1376,7 @@ class UserProfileManager {
     public function updateFamilyMember($memberId, $familyData) {
         try {
             // Verify the family member belongs to this user
-            $stmt = $this->pdo->prepare("SELECT id FROM staff_family_members WHERE id = ? AND staff_id = ?");
+            $stmt = $this->pdo->prepare("SELECT id FROM staff_family_members WHERE id = ? AND svcNo = ?");
             $stmt->execute([$memberId, $this->userId]);
             
             if (!$stmt->fetch()) {
@@ -1395,8 +1395,8 @@ class UserProfileManager {
                 UPDATE staff_family_members 
                 SET name = ?, relationship = ?, date_of_birth = ?, phone = ?, email = ?, 
                     address = ?, is_emergency_contact = ?, is_dependent = ?, notes = ?, 
-                    is_next_of_kin = ?, nok_type = ?, updated_at = NOW()
-                WHERE id = ? AND staff_id = ?
+                    is_next_of_kin = ?, nok_type = ?, updatedAt = NOW()
+                WHERE id = ? AND svcNo = ?
             ");
             
             $stmt->execute([
@@ -1431,7 +1431,7 @@ class UserProfileManager {
     public function deleteFamilyMember($memberId) {
         try {
             // Get family member name for logging
-            $stmt = $this->pdo->prepare("SELECT name FROM staff_family_members WHERE id = ? AND staff_id = ?");
+            $stmt = $this->pdo->prepare("SELECT name FROM staff_family_members WHERE id = ? AND svcNo = ?");
             $stmt->execute([$memberId, $this->userId]);
             $member = $stmt->fetch(PDO::FETCH_OBJ);
             
@@ -1439,7 +1439,7 @@ class UserProfileManager {
                 return ['success' => false, 'message' => 'Family member not found or unauthorized'];
             }
             
-            $stmt = $this->pdo->prepare("DELETE FROM staff_family_members WHERE id = ? AND staff_id = ?");
+            $stmt = $this->pdo->prepare("DELETE FROM staff_family_members WHERE id = ? AND svcNo = ?");
             $stmt->execute([$memberId, $this->userId]);
             
             $this->logActivity('family_delete', 'Deleted family member: ' . $member->name);
@@ -1478,7 +1478,7 @@ class UserProfileManager {
     private function logActivity($action, $description) {
         try {
             $stmt = $this->pdo->prepare("
-                INSERT INTO audit_log (staff_id, action, table_name, record_id, new_values, created_at) 
+                INSERT INTO audit_log (svcNo, action, table_name, record_id, new_values, createdAt) 
                 VALUES (?, ?, 'staff', ?, ?, NOW())
             ");
             $stmt->execute([
@@ -1533,7 +1533,7 @@ class UserProfileManager {
             $stmt = $this->pdo->prepare("
                 SELECT id, filename, original_name, file_type, file_size, extracted_data, upload_date, is_verified
                 FROM staff_cvs 
-                WHERE staff_id = ? 
+                WHERE svcNo = ? 
                 ORDER BY upload_date DESC
             ");
             $stmt->execute([$this->userId]);
@@ -1552,7 +1552,7 @@ class UserProfileManager {
             $stmt = $this->pdo->prepare("
                 SELECT extracted_data, filename, original_name
                 FROM staff_cvs 
-                WHERE id = ? AND staff_id = ?
+                WHERE id = ? AND svcNo = ?
             ");
             $stmt->execute([$cvId, $this->userId]);
             $result = $stmt->fetch(PDO::FETCH_OBJ);
@@ -1581,7 +1581,7 @@ class UserProfileManager {
                 foreach ($verifiedData['contact'] as $contact) {
                     if (!empty($contact['value'])) {
                         $stmt = $this->pdo->prepare("
-                            INSERT INTO staff_contact_info (staff_id, contact_type, contact_value, is_primary) 
+                            INSERT INTO staff_contact_info (svcNo, contact_type, contact_value, is_primary) 
                             VALUES (?, ?, ?, 0)
                         ");
                         $stmt->execute([$this->userId, $contact['type'], $contact['value']]);
@@ -1594,7 +1594,7 @@ class UserProfileManager {
                 foreach ($verifiedData['education'] as $education) {
                     if (!empty($education['qualification'])) {
                         $stmt = $this->pdo->prepare("
-                            INSERT INTO staff_education (staff_id, qualification, institution, level, year_completed) 
+                            INSERT INTO staff_education (svcNo, qualification, institution, level, year_completed) 
                             VALUES (?, ?, ?, ?, ?)
                         ");
                         $stmt->execute([
@@ -1613,7 +1613,7 @@ class UserProfileManager {
                 foreach ($verifiedData['skills'] as $skill) {
                     if (!empty($skill['skill'])) {
                         $stmt = $this->pdo->prepare("
-                            INSERT INTO staff_skills (staff_id, skill_name, skill_level) 
+                            INSERT INTO staff_skills (svcNo, skillName, skillLevel) 
                             VALUES (?, ?, 'Intermediate')
                         ");
                         $stmt->execute([$this->userId, $skill['skill']]);
@@ -1626,7 +1626,7 @@ class UserProfileManager {
                 foreach ($verifiedData['certifications'] as $cert) {
                     if (!empty($cert['certification'])) {
                         $stmt = $this->pdo->prepare("
-                            INSERT INTO staff_certifications (staff_id, certification_name, issuer, issue_date, expiry_date) 
+                            INSERT INTO staff_certifications (svcNo, certification_name, issuer, issue_date, expiry_date) 
                             VALUES (?, ?, ?, ?, ?)
                         ");
                         $stmt->execute([
@@ -1641,7 +1641,7 @@ class UserProfileManager {
             }
             
             // Mark CV as verified and applied
-            $stmt = $this->pdo->prepare("UPDATE staff_cvs SET is_verified = 1, applied_date = NOW() WHERE id = ? AND staff_id = ?");
+            $stmt = $this->pdo->prepare("UPDATE staff_cvs SET is_verified = 1, applied_date = NOW() WHERE id = ? AND svcNo = ?");
             $stmt->execute([$cvId, $this->userId]);
             
             $this->pdo->commit();
@@ -1682,12 +1682,12 @@ class UserProfileManager {
             
             // Fallback: try database column (for backward compatibility)
             try {
-                $stmt = $this->pdo->prepare("SELECT profile_photo FROM staff WHERE id = ?");
+                $stmt = $this->pdo->prepare("SELECT profilePhoto FROM staff WHERE id = ?");
                 $stmt->execute([$this->userId]);
                 $result = $stmt->fetch(PDO::FETCH_OBJ);
                 
-                if ($result && $result->profile_photo) {
-                    $photoPath = '/Armis2/uploads/profiles/' . $result->profile_photo;
+                if ($result && $result->profilePhoto) {
+                    $photoPath = '/Armis2/uploads/profiles/' . $result->profilePhoto;
                     if (file_exists(dirname(__DIR__) . $photoPath)) {
                         return $photoPath;
                     }
@@ -1720,7 +1720,7 @@ class UserProfileManager {
             // Get CV details first
             $stmt = $this->pdo->prepare("
                 SELECT filename FROM staff_cvs 
-                WHERE id = ? AND staff_id = ?
+                WHERE id = ? AND svcNo = ?
             ");
             $stmt->execute([$cvId, $this->userId]);
             $cv = $stmt->fetch(PDO::FETCH_OBJ);
@@ -1730,7 +1730,7 @@ class UserProfileManager {
             }
             
             // Delete from database
-            $stmt = $this->pdo->prepare("DELETE FROM staff_cvs WHERE id = ? AND staff_id = ?");
+            $stmt = $this->pdo->prepare("DELETE FROM staff_cvs WHERE id = ? AND svcNo = ?");
             $stmt->execute([$cvId, $this->userId]);
             
             // Delete physical file
@@ -1762,7 +1762,7 @@ class UserProfileManager {
             // Get CV details
             $stmt = $this->pdo->prepare("
                 SELECT filename, file_type FROM staff_cvs 
-                WHERE id = ? AND staff_id = ?
+                WHERE id = ? AND svcNo = ?
             ");
             $stmt->execute([$cvId, $this->userId]);
             $cv = $stmt->fetch(PDO::FETCH_OBJ);
@@ -1785,7 +1785,7 @@ class UserProfileManager {
             $stmt = $this->pdo->prepare("
                 UPDATE staff_cvs 
                 SET extracted_data = ?, is_verified = 0 
-                WHERE id = ? AND staff_id = ?
+                WHERE id = ? AND svcNo = ?
             ");
             $stmt->execute([json_encode($extractedData), $cvId, $this->userId]);
             
@@ -1808,7 +1808,7 @@ class UserProfileManager {
             $stmt = $this->pdo->prepare("
                 UPDATE staff_cvs 
                 SET is_verified = 1 
-                WHERE id = ? AND staff_id = ?
+                WHERE id = ? AND svcNo = ?
             ");
             $result = $stmt->execute([$cvId, $this->userId]);
             
@@ -1833,7 +1833,7 @@ class UserProfileManager {
         try {
             $stmt = $this->pdo->prepare("
                 SELECT * FROM staff_languages 
-                WHERE staff_id = ? 
+                WHERE svcNo = ? 
                 ORDER BY language_name ASC
             ");
             $stmt->execute([$this->userId]);
@@ -1881,7 +1881,7 @@ class UserProfileManager {
                         }
                         if ($hasChanges) {
                             $stmt = $this->pdo->prepare(
-                                "UPDATE staff_languages SET language_name = ?, proficiency_level = ?, can_read = ?, can_write = ?, can_speak = ?, can_understand = ?, updated_at = ? WHERE id = ? AND staff_id = ?"
+                                "UPDATE staff_languages SET language_name = ?, proficiency_level = ?, can_read = ?, can_write = ?, can_speak = ?, can_understand = ?, updatedAt = ? WHERE id = ? AND svcNo = ?"
                             );
                             $stmt->execute([
                                 $languageRecord['language_name'],
@@ -1898,7 +1898,7 @@ class UserProfileManager {
                         $processedIds[] = $langId;
                     } else {
                         $stmt = $this->pdo->prepare(
-                            "INSERT INTO staff_languages (staff_id, language_name, proficiency_level, can_read, can_write, can_speak, can_understand, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                            "INSERT INTO staff_languages (svcNo, language_name, proficiency_level, can_read, can_write, can_speak, can_understand, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
                         );
                         $stmt->execute([
                             $this->userId,
@@ -1917,7 +1917,7 @@ class UserProfileManager {
             }
             foreach ($existingMap as $id => $existing) {
                 if (!in_array($id, $processedIds)) {
-                    $stmt = $this->pdo->prepare("DELETE FROM staff_languages WHERE id = ? AND staff_id = ?");
+                    $stmt = $this->pdo->prepare("DELETE FROM staff_languages WHERE id = ? AND svcNo = ?");
                     $stmt->execute([$id, $this->userId]);
                     $changesMade = true;
                 }

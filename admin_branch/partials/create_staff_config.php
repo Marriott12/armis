@@ -1,4 +1,19 @@
 <?php
+/**
+ * Staff Creation Form Configuration
+ * 
+ * RANK LEVEL SYSTEM:
+ * - Levels 1-13:  Officers (1=highest, 13=lowest officer rank)
+ * - Level 14:     Officer Cadets
+ * - Levels 15-26: Non-Commissioned Officers (15=highest NCO, 26=lowest NCO)
+ * - Level 27:     Recruits
+ * - Level 28:     Civilian Employees
+ * 
+ * SENIORITY ORDERING:
+ * ORDER BY r.level ASC ensures correct seniority (lower level = higher rank)
+ * Secondary sort: subWef, tempWef, attestDate, svcNo for same-rank seniority
+ */
+
 // Enhanced Personnel Management Configuration with Analytics Integration
 // Define module constants
 if (!defined('ARMIS_ADMIN_BRANCH')) {
@@ -8,6 +23,7 @@ if (!defined('ARMIS_ADMIN_BRANCH')) {
 // Include enhanced admin branch system
 require_once dirname(__DIR__) . '/includes/auth.php';
 require_once dirname(__DIR__) . '/includes/analytics.php';
+require_once dirname(dirname(__DIR__)) . '/shared/rank_levels.php';
 require_once dirname(dirname(__DIR__)) . '/shared/database_connection.php';
 
 // Enhanced CSRF Token Management
@@ -49,16 +65,23 @@ try {
     $cacheKey = 'staff_form_data_' . date('Y-m-d-H');
     $cachedData = false; // You can implement caching here if needed
     
-    // Fetch ranks with staff count analytics, filtered by category and ordered by level
+    // Fetch ranks using `rank` table (only has rankId and level columns)
+    // rankId contains the actual rank name (e.g., 'General', 'Colonel', 'Private')
     $rankQuery = "
-        SELECT r.id as rankID, r.name as rankName, r.level as rankIndex, 
-               r.abbreviation, COUNT(s.id) as staff_count, r.category
-        FROM ranks r 
-        LEFT JOIN staff s ON r.id = s.rank_id AND s.svcStatus = 'Active'
-        WHERE r.category IS NOT NULL
-        GROUP BY r.id, r.category, r.level
-        ORDER BY r.category ASC, r.level ASC
+        SELECT r.rankId as rankID, 
+               r.rankId as rankName, 
+               r.rankId as abbreviation,
+               r.level as rankIndex,
+               r.level,
+               COUNT(s.svcNo) as staff_count,
+               " . getRankCategoryCaseSQL('r') . " as category
+        FROM `rank` r
+        LEFT JOIN staff s ON r.rankId = s.rankId AND s.svcStatus = 'Active'
+        WHERE r.level IS NOT NULL
+        GROUP BY r.rankId, r.level
+        ORDER BY r.level ASC
     ";
+    error_log("Executing rank query: " . str_replace("\n", " ", $rankQuery));
     $stmt = $pdo->prepare($rankQuery);
     $stmt->execute();
     $ranks = $stmt->fetchAll(PDO::FETCH_OBJ);
@@ -66,19 +89,18 @@ try {
     
     // Fetch units with enhanced data and hierarchy support
     $unitQuery = "
-        SELECT u.id as unitID, u.name as unitName, u.code as unitCode, 
-               u.type as unitType, u.parent_unit_id, u.commander_id, 
-               u.location, u.is_active,
-               COUNT(s.id) as staff_count,
-               COALESCE(c.first_name, 'No Commander') as commander_name,
-               p.name as parent_unit_name
-        FROM units u 
-        LEFT JOIN staff s ON u.id = s.unit_id AND s.svcStatus = 'Active'
-        LEFT JOIN staff c ON u.commander_id = c.id
-        LEFT JOIN units p ON u.parent_unit_id = p.id
-        WHERE u.is_active = 1
-        GROUP BY u.id 
-        ORDER BY u.parent_unit_id ASC, u.name ASC
+        SELECT u.unitId as unitID, u.code as unitName, u.code as unitCode, 
+               u.level as unitType, u.parentUnitId, u.commanderSvcno, 
+               u.location,
+               COUNT(s.svcNo) as staff_count,
+               COALESCE(c.fName, 'No Commander') as commander_name,
+               p.code as parent_unit_name
+        FROM unit u 
+        LEFT JOIN staff s ON u.unitId = s.unitId AND s.svcStatus = 'Active'
+        LEFT JOIN staff c ON u.commanderSvcno = c.svcNo
+        LEFT JOIN unit p ON u.parentUnitId = p.unitId
+        GROUP BY u.unitId 
+        ORDER BY u.parentUnitId ASC, u.code ASC
     ";
     $stmt = $pdo->prepare($unitQuery);
     $stmt->execute();
@@ -87,7 +109,7 @@ try {
     
     // If no units found, try simpler query to check if units table exists
     if (empty($units)) {
-        $stmt = $pdo->prepare("SELECT id as unitID, name as unitName, code as unitCode FROM units WHERE is_active = 1 ORDER BY name ASC");
+        $stmt = $pdo->prepare("SELECT unitId as unitID, code as unitName, code as unitCode FROM unit ORDER BY code ASC");
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         foreach ($rows as $row) {
@@ -97,12 +119,12 @@ try {
     
     // Fetch corps from corps table using correct field names
     $corpsQuery = "
-        SELECT c.id as corpsID, c.name as corpsName, c.abbreviation as corpsAbb,
-               COUNT(s.id) as usage_count
+        SELECT c.corpsId as corpsID, c.abbreviation as corpsAbb, c.abbreviation as corpsName,
+               COUNT(s.svcNo) as usage_count
         FROM corps c
-        LEFT JOIN staff s ON c.name = s.corps AND s.svcStatus = 'Active'
-        GROUP BY c.id 
-        ORDER BY c.name ASC
+        LEFT JOIN staff s ON c.corpsId = s.corpsId AND s.svcStatus = 'Active'
+        GROUP BY c.corpsId 
+        ORDER BY c.abbreviation ASC
     ";
     $stmt = $pdo->prepare($corpsQuery);
     $stmt->execute();
@@ -165,25 +187,29 @@ try {
         }
     }
     
-    // Add default ranks if none exist in database  
+    // Add default ranks if none exist in database (use correct level system)
     if (empty($ranks)) {
+        error_log("Using fallback ranks - database query returned no results");
         $defaultRanks = [
-            ['name' => 'Private', 'level' => 1, 'abbr' => 'Pte', 'cat' => 'NCO'],
-            ['name' => 'Corporal', 'level' => 2, 'abbr' => 'Cpl', 'cat' => 'NCO'],
-            ['name' => 'Sergeant', 'level' => 3, 'abbr' => 'Sgt', 'cat' => 'NCO'],
-            ['name' => 'Staff Sergeant', 'level' => 4, 'abbr' => 'SSgt', 'cat' => 'NCO'],
-            ['name' => 'Warrant Officer', 'level' => 5, 'abbr' => 'WO', 'cat' => 'NCO'],
-            ['name' => 'Lieutenant', 'level' => 6, 'abbr' => 'Lt', 'cat' => 'Officer'],
-            ['name' => 'Captain', 'level' => 7, 'abbr' => 'Capt', 'cat' => 'Officer'],
-            ['name' => 'Major', 'level' => 8, 'abbr' => 'Maj', 'cat' => 'Officer'],
-            ['name' => 'Colonel', 'level' => 9, 'abbr' => 'Col', 'cat' => 'Officer']
+            ['name' => 'Private', 'level' => 26, 'abbr' => 'Pte', 'cat' => 'NCO'],
+            ['name' => 'Lance Corporal', 'level' => 25, 'abbr' => 'LCpl', 'cat' => 'NCO'],
+            ['name' => 'Corporal', 'level' => 24, 'abbr' => 'Cpl', 'cat' => 'NCO'],
+            ['name' => 'Sergeant', 'level' => 20, 'abbr' => 'Sgt', 'cat' => 'NCO'],
+            ['name' => 'Warrant Officer', 'level' => 15, 'abbr' => 'WO1', 'cat' => 'NCO'],
+            ['name' => '2nd Lieutenant', 'level' => 13, 'abbr' => '2Lt', 'cat' => 'Officer'],
+            ['name' => 'Lieutenant', 'level' => 12, 'abbr' => 'Lt', 'cat' => 'Officer'],
+            ['name' => 'Captain', 'level' => 11, 'abbr' => 'Capt', 'cat' => 'Officer'],
+            ['name' => 'Major', 'level' => 9, 'abbr' => 'Maj', 'cat' => 'Officer'],
+            ['name' => 'Colonel', 'level' => 5, 'abbr' => 'Col', 'cat' => 'Officer'],
+            ['name' => 'General', 'level' => 1, 'abbr' => 'Gen', 'cat' => 'Officer']
         ];
         
         foreach ($defaultRanks as $index => $rank) {
             $ranks[] = (object)[
-                'rankID' => $index + 1,
+                'rankID' => $rank['abbr'], // Use abbreviation as ID
                 'rankName' => $rank['name'],
                 'rankIndex' => $rank['level'],
+                'level' => $rank['level'],
                 'abbreviation' => $rank['abbr'],
                 'category' => $rank['cat'],
                 'staff_count' => 0
@@ -193,15 +219,16 @@ try {
     
 } catch (Exception $e) {
     error_log("Database error in create_staff_config: " . $e->getMessage());
+    error_log("Using exception handler fallback ranks");
     
-    // Fallback data with enhanced analytics integration
+    // Fallback data with correct rank level system
     $ranks = [
-        (object)['rankID' => 1, 'rankName' => 'Private', 'rankIndex' => 1, 'abbreviation' => 'Pte', 'staff_count' => 0, 'category' => 'Enlisted'],
-        (object)['rankID' => 2, 'rankName' => 'Corporal', 'rankIndex' => 2, 'abbreviation' => 'Cpl', 'staff_count' => 0, 'category' => 'Enlisted'],
-        (object)['rankID' => 3, 'rankName' => 'Sergeant', 'rankIndex' => 3, 'abbreviation' => 'Sgt', 'staff_count' => 0, 'category' => 'NCO'],
-        (object)['rankID' => 4, 'rankName' => 'Lieutenant', 'rankIndex' => 4, 'abbreviation' => 'Lt', 'staff_count' => 0, 'category' => 'Officer'],
-        (object)['rankID' => 5, 'rankName' => 'Captain', 'rankIndex' => 5, 'abbreviation' => 'Capt', 'staff_count' => 0, 'category' => 'Officer'],
-        (object)['rankID' => 6, 'rankName' => 'Major', 'rankIndex' => 6, 'abbreviation' => 'Maj', 'staff_count' => 0, 'category' => 'Officer']
+        (object)['rankID' => 1, 'rankName' => 'Private', 'rankIndex' => 26, 'abbreviation' => 'Pte', 'staff_count' => 0, 'category' => 'NCO', 'level' => 26],
+        (object)['rankID' => 2, 'rankName' => 'Corporal', 'rankIndex' => 24, 'abbreviation' => 'Cpl', 'staff_count' => 0, 'category' => 'NCO', 'level' => 24],
+        (object)['rankID' => 3, 'rankName' => 'Sergeant', 'rankIndex' => 20, 'abbreviation' => 'Sgt', 'staff_count' => 0, 'category' => 'NCO', 'level' => 20],
+        (object)['rankID' => 4, 'rankName' => 'Lieutenant', 'rankIndex' => 13, 'abbreviation' => 'Lt', 'staff_count' => 0, 'category' => 'Officer', 'level' => 13],
+        (object)['rankID' => 5, 'rankName' => 'Captain', 'rankIndex' => 11, 'abbreviation' => 'Capt', 'staff_count' => 0, 'category' => 'Officer', 'level' => 11],
+        (object)['rankID' => 6, 'rankName' => 'Major', 'rankIndex' => 9, 'abbreviation' => 'Maj', 'staff_count' => 0, 'category' => 'Officer', 'level' => 9]
     ];
     
     $units = [

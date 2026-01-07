@@ -18,10 +18,10 @@ $sidebarLinks = [
     ['title' => 'Certifications', 'url' => '/Armis2/training/certifications.php', 'icon' => 'award', 'page' => 'certifications']
 ];
 
-// Helper: get rank abbreviation by rank_id
-function getRankAbbrById($db, $rank_id) {
-    $stmt = $db->prepare('SELECT abbreviation FROM ranks WHERE id = ?');
-    $stmt->execute([$rank_id]);
+// Helper: get rank abbreviation by rankId
+function getRankAbbrById($db, $rankId) {
+    $stmt = $db->prepare('SELECT rankId as rankId as abbreviation FROM rank WHERE rankId = ?');
+    $stmt->execute([$rankId]);
     return $stmt->fetchColumn() ?: '';
 }
 // Helper: get course name by id
@@ -66,7 +66,7 @@ if (isset($_GET['search'])) {
     $records = $manager->getAllAssignments();
 }
 $courses = $db->query('SELECT id, name, description FROM training_courses')->fetchAll(PDO::FETCH_ASSOC);
-$personnel = $db->query('SELECT id, rank_id, first_name, last_name, category FROM staff')->fetchAll(PDO::FETCH_ASSOC);
+$personnel = $db->query('SELECT id, rankId, fName, lName, category FROM staff')->fetchAll(PDO::FETCH_ASSOC);
 
 require_once '../shared/header.php';
 require_once '../shared/sidebar.php';
@@ -89,9 +89,9 @@ require_once '../shared/sidebar.php';
                     <tr>
                         <td>
                         <?php
-                            $rankAbbr = getRankAbbrById($db, $rec['rank_id']);
+                            $rankAbbr = getRankAbbrById($db, $rec['rankId']);
                             $category = $rec['category'] ?? '';
-                            echo htmlspecialchars(formatMilitaryName($rankAbbr, $rankAbbr, $rec['first_name'] ?? '', $rec['last_name'] ?? '', $category));
+                            echo htmlspecialchars(formatMilitaryName($rankAbbr, $rankAbbr, $rec['fName'] ?? '', $rec['lName'] ?? '', $category));
                         ?>
                         </td>
                         <td><?= htmlspecialchars($rec['course_name']) ?></td>
@@ -116,9 +116,9 @@ require_once '../shared/sidebar.php';
                     <?php foreach ($personnel as $p): ?>
                         <option value="<?= $p['id'] ?>">
     <?php
-        $rankAbbr = getRankAbbrById($db, $p['rank_id']);
+        $rankAbbr = getRankAbbrById($db, $p['rankId']);
         $category = $p['category'] ?? '';
-        echo htmlspecialchars(formatMilitaryName($rankAbbr, $rankAbbr, $p['first_name'], $p['last_name'], $category));
+        echo htmlspecialchars(formatMilitaryName($rankAbbr, $rankAbbr, $p['fName'], $p['lName'], $category));
     ?>
                         </option>
                     <?php endforeach; ?>
@@ -162,9 +162,9 @@ require_once '../shared/sidebar.php';
                         <?php foreach ($personnel as $p): ?>
                             <option value="<?= $p['id'] ?>">
     <?php
-        $rankAbbr = getRankAbbrById($db, $p['rank_id']);
+        $rankAbbr = getRankAbbrById($db, $p['rankId']);
         $category = $p['category'] ?? '';
-        echo htmlspecialchars(formatMilitaryName($rankAbbr, $rankAbbr, $p['first_name'], $p['last_name'], $category));
+        echo htmlspecialchars(formatMilitaryName($rankAbbr, $rankAbbr, $p['fName'], $p['lName'], $category));
     ?>
                             </option>
                         <?php endforeach; ?>

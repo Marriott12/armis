@@ -62,9 +62,9 @@ class EnhancedAnalytics {
             $medicalResult = $conn->query("
                 SELECT COUNT(*) as medical_due
                 FROM staff_medical_records smr
-                JOIN staff s ON smr.staff_id = s.service_number
-                WHERE smr.next_medical_exam <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
-                AND smr.next_medical_exam IS NOT NULL
+                JOIN staff s ON smr.svcNo = s.svcNo
+                WHERE smr.nextMedicalExam <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+                AND smr.nextMedicalExam IS NOT NULL
                 AND s.svcStatus = 'Active'
             ");
             
@@ -74,7 +74,7 @@ class EnhancedAnalytics {
             $performanceResult = $conn->query("
                 SELECT AVG(overall_score) as avg_score
                 FROM staff_performance_reviews
-                WHERE review_date >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
+                WHERE reviewDate >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
             ");
             
             $performanceStats = $performanceResult->fetch_assoc();
@@ -122,11 +122,11 @@ class EnhancedAnalytics {
             switch ($type) {
                 case 'rank_distribution':
                     $result = $conn->query("
-                        SELECT r.name as label, COUNT(*) as value
+                        SELECT r.rankId as label, COUNT(*) as value
                         FROM staff s
-                        JOIN ranks r ON s.rank_id = r.id
+                        JOIN rank r ON s.rankId = r.id
                         WHERE s.svcStatus = 'Active'
-                        GROUP BY r.id, r.name
+                        GROUP BY r.id, r.rankId
                         ORDER BY r.level ASC
                     ");
                     break;
@@ -144,7 +144,7 @@ class EnhancedAnalytics {
                     $result = $conn->query("
                         SELECT u.name as label, COUNT(*) as value
                         FROM staff s
-                        JOIN units u ON s.unit_id = u.id
+                        JOIN unit u ON s.unitId = u.unitId
                         WHERE s.svcStatus = 'Active'
                         GROUP BY u.id, u.name
                         ORDER BY value DESC
@@ -184,14 +184,14 @@ class EnhancedAnalytics {
             // Recent staff additions
             $result = $conn->query("
                 SELECT 
-                    CONCAT('New staff member: ', first_name, ' ', last_name) as message,
+                    CONCAT('New staff member: ', fName, ' ', lName) as message,
                     'success' as type,
                     'user-plus' as icon,
-                    created_at,
-                    TIMESTAMPDIFF(HOUR, created_at, NOW()) as hours_ago
+                    createdAt,
+                    TIMESTAMPDIFF(HOUR, createdAt, NOW()) as hours_ago
                 FROM staff 
-                WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-                ORDER BY created_at DESC 
+                WHERE createdAt >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+                ORDER BY createdAt DESC 
                 LIMIT " . intval($limit/2)
             );
             
@@ -227,9 +227,9 @@ class EnhancedAnalytics {
             $result = $conn->query("
                 SELECT COUNT(*) as count
                 FROM staff_medical_records smr
-                JOIN staff s ON smr.staff_id = s.service_number
-                WHERE smr.next_medical_exam <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
-                AND smr.next_medical_exam IS NOT NULL
+                JOIN staff s ON smr.svcNo = s.svcNo
+                WHERE smr.nextMedicalExam <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+                AND smr.nextMedicalExam IS NOT NULL
                 AND s.svcStatus = 'Active'
             ");
             
@@ -261,20 +261,20 @@ class EnhancedAnalytics {
             
             $stmt = $conn->prepare("
                 SELECT 
-                    s.service_number,
-                    s.first_name,
-                    s.last_name,
-                    r.name as rank,
+                    s.svcNo,
+                    s.fName,
+                    s.lName,
+                    r.rankId as rank,
                     u.name as unit,
                     s.svcStatus as status
                 FROM staff s
-                LEFT JOIN ranks r ON s.rank_id = r.id
-                LEFT JOIN units u ON s.unit_id = u.id
-                WHERE s.first_name LIKE ? 
-                   OR s.last_name LIKE ? 
-                   OR s.service_number LIKE ?
-                   OR CONCAT(s.first_name, ' ', s.last_name) LIKE ?
-                ORDER BY s.last_name, s.first_name
+                LEFT JOIN rank r ON s.rankId = r.rankId
+                LEFT JOIN unit u ON s.unitId = u.unitId
+                WHERE s.fName LIKE ? 
+                   OR s.lName LIKE ? 
+                   OR s.svcNo LIKE ?
+                   OR CONCAT(s.fName, ' ', s.lName) LIKE ?
+                ORDER BY s.lName, s.fName
                 LIMIT 20
             ");
             

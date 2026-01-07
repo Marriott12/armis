@@ -57,12 +57,12 @@ function generatePromotionReport($serviceNumbers, $fromRank, $toRank, $effective
         // Fetch staff data
         $placeholders = rtrim(str_repeat('?,', count($serviceNumbers)), ',');
         $stmt = $pdo->prepare("
-            SELECT s.service_number, r.abbreviation as rank_abbr, s.first_name, s.last_name, 
+            SELECT s.svcNo, r.rankId as rank_abbr, s.fName, s.lName, 
                    u.code as unit_name
             FROM staff s
-            LEFT JOIN ranks r ON s.rank_id = r.id
-            LEFT JOIN unit u ON s.unit_id = u.unit_id
-            WHERE s.service_number IN ($placeholders)
+            LEFT JOIN ranks r ON s.rankId = r.rankId
+            LEFT JOIN unit u ON s.unitId = u.unitId
+            WHERE s.svcNo IN ($placeholders)
         ");
         $stmt->execute($serviceNumbers);
         $staffRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -86,9 +86,9 @@ function generatePromotionReport($serviceNumbers, $fromRank, $toRank, $effective
         $html .= '</tr></thead><tbody>';
         foreach ($staffRows as $staff) {
             $html .= '<tr>';
-            $html .= '<td>' . htmlspecialchars($staff['service_number']) . '</td>';
+            $html .= '<td>' . htmlspecialchars($staff['svcNo']) . '</td>';
             $html .= '<td>' . htmlspecialchars($staff['rank_abbr']) . '</td>';
-            $html .= '<td>' . htmlspecialchars($staff['first_name'] . ' ' . $staff['last_name']) . '</td>';
+            $html .= '<td>' . htmlspecialchars($staff['fName'] . ' ' . $staff['lName']) . '</td>';
             $html .= '<td>' . htmlspecialchars($staff['unit_name']) . '</td>';
             $html .= '<td>' . htmlspecialchars($actionType) . '</td>';
             $html .= '<td>' . htmlspecialchars($staff['rank_abbr']) . '</td>';
@@ -118,6 +118,7 @@ function generatePromotionReport($serviceNumbers, $fromRank, $toRank, $effective
 // Authentication and database connection
 require_once __DIR__ . '/includes/auth.php';
 require_once dirname(__DIR__) . '/shared/database_connection.php';
+require_once dirname(__DIR__) . '/shared/rank_levels.php';
 require_once dirname(__DIR__) . '/shared/permissions.php';
 require_once dirname(__DIR__) . '/shared/AuditLogger.php';
 $pdo = getDbConnection();
@@ -165,12 +166,14 @@ if (isset($_SESSION['promotion_success']) && isset($_SESSION['promotion_success_
 // Fetch ranks for selection (excluding non-promotable ranks)
 try {
     // Exclude: Mister, Miss, Recruit, Officer Cadet (these are not promotable ranks)
+    // Use `rank` table and alias columns to match legacy expectations
     $rankStmt = $pdo->query("
-        SELECT r.id, r.name, r.abbreviation, r.level, r.category, COUNT(s.id) as staff_count
-        FROM ranks r
-        LEFT JOIN staff s ON s.rank_id = r.id AND (s.svcStatus IS NULL OR s.svcStatus = 'active')
-        WHERE r.name NOT IN ('Mister', 'Miss', 'Recruit', 'Officer Cadet')
-        GROUP BY r.id, r.name, r.abbreviation, r.level, r.category
+        SELECT r.rankId AS id, r.rankId AS name, r.rankId AS abbreviation, r.level, 
+               " . getRankCategoryCaseSQL('r') . " AS category, COUNT(s.svcNo) as staff_count
+        FROM `rank` r
+        LEFT JOIN staff s ON s.rankId = r.rankId AND (s.svcStatus IS NULL OR s.svcStatus = 'active')
+        WHERE COALESCE(r.rankId, r.rankId) NOT IN ('Mister', 'Miss', 'Recruit', 'Officer Cadet')
+        GROUP BY r.rankId, r.level
         ORDER BY r.level ASC
     ");
     $ranks = $rankStmt->fetchAll(PDO::FETCH_OBJ);
@@ -182,59 +185,58 @@ try {
 $currentRankLevel = null;
 
 // Process the current rank selection
-if (isset($_GET['current_rank']) && is_numeric($_GET['current_rank'])) {
-    $currentRankId = (int)$_GET['current_rank'];
+if (isset($_GET['currentRank']) && !empty($_GET['currentRank'])) {
+    $currentRankId = $_GET['currentRank'];
     try {
         // Get the current rank details
-        $stmt = $pdo->prepare("SELECT id, name, abbreviation, level, category FROM ranks WHERE id = ?");
+        $stmt = $pdo->prepare("SELECT rankId AS id, rankId AS name, rankId AS abbreviation, level FROM `rank` WHERE rankId = ?");
         $stmt->execute([$currentRankId]);
         $currentRank = $stmt->fetch(PDO::FETCH_OBJ);
         
         if ($currentRank) {
-            // Get category directly from database
-            $category = $currentRank->category;
-            $currentRankName = $currentRank->name; // Add this for JavaScript fallback
-            $currentRankLevel = $currentRank->level; // Set level for JavaScript use
+            // Get rank details
+            $currentRankName = $currentRank->name;
+            $currentRankLevel = $currentRank->level;
             
             // Fetch staff at the selected rank with promotion history
             $staffStmt = $pdo->prepare("
-                SELECT s.id, s.service_number, s.first_name, s.last_name, s.rank_id, 
-                       s.attestDate, s.unit_id, s.subWef, s.tempWef, s.corps, s.svcStatus,
+                SELECT s.svcNo, s.svcNo as id, s.fName, s.lName, s.rankId, 
+                       s.attestDate, s.unitId, s.subWef, s.tempWef, s.corpsId as corps, s.svcStatus,
                        u.code as unit_name,
-                       r.name as rank_name,
-                       COALESCE(r.abbreviation, r.name) as rank_abbreviation,
+                       COALESCE(r.rankId, s.rankId) as rank_name,
+                       COALESCE(r.rankId, r.rankId) as rank_abbreviation,
                        -- Date when they got current rank (for display)
                        COALESCE(
-                           (SELECT MAX(sp.date_to) 
-                            FROM staff_promotions sp 
-                            WHERE sp.staff_id = s.id 
-                            AND sp.new_rank = s.rank_id 
+                           (SELECT MAX(sp.dateTo) 
+                            FROM staff_promotion sp 
+                            WHERE sp.svcNo = s.svcNo 
+                            AND sp.newRank = s.rankId 
                             AND sp.type = 'promotion'),
                            s.subWef,
                            s.tempWef,
                            s.attestDate
                        ) as rank_date,
                        -- Last promotion (any rank) for reference
-                       (SELECT MAX(sp.date_to) 
-                        FROM staff_promotions sp 
-                        WHERE sp.staff_id = s.id 
+                       (SELECT MAX(sp.dateTo) 
+                        FROM staff_promotion sp 
+                        WHERE sp.svcNo = s.svcNo 
                         AND sp.type = 'promotion') as last_promotion_date,
-                       (SELECT DATEDIFF(CURDATE(), MAX(sp.date_to))
-                        FROM staff_promotions sp 
-                        WHERE sp.staff_id = s.id 
+                       (SELECT DATEDIFF(CURDATE(), MAX(sp.dateTo))
+                        FROM staff_promotion sp 
+                        WHERE sp.svcNo = s.svcNo 
                         AND sp.type = 'promotion') as days_since_last_promotion,
                        (SELECT COUNT(*) 
-                        FROM staff_promotions sp 
-                        WHERE sp.staff_id = s.id 
+                        FROM staff_promotion sp 
+                        WHERE sp.svcNo = s.svcNo 
                         AND sp.type = 'promotion'
-                        AND sp.date_to >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)) as promotions_this_year,
+                        AND sp.dateTo >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)) as promotions_this_year,
                        -- Calculate months at CURRENT rank
                        TIMESTAMPDIFF(MONTH, 
                            COALESCE(
-                               (SELECT MAX(sp.date_to) 
-                                FROM staff_promotions sp 
-                                WHERE sp.staff_id = s.id 
-                                AND sp.new_rank = s.rank_id 
+                               (SELECT MAX(sp.dateTo) 
+                                FROM staff_promotion sp 
+                                WHERE sp.svcNo = s.svcNo 
+                                AND sp.newRank = s.rankId 
                                 AND sp.type = 'promotion'),
                                s.subWef, 
                                s.tempWef, 
@@ -243,17 +245,17 @@ if (isset($_GET['current_rank']) && is_numeric($_GET['current_rank'])) {
                            CURDATE()
                        ) as calculated_months_at_rank
                 FROM staff s
-                LEFT JOIN unit u ON s.unit_id = u.unit_id
-                LEFT JOIN ranks r ON s.rank_id = r.id
-                WHERE s.rank_id = ? 
+                LEFT JOIN unit u ON s.unitId = u.unitId
+                LEFT JOIN `rank` r ON s.rankId = r.rankId
+                WHERE s.rankId = ? 
                 ORDER BY 
                     -- Order by time at current rank (oldest date first = longest time at rank)
                     -- Priority: Last promotion date → Substantive date → Temporal date → Attestation date
                     COALESCE(
-                        (SELECT MAX(sp.date_to) 
-                         FROM staff_promotions sp 
-                         WHERE sp.staff_id = s.id 
-                         AND sp.new_rank = s.rank_id 
+                        (SELECT MAX(sp.dateTo) 
+                         FROM staff_promotion sp 
+                         WHERE sp.svcNo = s.svcNo 
+                         AND sp.newRank = s.rankId 
                          AND sp.type = 'promotion'),
                         s.subWef,
                         s.tempWef,
@@ -261,12 +263,14 @@ if (isset($_GET['current_rank']) && is_numeric($_GET['current_rank'])) {
                         '1900-01-01'
                     ) ASC,
                     -- Tiebreaker: Service number (for same date promotions)
-                    s.service_number ASC
+                    s.svcNo ASC
             ");
             $staffStmt->execute([$currentRankId]);
             $eligibleStaff = $staffStmt->fetchAll(PDO::FETCH_OBJ);
             $staffCount = count($eligibleStaff);
-
+            
+            // Debug logging
+            error_log("PROMOTE: Rank=$currentRankId, Staff found=$staffCount");
             
             
             // Mark eligibility for each staff member with business rules
@@ -334,7 +338,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
         $errors[] = "Security validation failed. Please try again.";
     } else {
-        $currentRankId = $_POST['current_rank'] ?? 0;
+        $currentRankId = $_POST['currentRank'] ?? 0;
         $nextRankId = $_POST['next_rank'] ?? 0;
         $promotionType = strtolower($_POST['promotion_type'] ?? '');
         $promotionDate = $_POST['promotion_date'] ?? '';
@@ -368,12 +372,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
         // If no errors, proceed with promotion/reversion
         if (empty($errors)) {
             // Get the current rank details for logging
-            $stmt = $pdo->prepare("SELECT name FROM ranks WHERE id = ?");
+            $stmt = $pdo->prepare("SELECT rankId as rankName FROM rank WHERE rankId = ?");
             $stmt->execute([$currentRankId]);
             $currentRankObj = $stmt->fetch(PDO::FETCH_OBJ);
             
             // Get the next rank details for logging
-            $stmt = $pdo->prepare("SELECT name, abbreviation FROM ranks WHERE id = ?");
+            $stmt = $pdo->prepare("SELECT rankId as rankName, rankId as abbreviation FROM rank WHERE rankId = ?");
             $stmt->execute([$nextRankId]);
             $nextRankObj = $stmt->fetch(PDO::FETCH_OBJ);
             if (!$currentRankObj || !$nextRankObj) {
@@ -392,12 +396,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                     $orderNum = ($orderQuery->fetchColumn() ?: 0) + 1;
                     $authorityText = $orderType . " Order " . $orderNum . "-" . $currentYear;
                     $desc = $orderType . " for rank change from " . ($currentRankObj->name ?? '') . " to " . ($nextRankObj->name ?? '') . " on $timestamp";
-                    $insertOrder = $pdo->prepare("INSERT INTO authority_orders (type, year, order_number, description, created_at) VALUES (?, ?, ?, ?, ?)");
+                    $insertOrder = $pdo->prepare("INSERT INTO authority_orders (type, year, order_number, description, createdAt) VALUES (?, ?, ?, ?, ?)");
                     $insertOrder->execute([$orderType, $currentYear, $orderNum, $desc, $timestamp]);
 
                     foreach ($selectedStaff as $serviceNumber) {
                         // Get staff ID and current details
-                        $stmt = $pdo->prepare("SELECT * FROM staff WHERE service_number = ? LIMIT 1");
+                        $stmt = $pdo->prepare("SELECT * FROM staff WHERE svcNo = ? LIMIT 1");
                         $stmt->execute([$serviceNumber]);
                         $beforeStaff = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -409,25 +413,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                         $staffId = $beforeStaff['id'];
 
                         // DUPLICATE PREVENTION CHECK 1: Verify staff is at the expected current rank
-                        if ($beforeStaff['rank_id'] != $currentRankId) {
+                        if ($beforeStaff['rankId'] != $currentRankId) {
                             $errors[] = "Staff $serviceNumber is not at the selected rank. Current rank mismatch detected.";
                             continue;
                         }
                         
                         // DUPLICATE PREVENTION CHECK 2: Verify staff is not already at target rank
-                        if ($beforeStaff['rank_id'] == $nextRankId) {
+                        if ($beforeStaff['rankId'] == $nextRankId) {
                             $errors[] = "Staff $serviceNumber is already at the target rank. No promotion needed.";
                             continue;
                         }
                         
                         // DUPLICATE PREVENTION CHECK 3: Check for recent duplicate promotion
                         $duplicateCheck = $pdo->prepare("
-                            SELECT id, date_to, new_rank 
+                            SELECT id, dateTo, newRank 
                             FROM staff_promotions 
-                            WHERE staff_id = ? 
-                            AND new_rank = ? 
-                            AND date_to = ?
-                            AND created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)
+                            WHERE svcNo = ? 
+                            AND newRank = ? 
+                            AND dateTo = ?
+                            AND createdAt >= DATE_SUB(NOW(), INTERVAL 1 HOUR)
                             LIMIT 1
                         ");
                         $duplicateCheck->execute([$staffId, $nextRankId, $promotionDate]);
@@ -440,11 +444,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                         
                         // DUPLICATE PREVENTION CHECK 4: Check for any promotion on the same date
                         $sameDateCheck = $pdo->prepare("
-                            SELECT id, new_rank, type 
+                            SELECT id, newRank, type 
                             FROM staff_promotions 
-                            WHERE staff_id = ? 
-                            AND date_to = ?
-                            ORDER BY created_at DESC
+                            WHERE svcNo = ? 
+                            AND dateTo = ?
+                            ORDER BY createdAt DESC
                             LIMIT 1
                         ");
                         $sameDateCheck->execute([$staffId, $promotionDate]);
@@ -452,11 +456,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                         
                         if ($sameDatePromotion) {
                             // Get rank name for better error message
-                            $rankStmt = $pdo->prepare("SELECT name FROM ranks WHERE id = ?");
-                            $rankStmt->execute([$sameDatePromotion['new_rank']]);
+                            $rankStmt = $pdo->prepare("SELECT rankId as rankName FROM rank WHERE rankId = ?");
+                            $rankStmt->execute([$sameDatePromotion['newRank']]);
                             $existingRank = $rankStmt->fetch(PDO::FETCH_OBJ);
                             
-                            $errors[] = "Warning: Staff $serviceNumber already has a {$sameDatePromotion['type']} record on $promotionDate to {$existingRank->name}. Please verify before proceeding.";
+                            $errors[] = "Warning: Staff $serviceNumber already has a {$sameDatePromotion['type']} record on $promotionDate to {$existingRank->rankName}. Please verify before proceeding.";
                             // Continue but warn - admin may want to override
                         }
                         
@@ -471,7 +475,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                         if ($isTemporal) {
                             // For temporal ranks: update tempWef and clear subWef
                             $updateStmt = $pdo->prepare("UPDATE staff SET 
-                                rank_id = ?, 
+                                rankId = ?, 
                                 tempWef = ?,
                                 subWef = NULL,
                                 category = ?
@@ -486,7 +490,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                         } else {
                             // For substantive ranks: update subWef and clear tempWef
                             $updateStmt = $pdo->prepare("UPDATE staff SET 
-                                rank_id = ?, 
+                                rankId = ?, 
                                 subWef = ?,
                                 tempWef = NULL,
                                 category = ?
@@ -501,17 +505,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                         }
                         
                         // Record the promotion/reversion in the history table
-                        $insertStmt = $pdo->prepare("INSERT INTO staff_promotions (
-                            staff_id, 
-                            current_rank, 
-                            new_rank, 
-                            date_from, 
-                            date_to, 
+                        $insertStmt = $pdo->prepare("INSERT INTO staff_promotion (
+                            svcNo, 
+                            currentRank, 
+                            newRank, 
+                            dateFrom, 
+                            dateTo, 
                             type, 
                             authority, 
                             remark, 
-                            created_by, 
-                            created_at
+                            createdBy, 
+                            createdAt
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
                         
                         // Use per-staff authority if provided, otherwise use generated authorityText
@@ -530,7 +534,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                             $userId
                         ]);
                         
-                        // Promotion successfully recorded in staff_promotions table
+                        // Promotion successfully recorded in staff_promotion table
                         $successMessages[] = "<div>$serviceNumber " . 
                             ($promotionType === 'promotion' ? "promoted" : "reverted") . 
                             " from {$currentRankObj->name} to {$nextRankObj->name}</div>";
@@ -573,7 +577,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                     $_SESSION['promotion_success'] = implode('', $successMessages);
                     $_SESSION['promotion_success_time'] = time();
                     // Redirect to same page with rank parameter to refresh staff count
-                    header("Location: promote_staff.php?current_rank=" . $currentRankId . "&action_type=" . $promotionType);
+                    header("Location: promote_staff.php?currentRank=" . $currentRankId . "&action_type=" . $promotionType);
                     exit;
                     
                 } catch (Exception $e) {
@@ -594,12 +598,15 @@ $nextRankIdValue = '';
 $authorityText = '';
 if ($currentRank) {
     $promotionType = strtolower(trim($_POST['promotion_type'] ?? $_GET['action_type'] ?? ''));
-    $currentCategory = $currentRank->category ?? '';
+    // Get category using helper function since rank table doesn't have category column
+    require_once dirname(__DIR__) . '/shared/rank_levels.php';
+    $currentCategory = getRankCategory($currentRank->level);
     $currentRankLevel = $currentRank->level ?? null;
     if ($promotionType === 'promotion' && $currentRankLevel !== null) {
         // Promotion: Find next higher rank in same category (smaller level number)
         $higherRanks = array_filter($ranks, function($r) use ($currentRankLevel, $currentCategory) {
-            return $r->level < $currentRankLevel && $r->category === $currentCategory;
+            $rankCategory = getRankCategory($r->level);
+            return $r->level < $currentRankLevel && $rankCategory === $currentCategory;
         });
         // Pick the rank with the largest level less than current (closest higher rank)
         if (!empty($higherRanks)) {
@@ -610,7 +617,8 @@ if ($currentRank) {
     } elseif (in_array($promotionType, ['reversion', 'demotion']) && $currentRankLevel !== null) {
         // Demotion: Find next lower rank in same category (larger level number)
         $lowerRanks = array_filter($ranks, function($r) use ($currentRankLevel, $currentCategory) {
-            return $r->level > $currentRankLevel && $r->category === $currentCategory;
+            $rankCategory = getRankCategory($r->level);
+            return $r->level > $currentRankLevel && $rankCategory === $currentCategory;
         });
         // Pick the rank with the smallest level greater than current (closest lower rank)
         if (!empty($lowerRanks)) {
@@ -627,10 +635,8 @@ if ($currentRank) {
     // Set authority text for display (use same logic as backend summary)
     $orderType = ($promotionType === 'reversion' || $promotionType === 'demotion') ? 'Demotion' : 'Promotion';
     $currentYear = date('Y');
-    // Get next order number for this type and year
-    $orderQuery = $pdo->prepare("SELECT MAX(order_number) as max_order FROM authority_orders WHERE type = ? AND year = ?");
-    $orderQuery->execute([$orderType, $currentYear]);
-    $orderNum = ($orderQuery->fetchColumn() ?: 0) + 1;
+    // Generate simple order number based on timestamp
+    $orderNum = date('md');
     $authorityText = $orderType . " Order " . $orderNum . " - " . $currentYear;
 }
 
@@ -807,7 +813,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <div class="row">
                             <div class="col-md-6 mb-2">
                                 <label class="form-label">Current Rank Being <?=($actionType === 'demotion') ? 'Demotion' : 'Promotion'?></label>
-                                <select name="current_rank" id="current_rank" class="form-select" required>
+                                <select name="currentRank" id="currentRank" class="form-select" required onchange="this.form.submit()">
                                     <option value="">Select Current Rank...</option>
                                     <?php foreach ($ranks as $r): ?>
                                         <option value="<?=$r->id?>" <?=($currentRankId==$r->id)?'selected':''?>><?=$r->abbreviation?> (<?=$r->staff_count?> Personnel)</option>
@@ -834,7 +840,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     <form method="post" action="" id="promotionForm" autocomplete="off">
                         <input type="hidden" name="csrf_token" value="<?=htmlspecialchars($csrf_token)?>">
                         <input type="hidden" name="promote_staff" value="1">
-                        <input type="hidden" name="current_rank" value="<?=htmlspecialchars($currentRankId)?>">
+                        <input type="hidden" name="currentRank" value="<?=htmlspecialchars($currentRankId)?>">
                         <input type="hidden" id="promotion_type" name="promotion_type" value="<?=htmlspecialchars($actionType)?>">
                         <div class="row mb-3">
                             <div class="col-md-12 mb-2">
@@ -1101,9 +1107,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
     console.log('Next rank abbreviation:', window.nextRankAbbr);
 </script>
 
-<!-- Core library scripts: jQuery (with local fallback) -->
-<script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
-<script>window.jQuery || document.write('\x3Cscript src="/Armis2/assets/js/jquery-3.6.0.min.js">\x3C/script>');</script>
+<!-- Core JS (jQuery/Bootstrap) are loaded centrally in shared/footer.php. -->
 
 <!-- DataTables Scripts (Bootstrap integration) -->
 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
@@ -1130,6 +1134,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
     });
 </script>
 
+<?php include dirname(__DIR__) . '/shared/footer.php'; ?>
 
 <!-- Chart.js CDN (required for dashboard charts) -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -1157,9 +1162,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     
                     // Auto-submit rank form on change - attach directly
                     console.log('Setting up rank change handler');
-                    console.log('Looking for element #current_rank:', $('#current_rank').length > 0 ? 'FOUND' : 'NOT FOUND');
+                    console.log('Looking for element #currentRank:', $('#currentRank').length > 0 ? 'FOUND' : 'NOT FOUND');
                     
-                    $(document).on('change', '#current_rank', function() {
+                    $(document).on('change', '#currentRank', function() {
                         const rankId = $(this).val();
                         console.log('🔔 Rank dropdown changed! New value:', rankId);
                         if (rankId) {
@@ -1269,12 +1274,12 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         selected.forEach(svcNo => {
                             // Find staff data from the DataTable
                             const staffData = window.eligibleStaff && Array.isArray(window.eligibleStaff) 
-                                ? window.eligibleStaff.find(staff => staff.service_number === svcNo) 
+                                ? window.eligibleStaff.find(staff => staff.svcNo === svcNo) 
                                 : null;
                             
                             // Format name as: LAST NAME First Name (matching appointments.php)
                             const staffName = staffData 
-                                ? `${(staffData.last_name || '').toUpperCase()} ${staffData.first_name || ''}` 
+                                ? `${(staffData.lName || '').toUpperCase()} ${staffData.fName || ''}` 
                                 : svcNo;
                             
                             const unitInfo = staffData && staffData.unit_name ? staffData.unit_name : 'N/A';
@@ -1337,7 +1342,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     
                     // Helper function to get current rank ID consistently
                     function getCurrentRankId() {
-                        return $('#current_rank').val() || '';
+                        return $('#currentRank').val() || '';
                     }
                     
                     // Initialize Staff DataTable
@@ -1370,11 +1375,11 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 responsivePriority: 1, // Always visible
                                 render: function(data, type, row) {
                                     const disabled = row.eligible === false ? ' disabled title="Not eligible for promotion"' : '';
-                                    return '<input type="checkbox" class="form-check-input staff-checkbox" value="' + row.service_number + '"' + disabled + '>';
+                                    return '<input type="checkbox" class="form-check-input staff-checkbox" value="' + row.svcNo + '"' + disabled + '>';
                                 }
                             },
                             { 
-                                data: 'service_number', 
+                                data: 'svcNo', 
                                 title: 'Service No.', 
                                 width: "110px",
                                 responsivePriority: 2 // High priority
@@ -1409,8 +1414,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         }).join(' ');
                                     }
                                     
-                                    const firstName = toTitleCase(row.first_name || '');
-                                    const lastName = toTitleCase(row.last_name || '');
+                                    const firstName = toTitleCase(row.fName || '');
+                                    const lastName = toTitleCase(row.lName || '');
                                     
                                     let fullName = '';
                                     if (firstName && lastName) {
@@ -1710,7 +1715,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             method: 'GET',
                             dataType: 'json',
                             data: {
-                                rank_id: rankId,
+                                rankId: rankId,
                                 load_all: true // Flag to load all staff for this rank
                             },
                             success: function(data) {
@@ -1822,10 +1827,10 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         
                         selectedServiceNumbers.forEach(svcNo => {
                             const staffData = window.eligibleStaff && Array.isArray(window.eligibleStaff) 
-                                ? window.eligibleStaff.find(staff => staff.service_number === svcNo) 
+                                ? window.eligibleStaff.find(staff => staff.svcNo === svcNo) 
                                 : null;
                             const staffName = staffData 
-                                ? `${(staffData.last_name || '').toUpperCase()} ${staffData.first_name || ''}` 
+                                ? `${(staffData.lName || '').toUpperCase()} ${staffData.fName || ''}` 
                                 : svcNo;
                             const rankAbbr = staffData && staffData.rank_abbreviation ? staffData.rank_abbreviation : '';
                             const unitName = staffData && staffData.unit_name ? staffData.unit_name : 'N/A';
@@ -1890,5 +1895,3 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     console.log('Promotion application initialization complete');
     });
 </script>
-
-<?php include dirname(__DIR__) . '/shared/footer.php'; ?>

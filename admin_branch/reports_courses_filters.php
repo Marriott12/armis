@@ -20,7 +20,7 @@ if (!isset($_SESSION['user_id'])) {
 // Get user permissions - assuming permission level is stored in session
 $user_permissions = $_SESSION['permission_level'] ?? 0;
 $user_id = $_SESSION['user_id'];
-$user_unit_id = $_SESSION['unit_id'] ?? null;
+$user_unit_id = $_SESSION['unitId'] ?? null;
 
 // --- RBAC: Only permitted users ---
 $allowed_roles = [1, 2]; // 1=admin, 2=analytics
@@ -124,7 +124,7 @@ try {
     // --- Units available for selection
     $stmt = $connection->prepare(
         "SELECT DISTINCT u.unitID, u.unitName FROM staff s
-         LEFT JOIN units u ON s.unitID = u.unitID
+         LEFT JOIN unit u ON s.unitID = u.unitID
          $where
          ORDER BY u.unitName ASC"
     );
@@ -133,8 +133,8 @@ try {
 
     // --- Ranks available for selection
     $stmt = $connection->prepare(
-        "SELECT DISTINCT r.rankID, r.rankName FROM staff s
-         LEFT JOIN ranks r ON s.rankID = r.rankID
+        "SELECT DISTINCT r.rankID, r.rankId FROM staff s
+         LEFT JOIN `rank` r ON s.rankID = r.rankID
          $where
          ORDER BY r.rankIndex ASC"
     );

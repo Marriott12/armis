@@ -138,10 +138,10 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             <h5 class="mt-4">Timeline</h5>
                             <div class="row">
                                 <div class="col-md-6">
-                                    <p><strong>Start Date:</strong> <?php echo date('M d, Y', strtotime($mission['start_date'])); ?></p>
+                                    <p><strong>Start Date:</strong> <?php echo date('M d, Y', strtotime($mission['startDate'])); ?></p>
                                 </div>
                                 <div class="col-md-6">
-                                    <p><strong>End Date:</strong> <?php echo date('M d, Y', strtotime($mission['end_date'])); ?></p>
+                                    <p><strong>End Date:</strong> <?php echo date('M d, Y', strtotime($mission['endDate'])); ?></p>
                                 </div>
                             </div>
                         </div>
@@ -160,8 +160,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <div class="card-body">
                                     <h5>Mission Details</h5>
                                     <p><strong>Created By:</strong> <?php echo htmlspecialchars($mission['created_by_name'] ?? 'Unknown'); ?></p>
-                                    <p><strong>Created:</strong> <?php echo date('M d, Y H:i', strtotime($mission['created_at'])); ?></p>
-                                    <p><strong>Last Updated:</strong> <?php echo date('M d, Y H:i', strtotime($mission['updated_at'])); ?></p>
+                                    <p><strong>Created:</strong> <?php echo date('M d, Y H:i', strtotime($mission['createdAt'])); ?></p>
+                                    <p><strong>Last Updated:</strong> <?php echo date('M d, Y H:i', strtotime($mission['updatedAt'])); ?></p>
                                 </div>
                             </div>
                         </div>
@@ -254,9 +254,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         <tbody>
                                             <?php foreach ($personnel as $person): ?>
                                             <tr>
-                                                <td><?php echo htmlspecialchars($person['first_name'] . ' ' . $person['last_name']); ?></td>
+                                                <td><?php echo htmlspecialchars($person['fName'] . ' ' . $person['lName']); ?></td>
                                                 <td><?php echo htmlspecialchars($person['rank'] ?? 'N/A'); ?></td>
-                                                <td><?php echo htmlspecialchars($person['service_number'] ?? 'N/A'); ?></td>
+                                                <td><?php echo htmlspecialchars($person['svcNo'] ?? 'N/A'); ?></td>
                                                 <td><?php echo htmlspecialchars($person['role_name'] ?? 'N/A'); ?></td>
                                                 <td><?php echo ucfirst($person['status']); ?></td>
                                                 <td>

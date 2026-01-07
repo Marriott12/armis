@@ -4,6 +4,7 @@ require_once __DIR__ . '/includes/report_helpers.php';
 
 require_once __DIR__ . '/includes/auth.php';
 require_once dirname(__DIR__) . '/shared/database_connection.php';
+require_once dirname(__DIR__) . '/shared/rank_levels.php';
 requireAuth();
 
 $pageTitle = "Trade Report as at " . date('d-M-Y');
@@ -46,8 +47,8 @@ require_once __DIR__ . '/includes/report_helpers.php';
 
 function getTradeOptions($pdo, $unit, $rank, $cat) {
     $tradeSql = "SELECT DISTINCT trade FROM staff WHERE svcStatus = 'Active'"; // allow empty trades
-    $unitSql = "SELECT DISTINCT u.id, u.name FROM units u JOIN staff s ON s.unit_id = u.id WHERE s.svcStatus = 'Active'";
-    $rankSql = "SELECT DISTINCT r.id, r.name FROM ranks r JOIN staff s ON s.rank_id = r.id WHERE s.svcStatus = 'Active'";
+    $unitSql = "SELECT DISTINCT u.unitId, u.name FROM unit u JOIN staff s ON s.unitId = u.unitId WHERE s.svcStatus = 'Active'";
+    $rankSql = "SELECT DISTINCT r.rankId as id, COALESCE(r.rankId, r.rankId) as name FROM `rank` r JOIN staff s ON s.rankId = r.rankId WHERE s.svcStatus = 'Active'";
     $catSql  = "SELECT DISTINCT s.category FROM staff s WHERE s.category IS NOT NULL AND s.category <> '' AND s.svcStatus = 'Active'";
     $trades = $pdo->query($tradeSql)->fetchAll(PDO::FETCH_COLUMN);
 
@@ -60,7 +61,7 @@ function getTradeOptions($pdo, $unit, $rank, $cat) {
     return [
         $trades,
         fetchAll($unitSql . " ORDER BY u.name ASC"),
-        fetchAll($rankSql . " ORDER BY r.name ASC"),
+        fetchAll($rankSql . " ORDER BY r.rankId ASC"),
         fetchAll($catSql . " ORDER BY s.category ASC")
     ];
 }
@@ -78,10 +79,10 @@ $search = trim($_GET['search'] ?? '');
 
 // Sorting functionality
 $sortable_columns = [
-    'service_number' => 's.service_number',
+    'svcNo' => 's.svcNo',
     'rank' => 'r.level',
-    'first_name' => 's.first_name', 
-    'last_name' => 's.last_name',
+    'fName' => 's.fName', 
+    'lName' => 's.lName',
     'unit' => 'u.name',
     'trade' => 's.trade',
     'category' => 's.category',
@@ -92,11 +93,11 @@ $sort_col = $_GET['sort_col'] ?? '';
 $sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
 
 $params = [];
-$sql = "SELECT s.*, r.name as rankName, r.abbreviation as rankAbbr, r.category as rankCategory, u.name as unitName, u.code as unitCode FROM staff s
-        LEFT JOIN ranks r ON s.rank_id = r.id
-        LEFT JOIN units u ON s.unit_id = u.id
+$sql = "SELECT s.*, r.rankId as rankName, r.rankId as rankAbbr, " . getRankCategoryCaseSQL('r') . " as rankCategory, u.name as unitName, u.code as unitCode FROM staff s
+    LEFT JOIN `rank` r ON s.rankId = r.rankId
+        LEFT JOIN unit u ON s.unitId = u.unitId
         WHERE s.svcStatus = 'Active'
-        AND (r.category = 'NCO' OR r.category = 'Civilian Employee')";
+        AND (r.level >= 15 AND r.level <= 28)";
 if (isset($_GET['trade']) && $_GET['trade'] !== '') {
     if ($filter_no_trade) {
         $sql .= " AND (s.trade IS NULL OR s.trade = '')";
@@ -106,11 +107,11 @@ if (isset($_GET['trade']) && $_GET['trade'] !== '') {
     }
 }
 if ($filter_unit !== '') {
-    $sql .= " AND s.unit_id = ?";
+    $sql .= " AND s.unitId = ?";
     $params[] = $filter_unit;
 }
 if ($filter_rank !== '') {
-    $sql .= " AND s.rank_id = ?";
+    $sql .= " AND s.rankId = ?";
     $params[] = $filter_rank;
 }
 if ($filter_category !== '') {
@@ -118,7 +119,7 @@ if ($filter_category !== '') {
     $params[] = $filter_category;
 }
 if ($search !== '') {
-    $sql .= " AND (s.trade LIKE ? OR s.service_number LIKE ? OR s.last_name LIKE ? OR s.first_name LIKE ? OR r.name LIKE ? OR u.name LIKE ? OR s.category LIKE ?)";
+    $sql .= " AND (s.trade LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR r.rankId LIKE ? OR u.name LIKE ? OR s.category LIKE ?)";
     for ($i = 0; $i < 7; $i++) $params[] = "%$search%";
 }
 
@@ -127,7 +128,15 @@ $order_clause = '';
 if ($sort_col && isset($sortable_columns[$sort_col])) {
     $order_clause = " ORDER BY " . $sortable_columns[$sort_col] . " $sort_dir";
 } else {
-    $order_clause = " ORDER BY r.level ASC, s.last_name ASC, s.first_name ASC";
+    // Default seniority sorting: rank level, then subWef, then tempWef, then attestDate, then service number
+    // Personnel without ranks (NULL rankId) are listed last
+    $order_clause = " ORDER BY 
+        CASE WHEN s.rankId IS NULL THEN 1 ELSE 0 END,
+        r.level ASC,
+        s.subWef ASC,
+        s.tempWef ASC,
+        s.attestDate ASC,
+        s.svcNo ASC";
 }
 $sql .= $order_clause;
 $per_page = intval($_GET['per_page'] ?? 25);
@@ -139,10 +148,10 @@ $staff = fetchAll($sql, $params);
 
 // Get total count for pagination
 $count_sql = "SELECT COUNT(*) FROM staff s
-    LEFT JOIN ranks r ON s.rank_id = r.id
-    LEFT JOIN units u ON s.unit_id = u.id
+    LEFT JOIN `rank` r ON s.rankId = r.rankId
+        LEFT JOIN unit u ON s.unitId = u.unitId
     WHERE s.svcStatus = 'Active'
-    AND (r.category = 'NCO' OR r.category = 'Civilian Employee')";
+    AND (r.level >= 15 AND r.level <= 28)";
 if (isset($_GET['trade']) && $_GET['trade'] !== '') {
     if ($filter_no_trade) {
         $count_sql .= " AND (s.trade IS NULL OR s.trade = '')";
@@ -151,17 +160,17 @@ if (isset($_GET['trade']) && $_GET['trade'] !== '') {
     }
 }
 if ($filter_unit !== '') {
-    $count_sql .= " AND s.unit_id = '" . addslashes($filter_unit) . "'";
+    $count_sql .= " AND s.unitId = '" . addslashes($filter_unit) . "'";
 }
 if ($filter_rank !== '') {
-    $count_sql .= " AND s.rank_id = '" . addslashes($filter_rank) . "'";
+    $count_sql .= " AND s.rankId = '" . addslashes($filter_rank) . "'";
 }
 if ($filter_category !== '') {
     $count_sql .= " AND s.category = '" . addslashes($filter_category) . "'";
 }
 if ($search !== '') {
     $search_esc = addslashes($search);
-    $count_sql .= " AND (s.trade LIKE '%$search_esc%' OR s.service_number LIKE '%$search_esc%' OR s.last_name LIKE '%$search_esc%' OR s.first_name LIKE '%$search_esc%' OR r.name LIKE '%$search_esc%' OR u.name LIKE '%$search_esc%' OR s.category LIKE '%$search_esc%')";
+    $count_sql .= " AND (s.trade LIKE '%$search_esc%' OR s.svcNo LIKE '%$search_esc%' OR s.lName LIKE '%$search_esc%' OR s.fName LIKE '%$search_esc%' OR r.rankId LIKE '%$search_esc%' OR u.name LIKE '%$search_esc%' OR s.category LIKE '%$search_esc%')";
 }
 $total_staff = $pdo->query($count_sql)->fetchColumn();
 $total_pages = ceil($total_staff / $per_page);
@@ -251,7 +260,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             <div class="mb-2">
                 <strong>Show/Hide Columns:</strong>
                 <?php $columns = [
-                    'trade'=>'Trade','unit'=>'Unit','rank'=>'Rank','service_number'=>'Service No','surname'=>'Surname','first_name'=>'First Name(s)',
+                    'trade'=>'Trade','unit'=>'Unit','rank'=>'Rank','svcNo'=>'Service No','surname'=>'Surname','fName'=>'First Name(s)',
                     'category'=>'Category','DOB'=>'Date of Birth','attestDate'=>'Date of Enlistment'
                 ];
                 foreach ($columns as $key=>$label): ?>
@@ -285,9 +294,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <td class="col-trade"><?= ($s->trade ?? '') !== '' ? htmlspecialchars($s->trade) : 'No Trade Assigned' ?></td>
                                 <td class="col-unit"><?= htmlspecialchars($s->unitCode ?? $s->unitName ?? '') ?></td>
                                 <td class="col-rank"><?= htmlspecialchars($s->rankAbbr ?? $s->rankName ?? '') ?></td>
-                                <td class="col-service_number"><?= htmlspecialchars($s->service_number ?? '') ?></td>
-                                <td class="col-surname"><?= htmlspecialchars(formatSentenceCase($s->last_name ?? '')) ?></td>
-                                <td class="col-first_name"><?= htmlspecialchars(formatSentenceCase($s->first_name ?? '')) ?></td>
+                                <td class="col-svcNo"><?= htmlspecialchars($s->svcNo ?? '') ?></td>
+                                <td class="col-surname"><?= htmlspecialchars(formatSentenceCase($s->lName ?? '')) ?></td>
+                                <td class="col-fName"><?= htmlspecialchars(formatSentenceCase($s->fName ?? '')) ?></td>
                                 <td class="col-category"><?= htmlspecialchars($s->category ?? '') ?></td>
                                 <td class="col-DOB"><?= htmlspecialchars($s->DOB ?? '') ?></td>
                                 <td class="col-attestDate"><?= htmlspecialchars($s->attestDate ?? '') ?></td>

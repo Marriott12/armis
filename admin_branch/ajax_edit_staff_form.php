@@ -18,6 +18,70 @@ if (!$svcNo) {
     exit;
 }
 
+// Ensure DB class exists: try common include locations, otherwise provide a minimal fallback.
+if (!class_exists('DB')) {
+    $possible = [
+        __DIR__ . '/../classes/DB.php',
+        __DIR__ . '/classes/DB.php',
+        __DIR__ . '/../lib/DB.php',
+        __DIR__ . '/../../classes/DB.php'
+    ];
+    foreach ($possible as $p) {
+        if (file_exists($p)) {
+            require_once $p;
+            break;
+        }
+    }
+    // If still missing, define a lightweight PDO-backed DB singleton to avoid fatal errors.
+    if (!class_exists('DB')) {
+        class DB {
+            private static $instance = null;
+            private $pdo;
+            private function __construct() {
+                // Try to pick credentials from globals/config if available; fall back to sqlite memory
+                $host = $GLOBALS['DB_HOST'] ?? '127.0.0.1';
+                $dbname = $GLOBALS['DB_NAME'] ?? '';
+                $user = $GLOBALS['DB_USER'] ?? '';
+                $pass = $GLOBALS['DB_PASS'] ?? '';
+                try {
+                    if ($dbname !== '') {
+                        $dsn = "mysql:host={$host};dbname={$dbname};charset=utf8mb4";
+                        $this->pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+                    } else {
+                        // Safe in-memory fallback to avoid breaking UI in non-production analysis environments
+                        $this->pdo = new PDO('sqlite::memory:');
+                        $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+                    }
+                } catch (Exception $e) {
+                    $this->pdo = null;
+                }
+            }
+            public static function getInstance() {
+                if (self::$instance === null) self::$instance = new self();
+                return self::$instance;
+            }
+            public function query($sql, $params = []) {
+                // Return an object with first() and results() to keep existing code working
+                if (!$this->pdo) {
+                    return new class {
+                        public function first() { return null; }
+                        public function results() { return []; }
+                    };
+                }
+                $stmt = $this->pdo->prepare($sql);
+                $stmt->execute($params);
+                $rows = $stmt->fetchAll(PDO::FETCH_OBJ);
+                return new class($rows) {
+                    private $rows;
+                    public function __construct($rows) { $this->rows = $rows; }
+                    public function first() { return $this->rows[0] ?? null; }
+                    public function results() { return $this->rows; }
+                };
+            }
+        }
+    }
+}
+
 $db = DB::getInstance();
 $staff = $db->query("SELECT * FROM staff WHERE svcNo = ?", [$svcNo])->first();
 if (!$staff) {
@@ -36,8 +100,8 @@ $awards = $db->query("SELECT * FROM staff_awards WHERE svcNo = ?", [$svcNo])->re
 $appointments = $db->query("SELECT * FROM staff_appointments WHERE svcNo = ?", [$svcNo])->results();
 $promotions = $db->query("SELECT * FROM staff_promotions WHERE svcNo = ?", [$svcNo])->results();
 
-$ranks = $db->query("SELECT rankID, rankName, rankIndex FROM ranks ORDER BY rankIndex ASC")->results();
-$units = $db->query("SELECT unitID, unitName FROM units ORDER BY unitName ASC")->results();
+$ranks = $db->query("SELECT rankId, rankId as rankName, level FROM rank ORDER BY level ASC")->results();
+$units = $db->query("SELECT unitId, code FROM unit ORDER BY code ASC")->results();
 $corpsList = $db->query("SELECT DISTINCT corps FROM staff WHERE corps IS NOT NULL AND corps != '' ORDER BY corps ASC")->results();
 $categories = ['Officer', 'NCO', 'Civilian'];
 
@@ -115,7 +179,7 @@ $categories = ['Officer', 'NCO', 'Civilian'];
     </div>
 </form>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Core JS (jQuery/Bootstrap) are loaded centrally in shared/footer.php. -->
 <script>
     document.addEventListener('DOMContentLoaded', function () {
     // --- TAB BUTTONS (Next/Prev) ---

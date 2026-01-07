@@ -125,7 +125,7 @@ class ARMISFileUploader {
             'file_size' => $file['size'],
             'file_type' => $fileExtension,
             'mime_type' => $file['type'],
-            'staff_id' => $staffId,
+            'svcNo' => $staffId,
             'document_type' => $documentType,
             'document_type_id' => is_numeric($documentType) ? $documentType : 1
         ];
@@ -145,7 +145,7 @@ class ARMISFileUploader {
      */
     private function saveFileRecord($fileInfo) {
         $sql = "INSERT INTO staff_documents (
-            staff_id, document_type_id, original_filename, stored_filename, 
+            svcNo, document_type_id, original_filename, stored_filename, 
             file_path, file_size, mime_type, upload_date, uploaded_by
         ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)";
         
@@ -154,7 +154,7 @@ class ARMISFileUploader {
         $documentTypeId = $fileInfo['document_type_id'] ?? 1; // Default document type
         
         $stmt->bind_param('iisssisi',
-            $fileInfo['staff_id'],
+            $fileInfo['svcNo'],
             $documentTypeId,
             $fileInfo['original_name'],
             $fileInfo['secure_filename'],
@@ -181,7 +181,7 @@ class ARMISFileUploader {
      * Get files for a staff member
      */
     public function getStaffFiles($staffId) {
-        $sql = "SELECT * FROM staff_documents WHERE staff_id = ? ORDER BY uploaded_at DESC";
+        $sql = "SELECT * FROM staff_documents WHERE svcNo = ? ORDER BY uploaded_at DESC";
         $stmt = $this->conn->prepare($sql);
         $stmt->bind_param('i', $staffId);
         $stmt->execute();
@@ -195,7 +195,7 @@ class ARMISFileUploader {
      */
     public function deleteFile($fileId, $staffId) {
         // Get file info first
-        $sql = "SELECT * FROM staff_documents WHERE id = ? AND staff_id = ?";
+        $sql = "SELECT * FROM staff_documents WHERE id = ? AND svcNo = ?";
         $stmt = $this->conn->prepare($sql);
         $stmt->bind_param('ii', $fileId, $staffId);
         $stmt->execute();

@@ -19,11 +19,11 @@ $result = [
 ];
 
 try {
-    $stmt = $pdo->prepare("SELECT r.name as rank, s.gender, COUNT(*) as count
+    $stmt = $pdo->prepare("SELECT r.rankId as rank, s.gender, COUNT(*) as count
         FROM staff s
         LEFT JOIN ranks r ON s.rankID = r.id
         WHERE ((LOWER(TRIM(s.category)) = :cat AND s.category IS NOT NULL) OR (LOWER(TRIM(s.svcStatus)) = 'retired' AND :cat = 'retired'))
-        GROUP BY r.name, s.gender");
+        GROUP BY r.rankId, s.gender");
     $stmt->execute(['cat' => $category]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $hasData = false;

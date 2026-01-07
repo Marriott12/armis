@@ -136,7 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (empty($errors)) {
             try {
-                $stmt = $pdo->prepare("INSERT INTO medals (name, description, image_path, created_at) VALUES (?, ?, ?, ?)");
+                $stmt = $pdo->prepare("INSERT INTO medals (name, description, imagePath, createdAt) VALUES (?, ?, ?, ?)");
                 $now = date('Y-m-d H:i:s');
                 $stmt->execute([
                     $medalName,
