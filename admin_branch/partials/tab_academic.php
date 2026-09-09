@@ -1,4 +1,4 @@
-<div class="tab-pane fade p-3 border rounded <?=isset($tabErrors['academic']) ? 'show active' : ''?>" id="academic" role="tabpanel">
+<div class="tab-pane fade p-3 border rounded <?=$activeTabKey === 'academic' ? 'show active' : ''?>" id="academic" role="tabpanel">
     <h5 class="mb-3 text-success">Academic Qualifications</h5>
     <div id="academicList"></div>
     <button type="button" class="btn btn-outline-secondary btn-sm mb-3" onclick="addAcademic()">Add Academic Qualification</button>

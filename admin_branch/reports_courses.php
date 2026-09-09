@@ -2,6 +2,7 @@
 define('ARMIS_ADMIN_BRANCH', true);
 require_once __DIR__ . '/includes/auth.php';
 require_once dirname(__DIR__) . '/shared/database_connection.php';
+require_once __DIR__ . '/includes/db_helpers.php';
 requireAuth();
 
 $pageTitle = "Courses Report as at " . date('d-M-Y');
@@ -9,45 +10,20 @@ $currentPage = "reports";
 $moduleName = "Admin Branch";
 $moduleIcon = "users-cog";
 
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'],
-    ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create'],
-    ['title' => 'Promotions', 'url' => '/Armis2/admin_branch/promote_staff.php', 'icon' => 'arrow-up', 'page' => 'promotions'],
-    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medal.php', 'icon' => 'medal', 'page' => 'medals'],
-    [
-        'title' => 'Reports',
-        'icon' => 'chart-bar',
-        'page' => 'reports',
-        'children' => [
-            ['title' => 'Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php'],
-            ['title' => 'Unit List', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
-            ['title' => 'Contracts', 'url' => '/Armis2/admin_branch/reports_contract.php'],
-            ['title' => 'Courses', 'url' => '/Armis2/admin_branch/reports_courses.php'],
-            ['title' => 'Deceased', 'url' => '/Armis2/admin_branch/reports_deceased.php'],
-            ['title' => 'Gender', 'url' => '/Armis2/admin_branch/reports_gender.php'],
-            ['title' => 'Marital', 'url' => '/Armis2/admin_branch/reports_marital.php'],
-            ['title' => 'Rank', 'url' => '/Armis2/admin_branch/reports_rank.php'],
-            ['title' => 'Retired', 'url' => '/Armis2/admin_branch/reports_retired.php'],
-            ['title' => 'Trade', 'url' => '/Armis2/admin_branch/reports_trade.php'],
-            ['title' => 'Corps', 'url' => '/Armis2/admin_branch/reports_corps.php'],
-            ['title' => 'Units', 'url' => '/Armis2/admin_branch/reports_units.php'],
-        ]
-    ],
-];
+$sidebarLinks = []; // set by shared nav include below
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 $pdo = getDbConnection();
 
 // Dynamic dropdowns
 function getCourseOptions($pdo, $unit, $rank, $cat, $course) {
     $courseSql = "SELECT DISTINCT c.id, c.name FROM courses c JOIN staff_courses sc ON c.id = sc.course_id JOIN staff s ON sc.svcNo = s.svcNo WHERE s.svcStatus = 'Active'";
-    $unitSql = "SELECT DISTINCT u.unitId, u.name FROM unit u JOIN staff s ON s.unitId = u.unitId WHERE s.svcStatus = 'Active'";
+    $unitSql = "SELECT DISTINCT u.unitId as id, u.unitId AS name FROM unit u JOIN staff s ON s.unitId = u.unitId WHERE s.svcStatus = 'Active'";
     $rankSql = "SELECT DISTINCT r.rankId as id, COALESCE(r.rankId, r.rankId) as name FROM `rank` r JOIN staff s ON s.rankId = r.rankId WHERE s.svcStatus = 'Active'";
     $catSql  = "SELECT DISTINCT s.category FROM staff s WHERE s.category IS NOT NULL AND s.category <> '' AND s.svcStatus = 'Active'";
     return [
         fetchAll($courseSql . " ORDER BY c.name ASC"),
-        fetchAll($unitSql . " ORDER BY u.name ASC"),
+        fetchAll($unitSql . " ORDER BY u.unitId ASC"),
         fetchAll($rankSql . " ORDER BY r.rankId ASC"),
         fetchAll($catSql . " ORDER BY s.category ASC")
     ];
@@ -81,7 +57,7 @@ if ($filter_category !== '') {
     $params[] = $filter_category;
 }
 if ($search !== '') {
-    $where .= " AND (s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR u.name LIKE ?)";
+    $where .= " AND (s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR u.unitId LIKE ?)";
     $params[] = "%$search%";
     $params[] = "%$search%";
     $params[] = "%$search%";
@@ -91,8 +67,8 @@ if ($search !== '') {
 $sql = "SELECT 
             s.*, 
             r.rankId AS rankName, 
-            r.level AS rankLevel, 
-            u.name AS unitName" . 
+            r.rankIndex AS rankLevel, 
+            u.unitId AS unitName" . 
             ($filter_course !== '' ? ", c.name AS courseName, sc.date_completed" : "") . "
         FROM staff s
     LEFT JOIN `rank` r ON s.rankId = r.rankId
@@ -100,7 +76,7 @@ $sql = "SELECT
         $joins
         $where
         GROUP BY s.svcNo
-        ORDER BY r.level ASC, u.name ASC, s.lName ASC, s.fName ASC";
+        ORDER BY r.rankIndex ASC, u.unitId ASC, s.lName ASC, s.fName ASC";
 
 $per_page = intval($_GET['per_page'] ?? 25);
 $page = max(1, intval($_GET['page'] ?? 1)); $offset = ($page - 1) * $per_page;

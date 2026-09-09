@@ -103,7 +103,7 @@ try {
             
             // Get current staff data
             $stmt = $pdo->prepare("
-                SELECT s.*, r.rankId as current_rank_name, r.level as current_rank_order
+                SELECT s.*, r.rankId as current_rank_name, r.rankIndex as current_rank_order
                 FROM staff s 
                 LEFT JOIN rank r ON s.rankId = r.rankId 
                 WHERE s.svcNo = ? AND s.svcStatus = 'Active'
@@ -115,7 +115,12 @@ try {
                 $errors[] = "Staff not found: " . htmlspecialchars($serviceNumber);
                 continue;
             }
-            
+
+            if (function_exists('canAlterRecord') && !canAlterRecord($staff['branch_id'] ?? null)) {
+                $errors[] = htmlspecialchars($serviceNumber) . " is outside your branch - skipped.";
+                continue;
+            }
+
             // Get new rank data
             $stmt = $pdo->prepare("SELECT * FROM rank WHERE id = ?");
             $stmt->execute([$nextRankId]);
@@ -127,12 +132,12 @@ try {
             }
             
             // Validate promotion logic
-            if ($promotionType === 'promotion' && $newRank['level'] <= $staff['current_rank_order']) {
+            if ($promotionType === 'promotion' && $newRank['rankIndex'] <= $staff['current_rank_order']) {
                 $errors[] = "Cannot promote " . htmlspecialchars($serviceNumber) . " to a lower or same rank";
                 continue;
             }
             
-            if ($promotionType === 'reversion' && $newRank['level'] >= $staff['current_rank_order']) {
+            if ($promotionType === 'reversion' && $newRank['rankIndex'] >= $staff['current_rank_order']) {
                 $errors[] = "Cannot revert " . htmlspecialchars($serviceNumber) . " to a higher or same rank";
                 continue;
             }

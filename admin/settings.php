@@ -10,6 +10,7 @@ require_once dirname(__DIR__) . '/shared/database_connection.php';
 
 // Include RBAC system
 require_once dirname(__DIR__) . '/shared/rbac.php';
+require_once dirname(__DIR__) . '/shared/csrf.php';
 
 // Initialize global database connection
 try {
@@ -24,14 +25,7 @@ $moduleName = "System Admin";
 $moduleIcon = "cogs";
 $currentPage = "settings";
 
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'User Management', 'url' => '/Armis2/admin/users.php', 'icon' => 'users', 'page' => 'users'],
-    ['title' => 'System Settings', 'url' => '/Armis2/admin/settings.php', 'icon' => 'cogs', 'page' => 'settings'],
-    ['title' => 'Database Management', 'url' => '/Armis2/admin/database.php', 'icon' => 'database', 'page' => 'database'],
-    ['title' => 'Security Center', 'url' => '/Armis2/admin/security.php', 'icon' => 'shield-alt', 'page' => 'security'],
-    ['title' => 'System Reports', 'url' => '/Armis2/admin/reports.php', 'icon' => 'chart-bar', 'page' => 'reports']
-];
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 // Check if user is logged in and has admin privileges
 if (!isset($_SESSION['user_id'])) {
@@ -48,14 +42,107 @@ logAccess('admin', 'settings_view', true);
 // Handle settings updates
 $message = '';
 $messageType = '';
+$formErrors = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
+
     if (isset($_POST['action']) && $_POST['action'] === 'update_settings') {
-        // For demo purposes, we'll show what would be updated
-        // In a real system, these would write to a config file or database
-        $message = "Settings would be updated in a production system. This is a demo interface.";
-        $messageType = "info";
-        logAccess('admin', 'settings_update_attempt', true);
+        // FIX: previously a no-op demo ("Settings would be updated in
+        // a production system"). Real validation + persistence via
+        // set_config() now, matching the min/max ranges already shown
+        // in this page's own HTML inputs.
+        $numericFields = [
+            'SESSION_TIMEOUT' => ['post' => 'session_timeout', 'min' => 300, 'max' => 86400, 'label' => 'Session Timeout'],
+            'MAX_LOGIN_ATTEMPTS' => ['post' => 'max_login_attempts', 'min' => 3, 'max' => 10, 'label' => 'Max Login Attempts'],
+            'LOGIN_LOCKOUT_TIME' => ['post' => 'lockout_time', 'min' => 300, 'max' => 3600, 'label' => 'Lockout Time'],
+            'CSRF_TOKEN_EXPIRY' => ['post' => 'csrf_token_expiry', 'min' => 600, 'max' => 7200, 'label' => 'CSRF Token Expiry'],
+            'MAX_UPLOAD_SIZE' => ['post' => 'max_upload_size', 'min' => 1048576, 'max' => 104857600, 'label' => 'Max Upload Size'],
+        ];
+        $textFields = [
+            'ARMIS_NAME' => 'system_name',
+            'ARMIS_VERSION' => 'system_version',
+            'ARMIS_TIMEZONE' => 'timezone',
+            'ARMIS_LANG' => 'language',
+            'ARMIS_THEME' => 'theme',
+        ];
+        $validTimezones = ['UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Africa/Lusaka'];
+        $validLanguages = ['en', 'fr', 'pt'];
+        $validThemes = ['military', 'corporate', 'modern'];
+
+        $toSave = [];
+
+        foreach ($numericFields as $constant => $meta) {
+            $value = (int) ($_POST[$meta['post']] ?? 0);
+            if ($value < $meta['min'] || $value > $meta['max']) {
+                $formErrors[] = "{$meta['label']} must be between {$meta['min']} and {$meta['max']}.";
+                continue;
+            }
+            $toSave[$constant] = $value;
+        }
+
+        $toSave['ARMIS_NAME'] = trim($_POST['system_name'] ?? '') !== ''
+            ? htmlspecialchars(trim($_POST['system_name']), ENT_QUOTES)
+            : null;
+        if ($toSave['ARMIS_NAME'] === null) {
+            $formErrors[] = 'System Name cannot be empty.';
+            unset($toSave['ARMIS_NAME']);
+        }
+        $toSave['ARMIS_VERSION'] = htmlspecialchars(trim($_POST['system_version'] ?? ''), ENT_QUOTES);
+
+        $timezone = $_POST['timezone'] ?? '';
+        if (!in_array($timezone, $validTimezones, true)) {
+            $formErrors[] = 'Invalid timezone selected.';
+        } else {
+            $toSave['ARMIS_TIMEZONE'] = $timezone;
+        }
+        $language = $_POST['language'] ?? '';
+        if (!in_array($language, $validLanguages, true)) {
+            $formErrors[] = 'Invalid language selected.';
+        } else {
+            $toSave['ARMIS_LANG'] = $language;
+        }
+        $theme = $_POST['theme'] ?? '';
+        if (!in_array($theme, $validThemes, true)) {
+            $formErrors[] = 'Invalid theme selected.';
+        } else {
+            $toSave['ARMIS_THEME'] = $theme;
+        }
+
+        // Module toggles (see is_module_enabled()'s doc comment in
+        // config.php — persists correctly but doesn't gate access
+        // anywhere yet, that's a separate, larger change).
+        foreach (['admin', 'command', 'training', 'operations'] as $mod) {
+            $toSave['ENABLE_' . strtoupper($mod) . '_MODULE'] = isset($_POST['modules'][$mod]);
+        }
+
+        // Allowed upload file extensions
+        $allowedTypes = trim($_POST['allowed_types'] ?? '');
+        if ($allowedTypes !== '' && !preg_match('/^[a-z0-9]+(?:\s*,\s*[a-z0-9]+)*$/i', $allowedTypes)) {
+            $formErrors[] = 'Allowed File Types must be comma-separated file extensions only.';
+        } else {
+            $toSave['ALLOWED_FILE_TYPES'] = $allowedTypes;
+        }
+
+        if (empty($formErrors)) {
+            $allSaved = true;
+            foreach ($toSave as $key => $value) {
+                if (!set_config($key, $value, $_SESSION['user_id'] ?? null)) {
+                    $allSaved = false;
+                }
+            }
+            if ($allSaved) {
+                $message = 'Settings updated successfully.';
+                $messageType = 'success';
+            } else {
+                $message = 'Could not save settings — the system_settings table may not exist yet. Run database/migrations/2026_08_28_add_system_settings_table.sql, then try again.';
+                $messageType = 'danger';
+            }
+        } else {
+            $message = implode(' ', $formErrors);
+            $messageType = 'danger';
+        }
+        logAccess('admin', 'settings_update_attempt', empty($formErrors));
     }
 }
 
@@ -124,6 +211,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             <?php endif; ?>
 
             <form method="POST">
+                <?= csrf_field() ?>
                 <input type="hidden" name="action" value="update_settings">
                 
                 <!-- General Settings -->

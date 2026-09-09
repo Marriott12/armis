@@ -14,25 +14,8 @@ $moduleName = "Admin Branch";
 $moduleIcon = "users-cog";
 $currentPage = "appointment_history";
 
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create_staff'],
-    ['title' => 'Edit Staff', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'user-edit', 'page' => 'edit_staff'],
-    ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/appointments.php', 'icon' => 'briefcase', 'page' => 'appointments'],
-    ['title' => 'Pending Approvals', 'url' => '/Armis2/admin_branch/pending_appointments.php', 'icon' => 'clock', 'page' => 'pending_appointments'],
-    ['title' => 'Appointment History', 'url' => '/Armis2/admin_branch/appointment_history.php', 'icon' => 'history', 'page' => 'appointment_history'],
-    ['title' => 'Appointment Types', 'url' => '/Armis2/admin_branch/appointment_types.php', 'icon' => 'clipboard-list', 'page' => 'appointment_types'],
-    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/medals.php', 'icon' => 'medal', 'page' => 'medals'],
-    [
-        'title' => 'Reports',
-        'icon' => 'chart-bar',
-        'page' => 'reports',
-        'children' => [
-            ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
-            // Other report links...
-        ]
-    ],
-];
+$sidebarLinks = []; // set by shared nav include below
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 $errors = [];
 $pdo = getDbConnection();

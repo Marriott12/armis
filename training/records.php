@@ -1,4 +1,19 @@
 <?php
+
+// SECURITY FIX: this page previously had no authentication, no session
+// handling, and no RBAC check at all - it was reachable by anyone with
+// the URL. Added the same auth/timeout/RBAC gate every other module page
+// uses.
+if (session_status() === PHP_SESSION_NONE) session_start();
+require_once dirname(__DIR__) . '/shared/rbac.php';
+require_once dirname(__DIR__) . '/shared/module_auth.php';
+__armis_enforce_session_timeout();
+if (!isset($_SESSION['user_id'])) {
+    header('Location: /Armis2/login.php?return_url=' . urlencode($_SERVER['REQUEST_URI'] ?? ''));
+    exit();
+}
+requireModuleAccess('training');
+
 require_once 'training_manager.php';
 require_once '../shared/military_formatting.php';
 $manager = new TrainingManager();
@@ -9,18 +24,12 @@ $moduleName = "Training";
 $moduleIcon = "graduation-cap";
 $currentPage = "records";
 
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/training/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Course Catalog', 'url' => '/Armis2/training/courses.php', 'icon' => 'book', 'page' => 'courses'],
-    ['title' => 'Training Records', 'url' => '/Armis2/training/records.php', 'icon' => 'certificate', 'page' => 'records'],
-    ['title' => 'Assignments', 'url' => '/Armis2/training/assignments.php', 'icon' => 'pen', 'page' => 'assignments'],
-    ['title' => 'Schedule', 'url' => '/Armis2/training/schedule.php', 'icon' => 'calendar', 'page' => 'schedule'],
-    ['title' => 'Certifications', 'url' => '/Armis2/training/certifications.php', 'icon' => 'award', 'page' => 'certifications']
-];
+require_once dirname(__DIR__) . '/shared/module_menus.php';
+$sidebarLinks = getModuleMenu('training');
 
 // Helper: get rank abbreviation by rankId
 function getRankAbbrById($db, $rankId) {
-    $stmt = $db->prepare('SELECT rankId as rankId as abbreviation FROM rank WHERE rankId = ?');
+    $stmt = $db->prepare('SELECT abbreviation FROM rank WHERE rankId = ?');
     $stmt->execute([$rankId]);
     return $stmt->fetchColumn() ?: '';
 }

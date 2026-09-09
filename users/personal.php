@@ -58,19 +58,19 @@ try {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $userData) {
     try {
         if (isset($_POST['update_basic'])) {
+            $successMessages = [];
+
             // Update personal information
             $personalData = [
                 'nrc' => $_POST['nrc'] ?? '',
                 'DOB' => $_POST['dob'] ?? '', // Map to correct field name in DB
                 'gender' => $_POST['gender'] ?? '',
-                'nationality' => $_POST['nationality'] ?? '',
                 'religion' => $_POST['religion'] ?? '',
                 'marital_status' => $_POST['marital_status'] ?? '',
                 'address' => $_POST['address'] ?? '',
                 'tel' => $_POST['tel'] ?? '',
                 'email' => $_POST['email'] ?? '',
                 'height' => $_POST['height'] ?? '',
-                'weight' => $_POST['weight'] ?? '',
                 'combatSize' => $_POST['combatSize'] ?? '',
                 'bsize' => $_POST['bsize'] ?? '',
                 'ssize' => $_POST['ssize'] ?? '',
@@ -81,20 +81,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $userData) {
             ];
             
             $result = $profileManager->updatePersonalInfo($personalData);
-            
+
             if ($result['success']) {
-                $success = $result['message'];
-                // Reload profile data to show updated information
+                $successMessages[] = $result['message'];
                 $userData = $profileManager->getUserProfile();
             } else {
                 $errors[] = $result['message'];
             }
+
+            // Update education and language sections in the same form submission
+            $educationData = $_POST['education'] ?? [];
+            $educationResult = $profileManager->updateEducationRecords($educationData);
+            if ($educationResult['success']) {
+                $successMessages[] = $educationResult['message'];
+                $educationRecords = $profileManager->getEducationRecords();
+            } else {
+                $errors[] = $educationResult['message'];
+            }
+
+            $languageData = $_POST['languages'] ?? [];
+            $languageResult = $profileManager->updateLanguageRecords($languageData);
+            if ($languageResult['success']) {
+                $successMessages[] = $languageResult['message'];
+                $languageRecords = $profileManager->getLanguageRecords();
+            } else {
+                $errors[] = $languageResult['message'];
+            }
+
+            if (empty($errors) && !empty($successMessages)) {
+                $success = implode(' ', $successMessages);
+            }
         }
         
-        if (isset($_POST['update_contacts'])) {
+        if (isset($_POST['update_contact'])) {
             $contactData = [];
             $types = $_POST['contact_types'] ?? [];
             $values = $_POST['contact_values'] ?? [];
+            $names = $_POST['contact_names'] ?? [];
+            $relationships = $_POST['contact_relationships'] ?? [];
             $primaries = $_POST['contact_primary'] ?? [];
             $verifieds = $_POST['contact_verified'] ?? [];
             $notes = $_POST['contact_notes'] ?? [];
@@ -106,6 +130,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $userData) {
                     'id' => $ids[$i] ?? null,
                     'contact_type' => $types[$i],
                     'contact_value' => $values[$i],
+                    'contact_name' => $names[$i] ?? '',
+                    'relationship' => $relationships[$i] ?? '',
                     'is_primary' => !empty($primaries[$i]) ? 1 : 0,
                     'is_verified' => !empty($verifieds[$i]) ? 1 : 0,
                     'notes' => $notes[$i] ?? ''
@@ -115,34 +141,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $userData) {
             if ($result['success']) {
                 $success = $result['message'];
                 $contactInfo = $profileManager->getContactInfo();
-            } else {
-                $errors[] = $result['message'];
-            }
-        }
-        
-        if (isset($_POST['update_education'])) {
-            // Update education records
-            $educationData = $_POST['education'] ?? [];
-            $result = $profileManager->updateEducationRecords($educationData);
-            
-            if ($result['success']) {
-                $success = $result['message'];
-                // Reload education data
-                $educationRecords = $profileManager->getEducationRecords();
-            } else {
-                $errors[] = $result['message'];
-            }
-        }
-        
-        if (isset($_POST['update_languages'])) {
-            // Update language records
-            $languageData = $_POST['languages'] ?? [];
-            $result = $profileManager->updateLanguageRecords($languageData);
-            
-            if ($result['success']) {
-                $success = $result['message'];
-                // Reload language data
-                $languageRecords = $profileManager->getLanguageRecords();
             } else {
                 $errors[] = $result['message'];
             }
@@ -202,14 +200,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             <?php endif; ?>
 
             <!-- Personal Information Form -->
-            <div class="row">
+            <div class="row g-4">
                 <div class="col-lg-8">
-                    <div class="card">
-                        <div class="card-header">
-                            <h5 class="mb-0"><i class="fas fa-user-edit"></i> Basic Information</h5>
-                        </div>
-                        <div class="card-body">
-                            <form method="POST" id="personalInfoForm">
+                    <form method="POST" id="personalInfoForm">
                                 <!-- Military Standard Order: Name, NRC, DOB, Gender, Marital, Spouse, Children, Religion, Blood, Height, Contact, Academic -->
                                 <div class="row">
                                     <div class="col-md-6 mb-3">
@@ -244,7 +237,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <div class="row">
                                     <div class="col-md-4 mb-3">
                                         <label class="form-label">Marital Status</label>
-                                        <select class="form-select" name="marital" id="maritalStatus">
+                                        <select class="form-select" name="marital_status" id="maritalStatus">
                                             <option value="">Select Status</option>
                                             <?php 
                                             $maritalStatuses = ['Single', 'Married', 'Divorced', 'Widowed'];
@@ -398,6 +391,9 @@ document.addEventListener('DOMContentLoaded', function() {
     var marital = document.getElementById('maritalStatus');
     var spouseSection = document.getElementById('spouseSection');
     function toggleSpouseSection() {
+        if (!marital || !spouseSection) {
+            return;
+        }
         if (marital.value === 'Married') {
             spouseSection.style.display = '';
         } else {
@@ -406,8 +402,10 @@ document.addEventListener('DOMContentLoaded', function() {
             spouseSection.querySelectorAll('input').forEach(function(input) { input.value = ''; });
         }
     }
-    toggleSpouseSection();
-    marital.addEventListener('change', toggleSpouseSection);
+    if (marital) {
+        toggleSpouseSection();
+        marital.addEventListener('change', toggleSpouseSection);
+    }
 // --- Enhanced Dynamic Education Fields ---
 let educationIndex = 0;
 
@@ -445,6 +443,12 @@ function addEducationRecord(existingData = null) {
                        value="${existingData?.qualification || ''}" 
                        placeholder="e.g., Bachelor of Science" required>
                 <div class="invalid-feedback">Please provide the qualification</div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-6 mb-2">
+                <label class="form-label">Course ID</label>
+                <input type="text" name="education[${index}][course_id]" class="form-control" value="${existingData?.course_id || ''}" placeholder="Course identifier">
             </div>
         </div>
         
@@ -813,7 +817,7 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
 
             <!-- Contact Information -->
-            <div class="row mt-4">
+            <div id="contact-section" class="row mt-4">
                 <div class="col-12">
                     <div class="card">
                         <div class="card-header">
@@ -834,6 +838,9 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <?php if (empty($contactInfo)): ?>
                                         <div class="row mb-3">
                                             <div class="col-md-2">
+                                                <input type="hidden" name="contact_ids[0]" value="">
+                                                <input type="hidden" name="contact_verified[0]" value="0">
+                                                <input type="hidden" name="contact_notes[0]" value="">
                                                 <select class="form-select" name="contact_types[]">
                                                     <option value="">Select Type</option>
                                                     <option value="Mobile">Mobile</option>
@@ -853,8 +860,9 @@ document.addEventListener('DOMContentLoaded', function() {
                                                 <input type="text" class="form-control" name="contact_relationships[]" placeholder="Relationship">
                                             </div>
                                             <div class="col-md-2">
+                                                <input type="hidden" name="contact_primary[0]" value="0">
                                                 <div class="form-check">
-                                                    <input class="form-check-input" type="checkbox" name="contact_primary[]" value="1">
+                                                    <input class="form-check-input" type="checkbox" name="contact_primary[0]" value="1">
                                                     <label class="form-check-label">Primary</label>
                                                 </div>
                                             </div>
@@ -865,9 +873,12 @@ document.addEventListener('DOMContentLoaded', function() {
                                             </div>
                                         </div>
                                     <?php else: ?>
-                                        <?php foreach ($contactInfo as $contact): ?>
+                                        <?php foreach ($contactInfo as $index => $contact): ?>
                                             <div class="row mb-3">
                                                 <div class="col-md-2">
+                                                    <input type="hidden" name="contact_ids[<?= $index ?>]" value="<?= htmlspecialchars($contact->id ?? '') ?>">
+                                                    <input type="hidden" name="contact_verified[<?= $index ?>]" value="<?= $contact->is_verified ? 1 : 0 ?>">
+                                                    <input type="hidden" name="contact_notes[<?= $index ?>]" value="<?= htmlspecialchars($contact->notes ?? '') ?>">
                                                     <select class="form-select" name="contact_types[]">
                                                         <option value="">Select Type</option>
                                                         <option value="Mobile" <?= $contact->contact_type === 'Mobile' ? 'selected' : '' ?>>Mobile</option>
@@ -887,8 +898,9 @@ document.addEventListener('DOMContentLoaded', function() {
                                                     <input type="text" class="form-control" name="contact_relationships[]" value="<?= htmlspecialchars($contact->relationship ?? '') ?>" placeholder="Relationship">
                                                 </div>
                                                 <div class="col-md-2">
+                                                    <input type="hidden" name="contact_primary[<?= $index ?>]" value="0">
                                                     <div class="form-check">
-                                                        <input class="form-check-input" type="checkbox" name="contact_primary[]" value="1" <?= $contact->is_primary ? 'checked' : '' ?>>
+                                                        <input class="form-check-input" type="checkbox" name="contact_primary[<?= $index ?>]" value="1" <?= $contact->is_primary ? 'checked' : '' ?>>
                                                         <label class="form-check-label">Primary</label>
                                                     </div>
                                                 </div>
@@ -1035,9 +1047,13 @@ document.getElementById('photoForm').addEventListener('submit', function(e) {
 
 function addContact() {
     const contactList = document.getElementById('contactList');
+    const index = contactList.querySelectorAll('.row').length;
     const newContact = document.createElement('div');
     newContact.className = 'row mb-3';
     newContact.innerHTML = `
+        <input type="hidden" name="contact_ids[${index}]" value="">
+        <input type="hidden" name="contact_verified[${index}]" value="0">
+        <input type="hidden" name="contact_notes[${index}]" value="">
         <div class="col-md-2">
             <select class="form-select" name="contact_types[]">
                 <option value="">Select Type</option>
@@ -1058,8 +1074,9 @@ function addContact() {
             <input type="text" class="form-control" name="contact_relationships[]" placeholder="Relationship">
         </div>
         <div class="col-md-2">
+            <input type="hidden" name="contact_primary[${index}]" value="0">
             <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="contact_primary[]" value="1">
+                <input class="form-check-input" type="checkbox" name="contact_primary[${index}]" value="1">
                 <label class="form-check-label">Primary</label>
             </div>
         </div>
@@ -1070,10 +1087,37 @@ function addContact() {
         </div>
     `;
     contactList.appendChild(newContact);
+    reindexContactRows();
+}
+
+function reindexContactRows() {
+    const rows = document.querySelectorAll('#contactList > .row');
+    rows.forEach((row, index) => {
+        const idInput = row.querySelector('[name^="contact_ids["]');
+        const verifiedInput = row.querySelector('[name^="contact_verified["]');
+        const notesInput = row.querySelector('[name^="contact_notes["]');
+        const primaryInputs = row.querySelectorAll('[name^="contact_primary["]');
+
+        if (idInput) {
+            idInput.name = `contact_ids[${index}]`;
+        }
+        if (verifiedInput) {
+            verifiedInput.name = `contact_verified[${index}]`;
+        }
+        if (notesInput) {
+            notesInput.name = `contact_notes[${index}]`;
+        }
+        if (primaryInputs.length) {
+            primaryInputs.forEach((input) => {
+                input.name = `contact_primary[${index}]`;
+            });
+        }
+    });
 }
 
 function removeContact(button) {
     button.closest('.row').remove();
+    reindexContactRows();
 }
 
 // --- Real-time validation for contact and editable fields ---

@@ -26,45 +26,85 @@ if (!isset($_SESSION['csrf_token'])) {
 }
 $csrfToken = $_SESSION['csrf_token'];
 
+// Child tables that reference staff.svcNo. Used to (a) show the operator
+// what will be cascade-deleted and (b) snapshot every related row into
+// deletion_log.staff_data_backup before the delete happens, since the
+// FKs in armis1_delete_staff_schema_fix.sql hard-cascade with no trace
+// of their own.
+const STAFF_CHILD_TABLES = [
+    'staff_appointment',
+    'staff_awards',
+    'staff_conduct',
+    'staff_course',
+    'staff_deployments',
+    'staff_disciplinary',
+    'staff_edit_log',
+    'staff_operation',
+    'staff_promotion',
+    'staff_skills',
+];
+
 // --- AJAX search endpoint: PUT THIS FIRST! ---
 // DO NOT include template or any HTML before this!
 if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
     header('Content-Type: application/json');
+    require_once dirname(__DIR__) . '/shared/rank_levels.php';
     try {
         $pdo = getDbConnection();
-        
-        // Build ranks and units map
-        $ranksStmt = $pdo->query("SELECT id as rankID, name as rankId as rankName FROM rank");
+
+        // Build ranks and units map.
+        // `rank` has no separate id/name columns - rankId IS the code
+        // (e.g. 'Capt', 'Sgt'), same convention used elsewhere in the app.
+        $ranksStmt = $pdo->query("SELECT rankId as rankID, rankId as rankName FROM `rank`");
         $ranks = $ranksStmt->fetchAll(PDO::FETCH_OBJ);
         $rankMap = [];
         foreach ($ranks as $r) $rankMap[$r->rankID] = $r->rankName;
-        
-        $unitsStmt = $pdo->query("SELECT unitId as unitID, code as unitName FROM unit");
+
+        // `unit` has no `code` column - unitId is the human-readable code.
+        $unitsStmt = $pdo->query("SELECT unitId as unitID, unitId as unitName FROM `unit`");
         $units = $unitsStmt->fetchAll(PDO::FETCH_OBJ);
         $unitMap = [];
         foreach ($units as $u) $unitMap[$u->unitID] = $u->unitName;
 
         $search = trim($_GET['search'] ?? '');
-        $sql = "SELECT svcNo as svcNo, fName as fname, lName as lname, rankId, unitId FROM staff";
+        // Category (Officer/NCO/CE), same as reports_seniority.php's
+        // roster grouping — this listing previously had no category
+        // awareness at all.
+        $categoryMap = ['officers' => 'Officer', 'ncos' => 'NCO', 'ce' => 'Civilian Employee'];
+        $categoryFilter = $categoryMap[$_GET['category'] ?? ''] ?? null;
+
+        $sql = "SELECT s.svcNo as svcNo, s.fName as fname, s.mName as mname, s.lName as lname,
+                       s.rankId, s.unitId, " . getRankCategoryCaseSQL('r') . " as category
+                FROM staff s LEFT JOIN `rank` r ON s.rankId = r.rankId";
         $params = [];
+        $conditions = [];
         if ($search !== '') {
-            $sql .= " WHERE (svcNo LIKE ? OR fName LIKE ? OR lName LIKE ?)";
+            $conditions[] = "(s.svcNo LIKE ? OR s.fName LIKE ? OR s.mName LIKE ? OR s.lName LIKE ?)";
             $searchParam = '%' . $search . '%';
-            $params = [$searchParam, $searchParam, $searchParam];
+            array_push($params, $searchParam, $searchParam, $searchParam, $searchParam);
         }
-        $sql .= " ORDER BY rankId ASC, lName ASC, fName ASC";
-        
+        if ($categoryFilter !== null) {
+            $conditions[] = getRankCategorySQL($categoryFilter, 'r');
+        }
+        if (!empty($conditions)) {
+            $sql .= " WHERE " . implode(' AND ', $conditions);
+        }
+        $sql .= " ORDER BY r.rankIndex ASC, s.lName ASC, s.fName ASC";
+
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
         $staffList = $stmt->fetchAll(PDO::FETCH_OBJ);
-        
+
         $result = [];
         foreach ($staffList as $s) {
+            $middle = trim($s->mname ?? '');
+            $fullName = trim(($s->lname ?? '') . ' ' . ($s->fname ?? '') . ($middle !== '' ? ' ' . $middle : ''));
             $result[] = [
                 'svcNo' => $s->svcNo ?? '',
-                'name' => ($s->lname ?? '') . ' ' . ($s->fname ?? ''),
+                'name' => $fullName,
                 'rank' => isset($rankMap[$s->rankId]) ? $rankMap[$s->rankId] : ('ID:' . $s->rankId),
                 'unit' => isset($unitMap[$s->unitId]) ? $unitMap[$s->unitId] : '',
+                'category' => $s->category ?? 'Unknown',
             ];
         }
         echo json_encode($result);
@@ -84,13 +124,14 @@ function csrf_token() { return $_SESSION['csrf_token']; }
 // --- Lookup for ranks and units (for delete confirmation) ---
 try {
     $pdo = getDbConnection();
-    
-    $ranksStmt = $pdo->query("SELECT id as rankID, name as rankId as rankName FROM rank");
+
+    $ranksStmt = $pdo->query("SELECT rankId as rankID, rankId as rankName FROM `rank`");
     $ranks = $ranksStmt->fetchAll(PDO::FETCH_OBJ);
     $rankMap = [];
     foreach ($ranks as $r) $rankMap[$r->rankID] = $r->rankName;
-    
-    $unitsStmt = $pdo->query("SELECT id as unitID, name as unitName FROM units");
+
+    // Real table is `unit` (singular); it has no `id`/`name` columns.
+    $unitsStmt = $pdo->query("SELECT unitId as unitID, unitId as unitName FROM `unit`");
     $units = $unitsStmt->fetchAll(PDO::FETCH_OBJ);
     $unitMap = [];
     foreach ($units as $u) $unitMap[$u->unitID] = $u->unitName;
@@ -103,23 +144,32 @@ try {
 $errors = [];
 $success = false;
 $staff = null;
+$relatedCounts = [];
 
 // If a staff member is selected for deletion, fetch brief info for confirmation
 if (isset($_GET['svcNo'])) {
     $svcNo = $_GET['svcNo'];
     try {
         $stmt = $pdo->prepare(
-            "SELECT svcNo as svcNo, fName as fname, lName as lname, 
+            "SELECT svcNo as svcNo, fName as fname, mName as mname, lName as lname, 
                     rankId, unitId, NRC, DOB, gender, svcStatus 
              FROM staff 
              WHERE svcNo = ?"
         );
         $stmt->execute([$svcNo]);
         $staff = $stmt->fetch(PDO::FETCH_OBJ);
-        
-        // Debug: log what columns we actually got
+
+        // Show the operator what else will be cascade-deleted with this
+        // staff member, so "type DELETE to confirm" is an informed choice.
         if ($staff) {
-            error_log("Staff object properties: " . print_r(get_object_vars($staff), true));
+            foreach (STAFF_CHILD_TABLES as $table) {
+                $countStmt = $pdo->prepare("SELECT COUNT(*) FROM `$table` WHERE svcNo = ?");
+                $countStmt->execute([$svcNo]);
+                $count = (int)$countStmt->fetchColumn();
+                if ($count > 0) {
+                    $relatedCounts[$table] = $count;
+                }
+            }
         }
     } catch (Exception $e) {
         error_log("Failed to fetch staff for deletion: " . $e->getMessage());
@@ -142,28 +192,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_svcNo'])) {
             $stmt = $pdo->prepare("SELECT * FROM staff WHERE svcNo = ?");
             $stmt->execute([$svcNo]);
             $staff = $stmt->fetch(PDO::FETCH_OBJ);
-            
+
             if (!$staff) {
                 $errors[] = "Staff member not found.";
+            } elseif (function_exists('canAlterRecord') && !canAlterRecord($staff->branch_id ?? null)) {
+                $errors[] = "You are not permitted to delete records for this branch.";
+                error_log("Branch RBAC denied: role '" . ($_SESSION['role'] ?? 'unknown') . "' attempted to delete svcNo $svcNo (branch " . ($staff->branch_id ?? 'none') . ")");
             } else {
-                // Get additional staff information for logging
-                $staffName = ($staff->lname ?? '') . ' ' . ($staff->fname ?? '');
+                // NOTE: SELECT * returns real column names, which are
+                // fName/mName/lName (capital N) - not fname/mname/lname.
+                $middleName = trim($staff->mName ?? '');
+                $staffName = trim(
+                    ($staff->lName ?? '') . ' ' . ($staff->fName ?? '') .
+                    ($middleName !== '' ? ' ' . $middleName : '')
+                );
                 $rankName = $rankMap[$staff->rankId] ?? 'Unknown';
                 $unitName = $unitMap[$staff->unitId] ?? 'Unknown';
-                
-                // Backup staff data as JSON
+
+                $pdo->beginTransaction();
+
+                // Snapshot every related row across all child tables before
+                // the cascade delete removes them, so the audit trail keeps
+                // a full record of what existed (courses, awards,
+                // disciplinary history, deployments, etc.), not just the
+                // staff row itself.
+                $relatedData = [];
+                foreach (STAFF_CHILD_TABLES as $table) {
+                    $childStmt = $pdo->prepare("SELECT * FROM `$table` WHERE svcNo = ?");
+                    $childStmt->execute([$svcNo]);
+                    $rows = $childStmt->fetchAll(PDO::FETCH_ASSOC);
+                    if (!empty($rows)) {
+                        $relatedData[$table] = $rows;
+                    }
+                }
+
+                // Backup staff data (+ related records) as JSON
                 $staffBackup = json_encode([
-                    'svcNo' => $staff->svcNo ?? '',
-                    'name' => $staffName,
-                    'rankId' => $staff->rankId ?? null,
-                    'unitId' => $staff->unitId ?? null,
-                    'NRC' => $staff->NRC ?? '',
-                    'DOB' => $staff->DOB ?? '',
-                    'gender' => $staff->gender ?? '',
-                    'svcStatus' => $staff->svcStatus ?? '',
-                    'deleted_at' => date('Y-m-d H:i:s')
+                    'staff' => (array)$staff,
+                    'related_records' => $relatedData,
+                    'deleted_at' => date('Y-m-d H:i:s'),
                 ]);
-                
+
                 // Log to deletion_log table (specific audit trail)
                 $logStmt = $pdo->prepare("
                     INSERT INTO deletion_log (svcNo, staff_name, rank_name, unit_name, deleted_by, deleted_by_username, user_ip, user_agent, reason, staff_data_backup) 
@@ -181,7 +250,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_svcNo'])) {
                     $reason,
                     $staffBackup
                 ]);
-                
+
                 // Also log to activity_log table (general audit trail)
                 $activityStmt = $pdo->prepare("
                     INSERT INTO activity_log (user_id, username, action, details, ip_address, user_agent) 
@@ -195,22 +264,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_svcNo'])) {
                     $_SERVER['REMOTE_ADDR'] ?? '',
                     $_SERVER['HTTP_USER_AGENT'] ?? ''
                 ]);
-                
-                // Delete the staff member
+
+                // Delete the staff member. With armis1_delete_staff_schema_fix.sql
+                // applied, this cascades to every child table listed in
+                // STAFF_CHILD_TABLES automatically - no manual child deletes
+                // needed and no orphaned rows left behind.
                 $deleteStmt = $pdo->prepare("DELETE FROM staff WHERE svcNo = ?");
                 $deleteResult = $deleteStmt->execute([$svcNo]);
                 $rowsAffected = $deleteStmt->rowCount();
-                
+
                 if ($deleteResult && $rowsAffected > 0) {
+                    $pdo->commit();
                     $success = true;
                     $staff = null;
+                    $relatedCounts = [];
                     error_log("Successfully deleted staff member: $svcNo by user " . ($_SESSION['user_id'] ?? 'unknown'));
+
+                    // Notify system admins — deletion is destructive and
+                    // irreversible, worth an oversight notification even
+                    // for the admin who performed it (excluded below,
+                    // since they already know).
+                    require_once dirname(__DIR__) . '/shared/notifications_helper.php';
+                    notifyRoles(
+                        ['admin', 'superadmin'],
+                        'admin_branch',
+                        'staff_deleted',
+                        'Staff record deleted',
+                        "$staffName (svcNo $svcNo) was deleted." . ($reason ? " Reason: $reason" : ''),
+                        null, // no profile to link to anymore
+                        $_SESSION['user_id'] ?? null
+                    );
                 } else {
+                    $pdo->rollBack();
                     $errors[] = "Failed to delete staff member. No rows were affected.";
                     error_log("Delete failed - no rows affected for service number: $svcNo");
                 }
             }
         } catch (Exception $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
             error_log("Delete error by user " . ($_SESSION['user_id'] ?? 'unknown') . ": " . $e->getMessage());
             $errors[] = "Error deleting staff: " . $e->getMessage();
         }
@@ -226,36 +319,8 @@ $moduleIcon = "user-plus";
 $currentPage = "delete";
 
 // Sidebar navigation
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'],
-    ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create'],
-    ['title' => 'Delete Staff', 'url' => '/Armis2/admin_branch/delete_staff.php', 'icon' => 'user-times', 'page' => 'delete'],
-    ['title' => 'Promotions', 'url' => '/Armis2/admin_branch/promote_staff.php', 'icon' => 'arrow-up', 'page' => 'promotions'],
-    ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/appointments.php', 'icon' => 'user-tie', 'page' => 'appointments'],
-    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medal.php', 'icon' => 'medal', 'page' => 'medals'],
-    [
-        'title' => 'Reports',
-        'icon' => 'chart-bar',
-        'page' => 'reports',
-        'children' => [
-            ['title' => 'Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php'],
-            ['title' => 'Unit List', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
-            ['title' => 'Contracts', 'url' => '/Armis2/admin_branch/reports_contract.php'],
-            ['title' => 'Courses', 'url' => '/Armis2/admin_branch/reports_courses.php'],
-            ['title' => 'Deceased', 'url' => '/Armis2/admin_branch/reports_deceased.php'],
-            ['title' => 'Gender', 'url' => '/Armis2/admin_branch/reports_gender.php'],
-            ['title' => 'Marital', 'url' => '/Armis2/admin_branch/reports_marital.php'],
-            ['title' => 'Rank', 'url' => '/Armis2/admin_branch/reports_rank.php'],
-            ['title' => 'Retired', 'url' => '/Armis2/admin_branch/reports_retired.php'],
-            ['title' => 'Trade', 'url' => '/Armis2/admin_branch/reports_trade.php'],
-            ['title' => 'Corps', 'url' => '/Armis2/admin_branch/reports_corps.php'],
-            ['title' => 'Units', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Medals', 'url' => '/Armis2/admin_branch/reports_medals.php'],
-        ]
-    ],
-];
+$sidebarLinks = []; // set by shared nav include below
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 // Ensure shared admin branch CSS is loaded
 echo '<link rel="stylesheet" href="/Armis2/assets/css/admin_branch.css">';
@@ -296,6 +361,18 @@ include dirname(__DIR__) . '/shared/sidebar.php';
             <?php endif; ?>
 
             <?php if (!$staff): ?>
+                <!-- Category tabs — same Officers/NCOs/CEs pattern as
+                     reports_seniority.php, so staff can be narrowed
+                     down by category before searching by name. -->
+                <ul class="nav nav-tabs mb-3" id="categoryTabs" role="tablist">
+                    <?php foreach (['' => 'All', 'officers' => 'Officers', 'ncos' => 'NCOs', 'ce' => 'Civilian Employees'] as $key => $label): ?>
+                        <li class="nav-item" role="presentation">
+                            <a class="nav-link<?= $key === '' ? ' active' : '' ?>" href="#" data-category="<?= htmlspecialchars($key) ?>" role="tab">
+                                <?= htmlspecialchars($label) ?>
+                            </a>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
                 <!-- Live Search Form -->
                 <form id="searchForm" class="mb-4" aria-label="Search Staff" autocomplete="off" onsubmit="return false;">
                     <div class="input-group">
@@ -311,34 +388,39 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <th scope="col">Service No</th>
                                 <th scope="col">Name</th>
                                 <th scope="col">Rank</th>
+                                <th scope="col">Category</th>
                                 <th scope="col">Unit</th>
                                 <th scope="col">Action</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr><td colspan="5" class="text-center text-muted">Loading staff...</td></tr>
+                            <tr><td colspan="6" class="text-center text-muted">Loading staff...</td></tr>
                         </tbody>
                     </table>
                 </div>
                 <script>
                 const searchInput = document.getElementById('searchStaff');
                 const resultsTable = document.getElementById('staffResultsTable').getElementsByTagName('tbody')[0];
+                let activeCategory = '';
                 let typingTimer;
+                const categoryBadge = { 'Officer': 'primary', 'NCO': 'info', 'CE': 'secondary' };
                 function fetchResults(query) {
-                    resultsTable.innerHTML = `<tr><td colspan="5" class="text-center text-muted">Loading staff...</td></tr>`;
-                    fetch('?ajax=1&search=' + encodeURIComponent(query))
+                    resultsTable.innerHTML = `<tr><td colspan="6" class="text-center text-muted">Loading staff...</td></tr>`;
+                    fetch('?ajax=1&search=' + encodeURIComponent(query) + '&category=' + encodeURIComponent(activeCategory))
                         .then(r => r.json())
                         .then(data => {
                             resultsTable.innerHTML = '';
                             if (!Array.isArray(data) || data.length === 0) {
-                                resultsTable.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No staff found.</td></tr>';
+                                resultsTable.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No staff found.</td></tr>';
                             } else {
                                 data.forEach(function(staff) {
                                     const tr = document.createElement('tr');
+                                    const badgeColor = categoryBadge[staff.category] || 'light';
                                     tr.innerHTML =
                                         '<td>' + staff.svcNo + '</td>' +
                                         '<td>' + staff.name + '</td>' +
                                         '<td>' + staff.rank + '</td>' +
+                                        '<td><span class="badge bg-' + badgeColor + '">' + staff.category + '</span></td>' +
                                         '<td>' + staff.unit + '</td>' +
                                         '<td><a href="?svcNo=' + encodeURIComponent(staff.svcNo) + '" class="btn btn-danger btn-sm"><i class="fas fa-trash"></i> Delete</a></td>';
                                     resultsTable.appendChild(tr);
@@ -346,7 +428,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             }
                         })
                         .catch(err => {
-                            resultsTable.innerHTML = '<tr><td colspan="5" class="text-center text-danger">AJAX Error: ' + err + '</td></tr>';
+                            resultsTable.innerHTML = '<tr><td colspan="6" class="text-center text-danger">AJAX Error: ' + err + '</td></tr>';
                         });
                 }
                 fetchResults('');
@@ -355,6 +437,15 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     typingTimer = setTimeout(function() {
                         fetchResults(searchInput.value);
                     }, 250);
+                });
+                document.querySelectorAll('#categoryTabs .nav-link').forEach(function(tab) {
+                    tab.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        document.querySelectorAll('#categoryTabs .nav-link').forEach(t => t.classList.remove('active'));
+                        this.classList.add('active');
+                        activeCategory = this.dataset.category;
+                        fetchResults(searchInput.value);
+                    });
                 });
                 </script>
             <?php else: ?>
@@ -366,6 +457,19 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                       <span class="fw-bold">Type <kbd>DELETE</kbd> below to confirm.</span>
                     </p>
                 </div>
+
+                <?php if (!empty($relatedCounts)): ?>
+                <div class="alert alert-danger mb-4" role="alert">
+                    <h6 class="alert-heading"><i class="fas fa-exclamation-circle"></i> This will also permanently delete related records</h6>
+                    <ul class="mb-2">
+                        <?php foreach ($relatedCounts as $table => $count): ?>
+                            <li><?= $count ?> row(s) in <code><?= htmlspecialchars($table) ?></code></li>
+                        <?php endforeach; ?>
+                    </ul>
+                    <p class="mb-0">A full backup of these records is saved to the deletion log before they're removed, in case they need to be restored.</p>
+                </div>
+                <?php endif; ?>
+
                 <div class="mb-4">
                     <table class="table table-bordered w-auto">
                         <tr>
@@ -374,7 +478,11 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         </tr>
                         <tr>
                             <th scope="row">Name</th>
-                            <td><?=htmlspecialchars(($staff->lname ?? '') . ' ' . ($staff->fname ?? ''))?></td>
+                            <td><?php
+                                $confirmMiddle = trim($staff->mname ?? '');
+                                $confirmName = trim(($staff->lname ?? '') . ' ' . ($staff->fname ?? '') . ($confirmMiddle !== '' ? ' ' . $confirmMiddle : ''));
+                                echo htmlspecialchars($confirmName !== '' ? $confirmName : 'N/A');
+                            ?></td>
                         </tr>
                         <tr>
                             <th scope="row">Rank</th>

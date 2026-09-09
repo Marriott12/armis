@@ -19,6 +19,7 @@ $staffCount = 0;
 $category = '';
 $ranks = [];
 $showStaffProfileModal = false;
+$promotionType = ''; // avoid "undefined variable" notices when no rank is selected yet
 
 // Constants (can be moved to config file)
 $BULK_CONFIRMATION_THRESHOLD = 10;
@@ -58,9 +59,9 @@ function generatePromotionReport($serviceNumbers, $fromRank, $toRank, $effective
         $placeholders = rtrim(str_repeat('?,', count($serviceNumbers)), ',');
         $stmt = $pdo->prepare("
             SELECT s.svcNo, r.rankId as rank_abbr, s.fName, s.lName, 
-                   u.code as unit_name
+                   u.unitId as unit_name
             FROM staff s
-            LEFT JOIN ranks r ON s.rankId = r.rankId
+            LEFT JOIN `rank` r ON s.rankId = r.rankId
             LEFT JOIN unit u ON s.unitId = u.unitId
             WHERE s.svcNo IN ($placeholders)
         ");
@@ -168,13 +169,13 @@ try {
     // Exclude: Mister, Miss, Recruit, Officer Cadet (these are not promotable ranks)
     // Use `rank` table and alias columns to match legacy expectations
     $rankStmt = $pdo->query("
-        SELECT r.rankId AS id, r.rankId AS name, r.rankId AS abbreviation, r.level, 
+        SELECT r.rankId AS id, r.rankId AS name, r.rankId AS abbreviation, r.rankIndex, 
                " . getRankCategoryCaseSQL('r') . " AS category, COUNT(s.svcNo) as staff_count
         FROM `rank` r
         LEFT JOIN staff s ON s.rankId = r.rankId AND (s.svcStatus IS NULL OR s.svcStatus = 'active')
         WHERE COALESCE(r.rankId, r.rankId) NOT IN ('Mister', 'Miss', 'Recruit', 'Officer Cadet')
-        GROUP BY r.rankId, r.level
-        ORDER BY r.level ASC
+        GROUP BY r.rankId, r.rankIndex
+        ORDER BY r.rankIndex ASC
     ");
     $ranks = $rankStmt->fetchAll(PDO::FETCH_OBJ);
 } catch (Exception $e) {
@@ -189,20 +190,20 @@ if (isset($_GET['currentRank']) && !empty($_GET['currentRank'])) {
     $currentRankId = $_GET['currentRank'];
     try {
         // Get the current rank details
-        $stmt = $pdo->prepare("SELECT rankId AS id, rankId AS name, rankId AS abbreviation, level FROM `rank` WHERE rankId = ?");
+        $stmt = $pdo->prepare("SELECT rankId AS id, rankId AS name, rankId AS abbreviation, rankIndex FROM `rank` WHERE rankId = ?");
         $stmt->execute([$currentRankId]);
         $currentRank = $stmt->fetch(PDO::FETCH_OBJ);
         
         if ($currentRank) {
             // Get rank details
             $currentRankName = $currentRank->name;
-            $currentRankLevel = $currentRank->level;
+            $currentRankLevel = $currentRank->rankIndex;
             
             // Fetch staff at the selected rank with promotion history
             $staffStmt = $pdo->prepare("
                 SELECT s.svcNo, s.svcNo as id, s.fName, s.lName, s.rankId, 
-                       s.attestDate, s.unitId, s.subWef, s.tempWef, s.corpsId as corps, s.svcStatus,
-                       u.code as unit_name,
+                       s.attestDate, s.unitId, s.subWef, s.tempWef, s.corps as corps, s.svcStatus,
+                       u.unitId as unit_name,
                        COALESCE(r.rankId, s.rankId) as rank_name,
                        COALESCE(r.rankId, r.rankId) as rank_abbreviation,
                        -- Date when they got current rank (for display)
@@ -388,16 +389,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                     $pdo->beginTransaction();
                     $timestamp = date('Y-m-d H:i:s');
 
-                    // Insert authority order row for this action
+                    // Insert authority order row for this action.
+                    // NOTE: the schema's actual table is `authority` (authID varchar(10) PK,
+                    // type, year, description, createdAt) - there is no `authority_orders`
+                    // table and no `order_number` column, so build a short unique authID instead.
                     $orderType = ($promotionType === 'reversion') ? 'Demotion' : 'Promotion';
                     $currentYear = date('Y');
-                    $orderQuery = $pdo->prepare("SELECT MAX(order_number) as max_order FROM authority_orders WHERE type = ? AND year = ?");
-                    $orderQuery->execute([$orderType, $currentYear]);
-                    $orderNum = ($orderQuery->fetchColumn() ?: 0) + 1;
+                    $orderCountQuery = $pdo->prepare("SELECT COUNT(*) FROM authority WHERE type = ? AND year = ?");
+                    $orderCountQuery->execute([$orderType, $currentYear]);
+                    $orderNum = ((int)$orderCountQuery->fetchColumn()) + 1;
+                    $authID = strtoupper(substr($orderType, 0, 3)) . date('y') . '-' . str_pad($orderNum, 3, '0', STR_PAD_LEFT);
                     $authorityText = $orderType . " Order " . $orderNum . "-" . $currentYear;
                     $desc = $orderType . " for rank change from " . ($currentRankObj->name ?? '') . " to " . ($nextRankObj->name ?? '') . " on $timestamp";
-                    $insertOrder = $pdo->prepare("INSERT INTO authority_orders (type, year, order_number, description, createdAt) VALUES (?, ?, ?, ?, ?)");
-                    $insertOrder->execute([$orderType, $currentYear, $orderNum, $desc, $timestamp]);
+                    $insertOrder = $pdo->prepare("INSERT INTO authority (authID, type, year, description, createdAt) VALUES (?, ?, ?, ?, ?)");
+                    $insertOrder->execute([$authID, $orderType, $currentYear, $desc, $timestamp]);
 
                     foreach ($selectedStaff as $serviceNumber) {
                         // Get staff ID and current details
@@ -410,7 +415,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                             continue;
                         }
 
-                        $staffId = $beforeStaff['id'];
+                        // Branch-scoping guard: skip (don't silently promote) any staff
+                        // member outside the operator's own branch, unless the operator
+                        // is posted to an org-wide branch (Admin Branch).
+                        if (function_exists('canAlterRecord') && !canAlterRecord($beforeStaff['branch_id'] ?? null)) {
+                            $errors[] = "Staff member $serviceNumber is outside your branch - promotion skipped.";
+                            error_log("Branch RBAC denied: role '" . ($_SESSION['role'] ?? 'unknown') . "' attempted to promote svcNo $serviceNumber (branch " . ($beforeStaff['branch_id'] ?? 'none') . ")");
+                            continue;
+                        }
+
+                        // The `staff` table's primary key is svcNo - there is no `id` column.
+                        $staffId = $beforeStaff['svcNo'];
 
                         // DUPLICATE PREVENTION CHECK 1: Verify staff is at the expected current rank
                         if ($beforeStaff['rankId'] != $currentRankId) {
@@ -427,7 +442,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                         // DUPLICATE PREVENTION CHECK 3: Check for recent duplicate promotion
                         $duplicateCheck = $pdo->prepare("
                             SELECT id, dateTo, newRank 
-                            FROM staff_promotions 
+                            FROM staff_promotion 
                             WHERE svcNo = ? 
                             AND newRank = ? 
                             AND dateTo = ?
@@ -445,7 +460,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                         // DUPLICATE PREVENTION CHECK 4: Check for any promotion on the same date
                         $sameDateCheck = $pdo->prepare("
                             SELECT id, newRank, type 
-                            FROM staff_promotions 
+                            FROM staff_promotion 
                             WHERE svcNo = ? 
                             AND dateTo = ?
                             ORDER BY createdAt DESC
@@ -466,25 +481,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                         
                         // Get rank details to determine if it's temporal or substantive
                         $newRankName = $nextRankObj->name;
-                        $newRankCategory = isset($nextRankObj->category) ? $nextRankObj->category : '';
                         
                         // Check if rank name starts with 'Temporal' (case-insensitive)
                         $isTemporal = stripos($newRankName, 'Temporal') === 0;
                         
                         // Prepare the update statement based on rank type
+                        // NOTE: `staff` has no `category` column and its primary key is
+                        // svcNo (not `id`), so both are corrected below.
                         if ($isTemporal) {
                             // For temporal ranks: update tempWef and clear subWef
                             $updateStmt = $pdo->prepare("UPDATE staff SET 
                                 rankId = ?, 
                                 tempWef = ?,
-                                subWef = NULL,
-                                category = ?
-                                WHERE id = ?");
+                                subWef = NULL
+                                WHERE svcNo = ?");
                             
                             $updateStmt->execute([
                                 $nextRankId,
                                 $promotionDate,
-                                $newRankCategory,
                                 $staffId
                             ]);
                         } else {
@@ -492,27 +506,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                             $updateStmt = $pdo->prepare("UPDATE staff SET 
                                 rankId = ?, 
                                 subWef = ?,
-                                tempWef = NULL,
-                                category = ?
-                                WHERE id = ?");
+                                tempWef = NULL
+                                WHERE svcNo = ?");
                             
                             $updateStmt->execute([
                                 $nextRankId,
                                 $promotionDate,
-                                $newRankCategory,
                                 $staffId
                             ]);
                         }
                         
-                        // Record the promotion/reversion in the history table
+                        // Record the promotion/reversion in the history table.
+                        // NOTE: `staff_promotion`'s real columns are svcNo, currentRank,
+                        // newRank, wefDate, dateTo, type, newRank, authID, remark, createdBy,
+                        // createdAt (there is no dateFrom or authority column), and `type`
+                        // is an enum('promotion','demotion') - 'reversion' is not a valid value.
                         $insertStmt = $pdo->prepare("INSERT INTO staff_promotion (
                             svcNo, 
                             currentRank, 
                             newRank, 
-                            dateFrom, 
+                            wefDate, 
                             dateTo, 
                             type, 
-                            authority, 
+                            authID, 
                             remark, 
                             createdBy, 
                             createdAt
@@ -522,13 +538,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
                         $authorityValue = isset($perStaffAuthority[$serviceNumber]) && $perStaffAuthority[$serviceNumber] !== ''
                             ? $perStaffAuthority[$serviceNumber]
                             : $authorityText;
+                        // Map internal 'reversion' terminology back to the schema's 'demotion' enum value
+                        $dbPromotionType = ($promotionType === 'reversion') ? 'demotion' : 'promotion';
                         $insertStmt->execute([
                             $staffId,
                             $currentRankId,
                             $nextRankId,
                             date('Y-m-d'),
                             $promotionDate,
-                            $promotionType,
+                            $dbPromotionType,
                             $authorityValue,
                             $perStaffRemark[$serviceNumber] ?? '',
                             $userId
@@ -600,30 +618,34 @@ if ($currentRank) {
     $promotionType = strtolower(trim($_POST['promotion_type'] ?? $_GET['action_type'] ?? ''));
     // Get category using helper function since rank table doesn't have category column
     require_once dirname(__DIR__) . '/shared/rank_levels.php';
-    $currentCategory = getRankCategory($currentRank->level);
-    $currentRankLevel = $currentRank->level ?? null;
+    $currentCategory = getRankCategory($currentRank->rankIndex);
+    // IMPORTANT: $category (checked throughout the template to decide whether the
+    // staff-selection form should render) was never being set from $currentCategory,
+    // so the form after rank selection never appeared. Fix: propagate it here.
+    $category = $currentCategory;
+    $currentRankLevel = $currentRank->rankIndex ?? null;
     if ($promotionType === 'promotion' && $currentRankLevel !== null) {
         // Promotion: Find next higher rank in same category (smaller level number)
         $higherRanks = array_filter($ranks, function($r) use ($currentRankLevel, $currentCategory) {
-            $rankCategory = getRankCategory($r->level);
-            return $r->level < $currentRankLevel && $rankCategory === $currentCategory;
+            $rankCategory = getRankCategory($r->rankIndex);
+            return $r->rankIndex < $currentRankLevel && $rankCategory === $currentCategory;
         });
         // Pick the rank with the largest level less than current (closest higher rank)
         if (!empty($higherRanks)) {
             $nextRankObj = array_reduce($higherRanks, function($carry, $item) {
-                return ($carry === null || $item->level > $carry->level) ? $item : $carry;
+                return ($carry === null || $item->rankIndex > $carry->rankIndex) ? $item : $carry;
             }, null);
         }
     } elseif (in_array($promotionType, ['reversion', 'demotion']) && $currentRankLevel !== null) {
         // Demotion: Find next lower rank in same category (larger level number)
         $lowerRanks = array_filter($ranks, function($r) use ($currentRankLevel, $currentCategory) {
-            $rankCategory = getRankCategory($r->level);
-            return $r->level > $currentRankLevel && $rankCategory === $currentCategory;
+            $rankCategory = getRankCategory($r->rankIndex);
+            return $r->rankIndex > $currentRankLevel && $rankCategory === $currentCategory;
         });
         // Pick the rank with the smallest level greater than current (closest lower rank)
         if (!empty($lowerRanks)) {
             $nextRankObj = array_reduce($lowerRanks, function($carry, $item) {
-                return ($carry === null || $item->level < $carry->level) ? $item : $carry;
+                return ($carry === null || $item->rankIndex < $carry->rankIndex) ? $item : $carry;
             }, null);
         }
     }
@@ -666,35 +688,8 @@ if (!isset($actionType)) {
     }
 }
 // Sidebar navigation
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'],
-    ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create'],
-    ['title' => 'Promotions', 'url' => '/Armis2/admin_branch/promote_staff.php', 'icon' => 'arrow-up', 'page' => 'promotions'],
-    ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/appointments.php', 'icon' => 'user-tie', 'page' => 'appointments'],
-    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medal.php', 'icon' => 'medal', 'page' => 'medals'],
-    [
-        'title' => 'Reports',
-        'icon' => 'chart-bar',
-        'page' => 'reports',
-        'children' => [
-            ['title' => 'Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php'],
-            ['title' => 'Unit List', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
-            ['title' => 'Contracts', 'url' => '/Armis2/admin_branch/reports_contract.php'],
-            ['title' => 'Courses', 'url' => '/Armis2/admin_branch/reports_courses.php'],
-            ['title' => 'Deceased', 'url' => '/Armis2/admin_branch/reports_deceased.php'],
-            ['title' => 'Gender', 'url' => '/Armis2/admin_branch/reports_gender.php'],
-            ['title' => 'Marital', 'url' => '/Armis2/admin_branch/reports_marital.php'],
-            ['title' => 'Rank', 'url' => '/Armis2/admin_branch/reports_rank.php'],
-            ['title' => 'Retired', 'url' => '/Armis2/admin_branch/reports_retired.php'],
-            ['title' => 'Trade', 'url' => '/Armis2/admin_branch/reports_trade.php'],
-            ['title' => 'Corps', 'url' => '/Armis2/admin_branch/reports_corps.php'],
-            ['title' => 'Units', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Medals', 'url' => '/Armis2/admin_branch/reports_medals.php'],
-        ]
-    ],
-];
+$sidebarLinks = []; // set by shared nav include below
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';
@@ -1201,9 +1196,10 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         }
                         
                         // Find current rank to get its category (same as external JS)
+                        // NOTE: the server sends each rank's level as `rankIndex`, not `level`.
                         let rankCategory = '';
                         for (let i = 0; i < allRanks.length; i++) {
-                            if (parseInt(allRanks[i].level) === currentRankLevel) {
+                            if (parseInt(allRanks[i].rankIndex) === currentRankLevel) {
                                 rankCategory = allRanks[i].category;
                                 break;
                             }
@@ -1232,9 +1228,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         targetLevel = currentRankLevel - 1;
                         console.log('🔍 Looking for promotion: current level', currentRankLevel, '→ target level', targetLevel);
                         allRanks.forEach(rank => {
-                            if (rank.category === rankCategory && parseInt(rank.level) === targetLevel) {
+                            if (rank.category === rankCategory && parseInt(rank.rankIndex) === targetLevel) {
                                 nextRank = rank;
-                                console.log('✅ Found matching rank:', rank.name, 'at level', rank.level);
+                                console.log('✅ Found matching rank:', rank.name, 'at level', rank.rankIndex);
                             }
                         });
                     } else if (promotionType === 'reversion') {
@@ -1243,9 +1239,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         targetLevel = currentRankLevel + 1;
                         console.log('🔍 Looking for reversion: current level', currentRankLevel, '→ target level', targetLevel);
                         allRanks.forEach(rank => {
-                            if (rank.category === rankCategory && parseInt(rank.level) === targetLevel) {
+                            if (rank.category === rankCategory && parseInt(rank.rankIndex) === targetLevel) {
                                 nextRank = rank;
-                                console.log('✅ Found matching rank:', rank.name, 'at level', rank.level);
+                                console.log('✅ Found matching rank:', rank.name, 'at level', rank.rankIndex);
                             }
                         });
                     }                        if (nextRank) {
@@ -1331,13 +1327,14 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         console.log('✅ renderStaffPanels complete');
                     }
                     
-                    // Enable promote button function
+                    // Enable promote button function.
+                    // NOTE: this used to validate `.authority-input` fields that no longer
+                    // exist in the markup (see "Bulk authority and remark fields removed"
+                    // above), so it always trivially reported "all filled" and enabled the
+                    // button even with nobody selected. It now checks actual selection.
                     function enablePromoteButton() {
-                        let allFilled = true;
-                        $('.authority-input').each(function() { 
-                            if (!$(this).val()) allFilled = false; 
-                        });
-                        $('#showConfirmModal').prop('disabled', !allFilled);
+                        const hasSelection = $('.staff-checkbox:checked').length > 0;
+                        $('#showConfirmModal').prop('disabled', !hasSelection);
                     }
                     
                     // Helper function to get current rank ID consistently
@@ -1632,17 +1629,6 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         console.log('Updated form inputs for:', selectedServiceNumbers);
                     }
                     
-                    // Update selection counter function (matching appointments.php)
-                    function updateSelectionCounter() {
-                        const selectedCount = $('.staff-checkbox:checked').length;
-                        const totalCount = $('.staff-checkbox').length;
-                        
-                        $('#selectionCount').text(selectedCount);
-                        $('#totalStaffCount').text(totalCount);
-                        
-                        // Update master checkbox state
-                        updateMasterCheckbox();
-                    }
                     
                     // Select All button handler (matching appointments.php)
                     $('#selectAllBtn').on('click', function() {
@@ -1677,10 +1663,15 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     // Initialize total count on page load
                     $('#totalStaffCount').text(window.eligibleStaff.length);
 
-                    // Update selection counter
+                    // Update selection counter (also updates the Selected/Total badges,
+                    // which a previous duplicate copy of this function - now removed -
+                    // was silently shadowing due to JS function hoisting)
                     function updateSelectionCounter() {
                         const selectedCount = $('.staff-checkbox:checked').length;
                         const totalCount = $('.staff-checkbox').length;
+
+                        $('#selectionCount').text(selectedCount);
+                        $('#totalStaffCount').text(totalCount);
                         
                         if (selectedCount > 0) {
                             $('#search_debug').html('<div class="alert alert-success mt-2 p-2">✅ Selected ' + selectedCount + ' of ' + totalCount + ' staff member(s) for promotion.</div>');
@@ -1815,10 +1806,13 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         }).get();
                         
                         // Build summary HTML
+                        // NOTE: use window.nextRankAbbr / window.authorityText below - the bare
+                        // identifiers aren't defined in this scope and previously threw a
+                        // ReferenceError that silently prevented the modal from ever showing.
                         let summaryHtml = '<div class="table-responsive">';
                         summaryHtml += '<h6 class="mb-3">';
                         summaryHtml += promotionType === 'promotion' ? '📈 Promotion' : '📉 Reversion/Demotion';
-                        summaryHtml += ' to <strong>' + nextRankAbbr + '</strong>';
+                        summaryHtml += ' to <strong>' + (window.nextRankAbbr || nextRankName || 'N/A') + '</strong>';
                         summaryHtml += ' effective <strong>' + promotionDate + '</strong></h6>';
                         summaryHtml += '<table class="table table-sm table-bordered">';
                         summaryHtml += '<thead class="table-light">';
@@ -1841,7 +1835,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                             summaryHtml += '<td>' + staffName + '</td>';
                             summaryHtml += '<td>' + rankAbbr + '</td>';
                             summaryHtml += '<td>' + unitName + '</td>';
-                            summaryHtml += '<td>' + authorityText + '</td>';
+                            summaryHtml += '<td>' + (window.authorityText || '') + '</td>';
                             summaryHtml += '</tr>';
                         });
                         

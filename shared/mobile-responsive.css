@@ -35,8 +35,13 @@ html {
    Navigation & Sidebar Responsive Improvements
    ========================================================================== */
 
-/* Mobile sidebar improvements */
-@media (max-width: 991px) {
+/* Mobile sidebar improvements - phones only (576px). Tablets keep the
+   static/visible sidebar defined by shared/sidebar.php; this used to hide
+   the sidebar up to 991px (nearly all tablets) via left:-250px, only
+   revealed by a .show class that nothing in the working toggle ever sets
+   (shared/header.php's toggleSidebar() toggles .active) - so on tablets
+   the sidebar was permanently hidden with no way to reveal it. */
+@media (max-width: 576px) {
     .sidebar {
         position: fixed;
         top: 0;
@@ -49,23 +54,8 @@ html {
         overflow-y: auto;
     }
     
-    .sidebar.show {
+    .sidebar.active {
         left: 0;
-    }
-    
-    .sidebar-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.5);
-        z-index: 1040;
-        display: none;
-    }
-    
-    .sidebar-overlay.show {
-        display: block;
     }
     
     .main-content {

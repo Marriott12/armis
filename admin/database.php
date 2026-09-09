@@ -7,6 +7,7 @@ if (session_status() === PHP_SESSION_NONE) {
 // Include configuration and database
 require_once dirname(__DIR__) . '/config.php';
 require_once dirname(__DIR__) . '/shared/database_connection.php';
+require_once dirname(__DIR__) . '/shared/csrf.php';
 
 // Include RBAC system
 require_once dirname(__DIR__) . '/shared/rbac.php';
@@ -27,6 +28,7 @@ $currentPage = "database";
 $sidebarLinks = [
     ['title' => 'Dashboard', 'url' => '/Armis2/admin/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
     ['title' => 'User Management', 'url' => '/Armis2/admin/users.php', 'icon' => 'users', 'page' => 'users'],
+    ['title' => 'Manage Branches', 'url' => '/Armis2/admin/branches.php', 'icon' => 'sitemap', 'page' => 'branches'],
     ['title' => 'System Settings', 'url' => '/Armis2/admin/settings.php', 'icon' => 'cogs', 'page' => 'settings'],
     ['title' => 'Database Management', 'url' => '/Armis2/admin/database.php', 'icon' => 'database', 'page' => 'database'],
     ['title' => 'Security Center', 'url' => '/Armis2/admin/security.php', 'icon' => 'shield-alt', 'page' => 'security'],
@@ -50,20 +52,106 @@ $message = '';
 $messageType = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     if (isset($_POST['action'])) {
         switch ($_POST['action']) {
             case 'optimize_tables':
-                $message = "Table optimization would be performed in a production system.";
-                $messageType = "info";
+                // FIX: previously a no-op ("would be performed in a
+                // production system"). Table names come from
+                // information_schema (not user input), so it's safe to
+                // interpolate them directly — OPTIMIZE TABLE doesn't
+                // support placeholders for identifiers anyway.
+                try {
+                    $tableStmt = $pdo->query(
+                        "SELECT table_name AS table_name FROM information_schema.TABLES WHERE table_schema = DATABASE()"
+                    );
+                    $tableNames = $tableStmt->fetchAll(PDO::FETCH_COLUMN);
+                    $optimized = 0;
+                    foreach ($tableNames as $tableName) {
+                        $pdo->exec('OPTIMIZE TABLE `' . str_replace('`', '', $tableName) . '`');
+                        $optimized++;
+                    }
+                    $message = "Optimized $optimized table(s).";
+                    $messageType = "success";
+                } catch (Exception $e) {
+                    $message = "Optimization failed: " . $e->getMessage();
+                    $messageType = "danger";
+                    error_log("admin/database.php optimize_tables failed: " . $e->getMessage());
+                }
                 logAccess('admin', 'database_optimize', true);
                 break;
             case 'backup_database':
-                $message = "Database backup would be created in a production system.";
-                $messageType = "info";
+                // FIX: previously a no-op. Real export: schema + data
+                // for every table, streamed as a downloadable .sql
+                // file. No mysqldump shell-out (not guaranteed
+                // available/in PATH on every hosting setup) — pure PDO.
+                try {
+                    exportDatabaseBackup($pdo);
+                    // exportDatabaseBackup() sends headers and exits on
+                    // success; if we get here, something went wrong
+                    // before it could take over the response.
+                    exit;
+                } catch (Exception $e) {
+                    $message = "Backup failed: " . $e->getMessage();
+                    $messageType = "danger";
+                    error_log("admin/database.php backup_database failed: " . $e->getMessage());
+                }
                 logAccess('admin', 'database_backup', true);
                 break;
         }
     }
+}
+
+// Real database backup: schema + data for every table in the current
+// database, as a downloadable .sql file. Sends headers and streams
+// output directly (no return value) — exits on success.
+function exportDatabaseBackup(PDO $pdo): void {
+    $tableStmt = $pdo->query(
+        "SELECT table_name AS table_name FROM information_schema.TABLES WHERE table_schema = DATABASE() ORDER BY table_name"
+    );
+    $tableNames = $tableStmt->fetchAll(PDO::FETCH_COLUMN);
+
+    $filename = 'armis_backup_' . date('Y-m-d_His') . '.sql';
+    header('Content-Type: application/sql');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: no-store');
+
+    echo "-- ARMIS database backup\n-- Generated: " . date('c') . "\n\n";
+    echo "SET FOREIGN_KEY_CHECKS=0;\n\n";
+
+    foreach ($tableNames as $tableName) {
+        $safeTable = str_replace('`', '', $tableName);
+
+        // Schema
+        $createStmt = $pdo->query('SHOW CREATE TABLE `' . $safeTable . '`');
+        $createRow = $createStmt->fetch(PDO::FETCH_NUM);
+        echo "-- Table: `$safeTable`\n";
+        echo "DROP TABLE IF EXISTS `$safeTable`;\n";
+        echo $createRow[1] . ";\n\n";
+
+        // Data, chunked to avoid loading huge tables into memory at once.
+        $countStmt = $pdo->query('SELECT COUNT(*) FROM `' . $safeTable . '`');
+        $totalRows = (int) $countStmt->fetchColumn();
+        if ($totalRows === 0) {
+            continue;
+        }
+
+        $chunkSize = 500;
+        for ($offset = 0; $offset < $totalRows; $offset += $chunkSize) {
+            $dataStmt = $pdo->query('SELECT * FROM `' . $safeTable . '` LIMIT ' . $chunkSize . ' OFFSET ' . $offset);
+            while ($row = $dataStmt->fetch(PDO::FETCH_ASSOC)) {
+                $columns = array_map(fn($c) => '`' . str_replace('`', '', $c) . '`', array_keys($row));
+                $values = array_map(function ($v) use ($pdo) {
+                    return $v === null ? 'NULL' : $pdo->quote((string) $v);
+                }, array_values($row));
+                echo 'INSERT INTO `' . $safeTable . '` (' . implode(',', $columns) . ') VALUES (' . implode(',', $values) . ");\n";
+            }
+        }
+        echo "\n";
+    }
+
+    echo "SET FOREIGN_KEY_CHECKS=1;\n";
+    exit;
 }
 
 // Get database information
@@ -71,21 +159,29 @@ function getDatabaseInfo() {
     global $pdo;
     try {
         // Get database size
-        $stmt = $pdo->query("SELECT 
+        // FIX: information_schema.TABLES' real columns are uppercase
+        // (TABLE_NAME, DATA_LENGTH, etc.). Without an explicit alias,
+        // PDO can return the result keys in that native case depending
+        // on driver/server config, while the code below reads
+        // lowercase keys ($table['table_name']) — silently returning
+        // nothing on setups where that mismatch bites. Aliasing every
+        // column explicitly guarantees the key case PHP expects,
+        // regardless of server config.
+        $stmt = $pdo->query("SELECT
             SUM(data_length + index_length) as database_size,
             COUNT(*) as table_count
-            FROM information_schema.TABLES 
+            FROM information_schema.TABLES
             WHERE table_schema = DATABASE()");
         $dbInfo = $stmt->fetch(PDO::FETCH_ASSOC);
         
         // Get table information
-        $stmt = $pdo->query("SELECT 
-            table_name,
-            table_rows,
-            data_length,
-            index_length,
+        $stmt = $pdo->query("SELECT
+            table_name as table_name,
+            table_rows as table_rows,
+            data_length as data_length,
+            index_length as index_length,
             (data_length + index_length) as total_size
-            FROM information_schema.TABLES 
+            FROM information_schema.TABLES
             WHERE table_schema = DATABASE()
             ORDER BY total_size DESC");
         $tables = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -330,7 +426,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <i class="fas fa-save"></i> Backup & Restore
                             </h5>
                         </div>
-                        <div class="card-body">
+                        <div class="card-body" id="backup">
                             <div class="list-group list-group-flush">
                                 <div class="list-group-item d-flex justify-content-between align-items-center">
                                     <div>
@@ -379,10 +475,12 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 
 <!-- Hidden Forms for Operations -->
 <form id="optimizeForm" method="POST" style="display: none;">
+    <?= csrf_field() ?>
     <input type="hidden" name="action" value="optimize_tables">
 </form>
 
 <form id="backupForm" method="POST" style="display: none;">
+    <?= csrf_field() ?>
     <input type="hidden" name="action" value="backup_database">
 </form>
 

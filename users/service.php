@@ -368,18 +368,35 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                     <!-- Type Badge -->
                                                     <td>
                                                         <?php
-                                                        $typeClass = match($promotion->type ?? 'promotion') {
-                                                            'promotion' => 'success',
-                                                            'reversion' => 'warning',
-                                                            'demotion' => 'danger',
-                                                            default => 'secondary'
-                                                        };
-                                                        $typeIcon = match($promotion->type ?? 'promotion') {
-                                                            'promotion' => 'fa-arrow-up',
-                                                            'reversion' => 'fa-undo',
-                                                            'demotion' => 'fa-arrow-down',
-                                                            default => 'fa-exchange-alt'
-                                                        };
+                                                        $promotionType = isset($promotion->type) ? $promotion->type : 'promotion';
+                                                        switch ($promotionType) {
+                                                            case 'promotion':
+                                                                $typeClass = 'success';
+                                                                break;
+                                                            case 'reversion':
+                                                                $typeClass = 'warning';
+                                                                break;
+                                                            case 'demotion':
+                                                                $typeClass = 'danger';
+                                                                break;
+                                                            default:
+                                                                $typeClass = 'secondary';
+                                                                break;
+                                                        }
+                                                        switch ($promotionType) {
+                                                            case 'promotion':
+                                                                $typeIcon = 'fa-arrow-up';
+                                                                break;
+                                                            case 'reversion':
+                                                                $typeIcon = 'fa-undo';
+                                                                break;
+                                                            case 'demotion':
+                                                                $typeIcon = 'fa-arrow-down';
+                                                                break;
+                                                            default:
+                                                                $typeIcon = 'fa-exchange-alt';
+                                                                break;
+                                                        }
                                                         ?>
                                                         <span class="badge bg-<?= $typeClass ?>">
                                                             <i class="fas <?= $typeIcon ?>"></i>
@@ -429,12 +446,21 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         $chronological = array_reverse($promotions);
                                         foreach ($chronological as $index => $promotion): 
                                             $isLatest = ($index === count($chronological) - 1);
-                                            $typeClass = match($promotion->type ?? 'promotion') {
-                                                'promotion' => 'success',
-                                                'reversion' => 'warning',
-                                                'demotion' => 'danger',
-                                                default => 'secondary'
-                                            };
+                                            $promotionType = isset($promotion->type) ? $promotion->type : 'promotion';
+                                            switch ($promotionType) {
+                                                case 'promotion':
+                                                    $typeClass = 'success';
+                                                    break;
+                                                case 'reversion':
+                                                    $typeClass = 'warning';
+                                                    break;
+                                                case 'demotion':
+                                                    $typeClass = 'danger';
+                                                    break;
+                                                default:
+                                                    $typeClass = 'secondary';
+                                                    break;
+                                            }
                                         ?>
                                             <div class="timeline-item">
                                                 <div class="timeline-marker bg-<?= $typeClass ?> <?= $isLatest ? 'pulse' : '' ?>">
@@ -662,13 +688,23 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                     <td>
                                                         <?php 
                                                         $status = $deployment->deployment_status ?? '';
-                                                        $statusClass = match($status) {
-                                                            'active' => 'primary',
-                                                            'completed' => 'success',
-                                                            'planned' => 'info',
-                                                            'cancelled' => 'danger',
-                                                            default => 'secondary'
-                                                        };
+                                                        switch ($status) {
+                                                            case 'active':
+                                                                $statusClass = 'primary';
+                                                                break;
+                                                            case 'completed':
+                                                                $statusClass = 'success';
+                                                                break;
+                                                            case 'planned':
+                                                                $statusClass = 'info';
+                                                                break;
+                                                            case 'cancelled':
+                                                                $statusClass = 'danger';
+                                                                break;
+                                                            default:
+                                                                $statusClass = 'secondary';
+                                                                break;
+                                                        }
                                                         ?>
                                                         <span class="badge bg-<?= $statusClass ?>">
                                                             <?= htmlspecialchars(ucfirst($status)) ?>

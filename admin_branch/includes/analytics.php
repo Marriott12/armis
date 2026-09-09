@@ -146,7 +146,7 @@ class EnhancedAnalytics {
                         FROM staff s
                         JOIN unit u ON s.unitId = u.unitId
                         WHERE s.svcStatus = 'Active'
-                        GROUP BY u.id, u.name
+                        GROUP BY u.unitId
                         ORDER BY value DESC
                         LIMIT 10
                     ");

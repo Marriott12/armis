@@ -1,10 +1,23 @@
 <?php
 /**
  * Permission Management System
- * 
- * This file handles role-based access control (RBAC) and permission checks
- * for the ARMIS system. It provides centralized management of permissions.
+ *
+ * This file handles granular action-level permission checks (hasPermission,
+ * PERM_* constants) for the ARMIS system.
+ *
+ * CHANGELOG (branch-scoping upgrade): this file used to ALSO define its own
+ * hasModuleAccess()/requireModuleAccess(), unconditionally (no function_exists
+ * guard). Because admin_branch/includes/auth.php requires this file BEFORE
+ * shared/rbac.php, this file's versions were winning silently across the
+ * entire admin_branch module — admin_branch never actually saw shared/
+ * rbac.php's module-access logic at all. Those two functions have been
+ * removed from here; shared/rbac.php's canonical versions (now guaranteed
+ * loaded via the require_once below) are what's actually called everywhere,
+ * including admin_branch. No call site needed to change — every caller in
+ * the codebase invokes requireModuleAccess($module) with a single argument.
  */
+
+require_once __DIR__ . '/rbac.php';
 
 // Permission constants
 define('PERM_VIEW_STAFF', 'view_staff');
@@ -84,6 +97,36 @@ function hasPermission($permission, $userRole = null) {
         'staff_officer' => [
             PERM_VIEW_STAFF, PERM_VIEW_REPORTS
         ],
+
+        // --- Branch RBAC roles (added with the branches/roles upgrade) ---
+        // cc/soi/soii/soiii: full write actions, but ALWAYS additionally
+        // gated by canAlterRecord()/canAlterStaffRecord() at the point of
+        // write (see admin_branch/edit_staff.php, promote_staff.php,
+        // assign_medal.php) — hasPermission() alone does not know which
+        // branch a given record belongs to, only rbac.php's branch-aware
+        // functions do that check.
+        'cc' => [
+            PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_CREATE_STAFF, PERM_DELETE_STAFF,
+            PERM_PROMOTE_STAFF, PERM_MANAGE_APPOINTMENTS, PERM_ASSIGN_MEDALS, PERM_VIEW_REPORTS
+        ],
+        'soi' => [
+            PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_PROMOTE_STAFF, PERM_MANAGE_APPOINTMENTS,
+            PERM_ASSIGN_MEDALS, PERM_VIEW_REPORTS
+        ],
+        'soii' => [
+            PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_MANAGE_APPOINTMENTS, PERM_VIEW_REPORTS
+        ],
+        'soiii' => [
+            PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_VIEW_REPORTS
+        ],
+        // dg / ag: read-only oversight roles, no write permissions at all
+        'dg' => [
+            PERM_VIEW_STAFF, PERM_VIEW_REPORTS
+        ],
+        'ag' => [
+            PERM_VIEW_STAFF, PERM_VIEW_REPORTS
+        ],
+
         'user' => [
             PERM_VIEW_STAFF
         ]
@@ -99,33 +142,13 @@ function hasPermission($permission, $userRole = null) {
 }
 
 /**
- * Check if the user has access to a specific module
- * 
- * @param string $module The module to check
- * @param string|null $userRole Optional user role, defaults to current user
- * @return bool Whether the user has access to the module
+ * NOTE: hasModuleAccess() used to be defined here, mapping modules to
+ * PERM_* constants. It has been removed — shared/rbac.php's hasModuleAccess()
+ * (loaded above via require_once) is now the single canonical implementation,
+ * driven by the `branches`/`roles` tables instead of a hardcoded map. This
+ * also means new branches created from the admin UI get module access
+ * automatically, which this old hardcoded map could never do.
  */
-function hasModuleAccess($module, $userRole = null) {
-    // Map modules to required permissions
-    $modulePermissions = [
-        'admin' => PERM_ADMIN_ACCESS,
-        'admin_branch' => PERM_ADMIN_BRANCH_ACCESS,
-        'staff_management' => PERM_VIEW_STAFF,
-        'promotions' => PERM_PROMOTE_STAFF,
-        'appointments' => PERM_MANAGE_APPOINTMENTS,
-        'medals' => PERM_ASSIGN_MEDALS,
-        'reports' => PERM_VIEW_REPORTS,
-        'settings' => PERM_SYSTEM_SETTINGS
-    ];
-    
-    // Check if the module exists and the user has the required permission
-    if (isset($modulePermissions[$module])) {
-        return hasPermission($modulePermissions[$module], $userRole);
-    }
-    
-    // Default to false for undefined modules
-    return false;
-}
 
 /**
  * Get all permissions for the current user
@@ -164,21 +187,7 @@ function getUserPermissions($userRole = null) {
 }
 
 /**
- * Require access to a specific module
- * Redirects to unauthorized page if access is denied
- * 
- * @param string $module The module to check
- * @param string|null $userRole Optional user role, defaults to current user
+ * NOTE: requireModuleAccess() also used to be defined here. Removed for the
+ * same reason as hasModuleAccess() above — shared/rbac.php's version is now
+ * the single canonical implementation used everywhere, admin_branch included.
  */
-function requireModuleAccess($module, $userRole = null) {
-    if (!hasModuleAccess($module, $userRole)) {
-        // Check if we're in admin_branch
-        $scriptPath = $_SERVER['SCRIPT_NAME'];
-        if (strpos($scriptPath, '/admin_branch/') !== false) {
-            header('Location: unauthorized.php?reason=' . urlencode($module) . '_access');
-        } else {
-            header('Location: /Armis2/unauthorized.php?reason=' . urlencode($module) . '_access');
-        }
-        exit;
-    }
-}

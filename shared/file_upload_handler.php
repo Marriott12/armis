@@ -18,7 +18,10 @@ class ARMISFileUploader {
     private $errors = [];
     
     public function __construct() {
-        $this->conn = getMysqliConnection();
+        // FIX: getMysqliConnection() does not exist anywhere in this
+        // codebase - only getDbConnection() (PDO) does, used everywhere
+        // else in the app. This class is now PDO-based throughout.
+        $this->conn = getDbConnection();
         $this->uploadPath = dirname(__DIR__) . '/uploads/staff_documents/';
         $this->maxFileSize = 10 * 1024 * 1024; // 10MB
         $this->allowedTypes = [
@@ -30,6 +33,26 @@ class ARMISFileUploader {
         if (!file_exists($this->uploadPath)) {
             mkdir($this->uploadPath, 0755, true);
         }
+
+        // FIX: `staff_documents` does not exist anywhere in the schema
+        // dump - every operation below would fail with "table doesn't
+        // exist". Created defensively here, matching the pattern used for
+        // staff_password_resets elsewhere in this app. svcNo is
+        // VARCHAR(10) to match staff.svcNo (leading zeros are meaningful,
+        // e.g. '007414' - an INT column would silently mangle them).
+        $this->conn->exec("CREATE TABLE IF NOT EXISTS staff_documents (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            svcNo VARCHAR(10) NOT NULL,
+            document_type_id INT DEFAULT 1,
+            original_filename VARCHAR(255) NOT NULL,
+            stored_filename VARCHAR(255) NOT NULL,
+            file_path VARCHAR(500) NOT NULL,
+            file_size INT NOT NULL,
+            mime_type VARCHAR(100) NOT NULL,
+            upload_date DATETIME NOT NULL,
+            uploaded_by VARCHAR(10) DEFAULT NULL,
+            KEY idx_svcNo (svcNo)
+        )");
     }
     
     /**
@@ -144,35 +167,36 @@ class ARMISFileUploader {
      * Save file record to database
      */
     private function saveFileRecord($fileInfo) {
+        // FIX: svcNo/uploaded_by are strings (staff.svcNo is VARCHAR),
+        // not the ints this mysqli bind_param string ('iisssisi') assumed.
         $sql = "INSERT INTO staff_documents (
             svcNo, document_type_id, original_filename, stored_filename, 
             file_path, file_size, mime_type, upload_date, uploaded_by
         ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)";
         
         $stmt = $this->conn->prepare($sql);
-        $uploadedBy = $_SESSION['user_id'] ?? 1; // Default to admin user
+        $uploadedBy = $_SESSION['user_id'] ?? null; // svcNo of the uploader, if known
         $documentTypeId = $fileInfo['document_type_id'] ?? 1; // Default document type
-        
-        $stmt->bind_param('iisssisi',
-            $fileInfo['svcNo'],
-            $documentTypeId,
-            $fileInfo['original_name'],
-            $fileInfo['secure_filename'],
-            $fileInfo['file_path'],
-            $fileInfo['file_size'],
-            $fileInfo['mime_type'],
-            $uploadedBy
-        );
-        
-        if ($stmt->execute()) {
+
+        try {
+            $stmt->execute([
+                $fileInfo['svcNo'],
+                $documentTypeId,
+                $fileInfo['original_name'],
+                $fileInfo['secure_filename'],
+                $fileInfo['file_path'],
+                $fileInfo['file_size'],
+                $fileInfo['mime_type'],
+                $uploadedBy
+            ]);
             return [
                 'success' => true,
-                'file_id' => $this->conn->insert_id,
+                'file_id' => $this->conn->lastInsertId(),
                 'filename' => $fileInfo['secure_filename'],
                 'original_name' => $fileInfo['original_name']
             ];
-        } else {
-            $this->addError('Database error: ' . $this->conn->error);
+        } catch (Exception $e) {
+            $this->addError('Database error: ' . $e->getMessage());
             return false;
         }
     }
@@ -181,13 +205,14 @@ class ARMISFileUploader {
      * Get files for a staff member
      */
     public function getStaffFiles($staffId) {
-        $sql = "SELECT * FROM staff_documents WHERE svcNo = ? ORDER BY uploaded_at DESC";
+        // FIX: ordered by `uploaded_at`, a column that was never actually
+        // created (the real timestamp column here is `upload_date` - see
+        // the CREATE TABLE in the constructor above).
+        $sql = "SELECT * FROM staff_documents WHERE svcNo = ? ORDER BY upload_date DESC";
         $stmt = $this->conn->prepare($sql);
-        $stmt->bind_param('i', $staffId);
-        $stmt->execute();
-        $result = $stmt->get_result();
+        $stmt->execute([$staffId]);
         
-        return $result->fetch_all(MYSQLI_ASSOC);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
     
     /**
@@ -197,16 +222,13 @@ class ARMISFileUploader {
         // Get file info first
         $sql = "SELECT * FROM staff_documents WHERE id = ? AND svcNo = ?";
         $stmt = $this->conn->prepare($sql);
-        $stmt->bind_param('ii', $fileId, $staffId);
-        $stmt->execute();
-        $result = $stmt->get_result();
+        $stmt->execute([$fileId, $staffId]);
+        $fileInfo = $stmt->fetch(PDO::FETCH_ASSOC);
         
-        if ($result->num_rows === 0) {
+        if (!$fileInfo) {
             $this->addError('File not found');
             return false;
         }
-        
-        $fileInfo = $result->fetch_assoc();
         
         // Delete physical file
         if (file_exists($fileInfo['file_path'])) {
@@ -214,11 +236,9 @@ class ARMISFileUploader {
         }
         
         // Delete database record
-        $deleteSql = "DELETE FROM staff_documents WHERE id = ?";
-        $deleteStmt = $this->conn->prepare($deleteSql);
-        $deleteStmt->bind_param('i', $fileId);
+        $deleteStmt = $this->conn->prepare("DELETE FROM staff_documents WHERE id = ?");
         
-        return $deleteStmt->execute();
+        return $deleteStmt->execute([$fileId]);
     }
     
     /**

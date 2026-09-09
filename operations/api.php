@@ -2,7 +2,8 @@
 // RESTful API for operations module
 // Endpoints: missions, deployments, resources, personnel, reports
 header('Content-Type: application/json');
-require_once dirname(__DIR__) . '/shared/database_connection.php';
+require_once dirname(__DIR__) . '/shared/module_auth.php';
+bootModuleApi('operations');
 $db = getDbConnection();
 
 $endpoint = $_GET['endpoint'] ?? '';

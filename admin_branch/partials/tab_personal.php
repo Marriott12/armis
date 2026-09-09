@@ -3,7 +3,7 @@ if (!isset($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 ?>
-<div class="tab-pane fade show <?=!$tabErrors || isset($tabErrors['personal']) ? 'active' : ''?> p-3 border rounded" id="personal" role="tabpanel">
+<div class="tab-pane fade p-3 border rounded <?=$activeTabKey === 'personal' ? 'show active' : ''?>" id="personal" role="tabpanel">
   <h5 class="mb-3 text-success">Personal Details</h5>
     <div class="row mb-3">
         <div class="col-md-4 mb-2">

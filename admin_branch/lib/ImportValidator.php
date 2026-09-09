@@ -96,11 +96,24 @@ class ImportValidator {
         try {
             // Ranks table is named `rank` and uses rankId as primary key
             $this->validRanks = $this->pdo->query('SELECT rankId FROM `rank`')->fetchAll(PDO::FETCH_COLUMN);
-            $this->validUnits = $this->pdo->query('SELECT unitId FROM unit')->fetchAll(PDO::FETCH_COLUMN);
-            // Corps uses corpsId (varchar) as primary key
-            $this->validCorps = $this->pdo->query('SELECT corpsId FROM corps')->fetchAll(PDO::FETCH_COLUMN);
         } catch (Exception $e) {
-            error_log("Failed to load foreign keys: " . $e->getMessage());
+            error_log("Failed to load valid ranks: " . $e->getMessage());
+        }
+        try {
+            $this->validUnits = $this->pdo->query('SELECT unitId FROM unit')->fetchAll(PDO::FETCH_COLUMN);
+        } catch (Exception $e) {
+            error_log("Failed to load valid units: " . $e->getMessage());
+        }
+        try {
+            // FIX: there is no `corps` lookup table anywhere in the schema -
+            // `corps` is a free-text column directly on `staff` (see
+            // profile_manager.php's corps_name handling for the same note).
+            // The corresponding "valid values" here are the distinct corps
+            // values already on record, which is the closest available
+            // source of truth for catching obvious typos during import.
+            $this->validCorps = $this->pdo->query("SELECT DISTINCT corps FROM staff WHERE corps IS NOT NULL AND corps != ''")->fetchAll(PDO::FETCH_COLUMN);
+        } catch (Exception $e) {
+            error_log("Failed to load valid corps: " . $e->getMessage());
         }
     }
     
@@ -108,12 +121,32 @@ class ImportValidator {
      * Load existing emails, service numbers, and NRCs to check duplicates
      */
     private function loadExistingRecords() {
+        // FIX: these three queries previously ran in a single try block.
+        // `staff` has no `email` column (the real columns are
+        // `officialEmail`/`emailPvt`), so the first query always threw -
+        // which meant the svcNo and NRC queries after it never ran either,
+        // even though they were correct. Splitting into separate try
+        // blocks means a failure in one duplicate-check doesn't silently
+        // disable the other two.
         try {
-            $this->existingEmails = $this->pdo->query('SELECT email FROM staff WHERE email IS NOT NULL')->fetchAll(PDO::FETCH_COLUMN);
+            $emailRows = $this->pdo->query('SELECT officialEmail, emailPvt FROM staff WHERE officialEmail IS NOT NULL OR emailPvt IS NOT NULL')->fetchAll(PDO::FETCH_ASSOC);
+            $this->existingEmails = [];
+            foreach ($emailRows as $row) {
+                if (!empty($row['officialEmail'])) $this->existingEmails[] = $row['officialEmail'];
+                if (!empty($row['emailPvt'])) $this->existingEmails[] = $row['emailPvt'];
+            }
+        } catch (Exception $e) {
+            error_log("Failed to load existing emails: " . $e->getMessage());
+        }
+        try {
             $this->existingServiceNumbers = $this->pdo->query('SELECT svcNo FROM staff WHERE svcNo IS NOT NULL')->fetchAll(PDO::FETCH_COLUMN);
+        } catch (Exception $e) {
+            error_log("Failed to load existing service numbers: " . $e->getMessage());
+        }
+        try {
             $this->existingNRCs = $this->pdo->query('SELECT NRC FROM staff WHERE NRC IS NOT NULL')->fetchAll(PDO::FETCH_COLUMN);
         } catch (Exception $e) {
-            error_log("Failed to load existing records: " . $e->getMessage());
+            error_log("Failed to load existing NRCs: " . $e->getMessage());
         }
     }
     

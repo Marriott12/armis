@@ -5,13 +5,19 @@
  * Returns HTML content for display in the staff profile modal
  */
 
-// Include database connection
+// Include database connection.
+// FIX: `shared/auth.php` and `shared/functions.php` do not exist anywhere
+// in this codebase - both requires fatal-errored ("Failed to open
+// required file") before a single line of this endpoint's own logic ever
+// ran. The real auth helpers live in admin_branch/includes/auth.php
+// (requireAuth() etc., used consistently across admin_branch).
 require_once dirname(__DIR__) . '/shared/database_connection.php';
-require_once dirname(__DIR__) . '/shared/functions.php';
-
-// Authentication check
-require_once dirname(__DIR__) . '/shared/auth.php';
+require_once __DIR__ . '/includes/auth.php';
 requireAuth();
+
+// FIX: requiring database_connection.php only defines getDbConnection() -
+// it does not create a $pdo variable, which every query below needed.
+$pdo = getDbConnection();
 
 // Sanitize input
 $serviceNumber = isset($_GET['svcNo']) ? trim($_GET['svcNo']) : '';
@@ -23,16 +29,19 @@ if (empty($serviceNumber)) {
 }
 
 try {
-    // Fetch staff information
+    // Fetch staff information.
+    // FIX: `unit` only has unitId/unitLoc - no `name` column, so unitId
+    // itself is the display value (the convention used everywhere else in
+    // this app, e.g. profile_manager.php). There is no `positions` table
+    // or `position_id` column anywhere in the schema, so that join/field
+    // is dropped rather than querying something that doesn't exist.
     $stmt = $pdo->prepare("
      SELECT s.*, 
          r.rankId AS rank_name, 
-         u.name AS unit_name,
-         p.name AS position_name
+         u.unitId AS unit_name
      FROM staff s
      LEFT JOIN `rank` r ON s.rankId = r.rankId
      LEFT JOIN unit u ON s.unitId = u.unitId
-     LEFT JOIN positions p ON s.position_id = p.id
      WHERE s.svcNo = ?
     ");
     $stmt->execute([$serviceNumber]);
@@ -43,23 +52,28 @@ try {
         exit;
     }
     
-    // Fetch promotion history
+    // Fetch promotion history.
+    // FIX: the real table is `staff_promotion` (currentRank, wefDate,
+    // type, newRank, authID, remark), not `promotion_history` - the
+    // original table/column names here don't exist anywhere in the
+    // schema.
     $stmt = $pdo->prepare("
         SELECT 
-            ph.id,
-            ph.from_rank_id,
-            ph.to_rank_id,
+            sp.id,
+            sp.currentRank AS from_rank_id,
+            sp.newRank AS to_rank_id,
             fr.rankId AS from_rank_name,
             tr.rankId AS to_rank_name,
-            ph.effective_date,
-            ph.promotion_type,
-            ph.authority,
-            ph.remarks
-        FROM promotion_history ph
-        LEFT JOIN `rank` fr ON ph.from_rank_id = fr.rankId
-        LEFT JOIN `rank` tr ON ph.to_rank_id = tr.rankId
-        WHERE ph.svcNo = ?
-        ORDER BY ph.effective_date DESC
+            sp.wefDate AS effective_date,
+            sp.type AS promotion_type,
+            a.description AS authority,
+            sp.remark AS remarks
+        FROM staff_promotion sp
+        LEFT JOIN `rank` fr ON sp.currentRank = fr.rankId
+        LEFT JOIN `rank` tr ON sp.newRank = tr.rankId
+        LEFT JOIN authority a ON sp.authID = a.authID
+        WHERE sp.svcNo = ?
+        ORDER BY sp.wefDate DESC
         LIMIT 5
     ");
     $stmt->execute([$serviceNumber]);
@@ -88,23 +102,19 @@ try {
                 </tr>
                 <tr>
                     <th>Date of Enlistment</th>
-                    <td><?php echo !empty($staff['date_of_enlistment']) ? date('d M Y', strtotime($staff['date_of_enlistment'])) : 'N/A'; ?></td>
+                    <td><?php echo !empty($staff['attestDate']) ? date('d M Y', strtotime($staff['attestDate'])) : 'N/A'; ?></td>
                 </tr>
                 <tr>
                     <th>Unit</th>
                     <td><?php echo htmlspecialchars($staff['unit_name'] ?? 'N/A'); ?></td>
                 </tr>
                 <tr>
-                    <th>Position</th>
-                    <td><?php echo htmlspecialchars($staff['position_name'] ?? 'N/A'); ?></td>
-                </tr>
-                <tr>
                     <th>Contact</th>
-                    <td><?php echo htmlspecialchars($staff['phone'] ?? 'N/A'); ?></td>
+                    <td><?php echo htmlspecialchars($staff['telNo'] ?? 'N/A'); ?></td>
                 </tr>
                 <tr>
                     <th>Email</th>
-                    <td><?php echo htmlspecialchars($staff['email'] ?? 'N/A'); ?></td>
+                    <td><?php echo htmlspecialchars($staff['officialEmail'] ?? 'N/A'); ?></td>
                 </tr>
             </table>
         </div>
@@ -147,4 +157,3 @@ try {
     error_log('Error in ajax_get_staff_profile.php: ' . $e->getMessage());
     echo '<div class="alert alert-danger">An error occurred while retrieving staff information. Please try again later.</div>';
 }
-?>

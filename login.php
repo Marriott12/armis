@@ -3,6 +3,7 @@ session_start();
 
 // Include database functions
 require_once __DIR__ . '/shared/database_connection.php';
+require_once __DIR__ . '/shared/csrf.php';
 
 /**
  * Validate return URL to prevent open redirect vulnerabilities
@@ -26,13 +27,57 @@ function isValidReturnUrl($url) {
     return true;
 }
 
-// Debug: Log form submission
+// Debug: Log that a login attempt happened — never log $_POST here,
+// it contains the plaintext password.
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    error_log("Login form submitted with data: " . print_r($_POST, true));
+    error_log("Login form submitted for username: " . ($_POST['username'] ?? '(none)'));
 }
 
 // Handle login form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
+
+    // Blocked-IP check — real infrastructure backing admin/security.php's
+    // "Block IP" action (database/migrations/2026_08_28_add_security_center_tables.sql).
+    $clientIp = $_SERVER['REMOTE_ADDR'] ?? '';
+    if ($clientIp !== '') {
+        try {
+            $pdo = getDbConnection();
+            $blockStmt = $pdo->prepare('SELECT reason FROM blocked_ips WHERE ip_address = ?');
+            $blockStmt->execute([$clientIp]);
+            $blockReason = $blockStmt->fetchColumn();
+            if ($blockReason !== false) {
+                $error = 'Access denied from this network.';
+                error_log("Login blocked - IP $clientIp is on the block list ($blockReason)");
+                goto login_blocked;
+            }
+        } catch (PDOException $e) {
+            // blocked_ips table not migrated yet — fail open.
+            error_log('blocked_ips check failed (has the migration been run?): ' . $e->getMessage());
+        }
+    }
+
+    // Emergency lockdown — real infrastructure backing admin/security.php's
+    // "Emergency Lockdown" action. When active, only admin/superadmin
+    // roles can still log in.
+    try {
+        $pdo = getDbConnection();
+        $lockdownStmt = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'EMERGENCY_LOCKDOWN'");
+        $lockdownStmt->execute();
+        if ($lockdownStmt->fetchColumn() === '1') {
+            $checkStmt = $pdo->prepare('SELECT role FROM staff WHERE username = ? OR svcNo = ?');
+            $checkStmt->execute([$_POST['username'] ?? '', $_POST['username'] ?? '']);
+            $roleCheck = strtolower($checkStmt->fetchColumn() ?: '');
+            if (!str_contains($roleCheck, 'admin')) {
+                $error = 'The system is currently in emergency lockdown. Only administrators can log in.';
+                error_log("Login blocked - emergency lockdown active, non-admin role '$roleCheck'");
+                goto login_blocked;
+            }
+        }
+    } catch (PDOException $e) {
+        error_log('Lockdown check failed (has the migration been run?): ' . $e->getMessage());
+    }
+
     $username = $_POST['username'] ?? '';
     $password = $_POST['password'] ?? '';
     
@@ -65,14 +110,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['userID'] = $user['id']; // For compatibility
             $_SESSION['username'] = $user['username'];
             $_SESSION['role'] = $user['role'];
+            // CHANGELOG (branch-scoping upgrade): shared/rbac.php's
+            // canAlterRecord()/getSnapshotScope()/getUserModules() all read
+            // $_SESSION['branch_id'] to resolve a branch-scoped user's
+            // reach. Without this line every write is silently rejected and
+            // every branch dashboard looks empty, regardless of what
+            // staff.branch_id actually contains.
+            $_SESSION['branch_id'] = $user['branch_id'] ?? null;
             $_SESSION['rank'] = $user['rank_name'] ?? 'Unknown';
             $_SESSION['name'] = trim($user['fName'] . ' ' . $user['lName']);
             $_SESSION['unit'] = $user['unit_name'] ?? 'Unknown';
-            $_SESSION['corps'] = $user['corps_name'] ?? $user['corps'] ?? 'Unknown';
+            $_SESSION['corps'] = $user['corps'] ?? 'Unknown';
             $_SESSION['svcNo'] = $user['svcNo'];
             $_SESSION['fName'] = $user['fName'];
             $_SESSION['lName'] = $user['lName'];
-            $_SESSION['email'] = $user['email'];
+            $_SESSION['email'] = $user['officialEmail'];
             
             // Include RBAC functions for centralized role management
             require_once __DIR__ . '/shared/rbac.php';
@@ -132,6 +184,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $error = 'Please enter both username and password';
     }
+
+    login_blocked:
 }
 
 $pageTitle = "Login";
@@ -161,7 +215,6 @@ $pageTitle = "Login";
                     </div>
                     <h1 class="system-title">ARMIS</h1>
                     <p class="mb-0 system-subtitle">Army Resource Management Information System</p>
-                    <small class="d-block mt-2" style="opacity: 0.8;">Strength • Discipline • Excellence</small>
                 </div>
                 
                 <div class="login-form-container">
@@ -180,6 +233,7 @@ $pageTitle = "Login";
                     <?php endif; ?>
                     
                     <form method="POST" action="/Armis2/login.php<?php echo isset($_GET['return_url']) ? '?return_url=' . urlencode($_GET['return_url']) : ''; ?>" class="needs-validation" novalidate>
+                        <?= csrf_field() ?>
                         <?php if (isset($_GET['return_url'])): ?>
                             <input type="hidden" name="return_url" value="<?php echo htmlspecialchars($_GET['return_url']); ?>">
                         <?php endif; ?>

@@ -51,14 +51,26 @@ function validateAdminSession() {
                 debug_log("Admin session fix: Setting missing {$var}");
                 
                 // Set default value if missing
-                $_SESSION[$var] = match ($var) {
-                    'username' => 'admin',
-                    'rank' => 'Colonel',
-                    'name' => 'System Administrator',
-                    'unit' => 'HQ Command',
-                    'last_login_time' => time(),
-                    default => 'default_value'
-                };
+                switch ($var) {
+                    case 'username':
+                        $_SESSION[$var] = 'admin';
+                        break;
+                    case 'rank':
+                        $_SESSION[$var] = 'Colonel';
+                        break;
+                    case 'name':
+                        $_SESSION[$var] = 'System Administrator';
+                        break;
+                    case 'unit':
+                        $_SESSION[$var] = 'HQ Command';
+                        break;
+                    case 'last_login_time':
+                        $_SESSION[$var] = time();
+                        break;
+                    default:
+                        $_SESSION[$var] = 'default_value';
+                        break;
+                }
             }
         }
         

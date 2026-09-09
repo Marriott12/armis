@@ -252,7 +252,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                 <br><small class="text-danger"><i class="fas fa-exclamation-triangle"></i> Emergency Contact</small>
                                                 <?php endif; ?>
                                             </td>
-                                            <td><?= htmlspecialchars($member->relationship ?? '') ?></td>
+                                            <td><?= htmlspecialchars($member->relationshipLabel ?? $member->relationship ?? '') ?></td>
                                             <td>
                                                 <?php if (!empty($member->phone)): ?>
                                                 <i class="fas fa-phone text-primary"></i> <?= htmlspecialchars($member->phone) ?><br>
@@ -282,7 +282,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                             <td>
                                                 <div class="btn-group btn-group-sm">
                                                     <button type="button" class="btn btn-outline-primary" 
-                                                            onclick="editFamilyMember(<?= $member->id ?>, '<?= htmlspecialchars($member->name ?? '', ENT_QUOTES) ?>', '<?= htmlspecialchars($member->relationship ?? '', ENT_QUOTES) ?>', '<?= $member->date_of_birth ?? '' ?>', '<?= htmlspecialchars($member->phone ?? '', ENT_QUOTES) ?>', '<?= htmlspecialchars($member->occupation ?? '', ENT_QUOTES) ?>', <?= !empty($member->is_emergency_contact) ? 'true' : 'false' ?>, <?= !empty($member->is_next_of_kin) ? 'true' : 'false' ?>, '<?= htmlspecialchars($member->nok_type ?? '', ENT_QUOTES) ?>', '<?= htmlspecialchars($member->notes ?? '', ENT_QUOTES) ?>')">
+                                                            onclick="editFamilyMember(<?= $member->id ?>, '<?= htmlspecialchars($member->name ?? '', ENT_QUOTES) ?>', '<?= htmlspecialchars($member->relationship ?? '', ENT_QUOTES) ?>', '<?= $member->date_of_birth ?? '' ?>', '<?= htmlspecialchars($member->phone ?? '', ENT_QUOTES) ?>', '<?= htmlspecialchars($member->email ?? '', ENT_QUOTES) ?>', '<?= htmlspecialchars($member->address ?? '', ENT_QUOTES) ?>', '<?= htmlspecialchars($member->occupation ?? '', ENT_QUOTES) ?>', <?= !empty($member->is_emergency_contact) ? 'true' : 'false' ?>, <?= !empty($member->is_dependent) ? 'true' : 'false' ?>, <?= !empty($member->is_next_of_kin) ? 'true' : 'false' ?>, '<?= htmlspecialchars($member->nok_type ?? '', ENT_QUOTES) ?>', '<?= htmlspecialchars($member->notes ?? '', ENT_QUOTES) ?>')">
                                                         <i class="fas fa-edit"></i>
                                                     </button>
                                                     <button type="button" class="btn btn-outline-danger" 
@@ -323,7 +323,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         <div class="card-body">
                                             <h6 class="card-title"><?= htmlspecialchars($contact->name ?? '') ?></h6>
                                             <p class="card-text">
-                                                <strong>Relationship:</strong> <?= htmlspecialchars($contact->relationship ?? '') ?><br>
+                                                <strong>Relationship:</strong> <?= htmlspecialchars($contact->relationshipLabel ?? $contact->relationship ?? '') ?><br>
                                                 <?php if (!empty($contact->phone)): ?>
                                                 <strong>Phone:</strong> <?= htmlspecialchars($contact->phone) ?><br>
                                                 <?php endif; ?>
@@ -607,13 +607,16 @@ function toggleNOKType(prefix) {
     }
 }
 
-function editFamilyMember(id, name, relationship, dob, phone, occupation, isEmergency, isNextOfKin, nokType, notes) {
+function editFamilyMember(id, name, relationship, dob, phone, email, address, occupation, isEmergency, isDependent, isNextOfKin, nokType, notes) {
     document.getElementById('edit_member_id').value = id;
     document.getElementById('edit_name').value = name;
     document.getElementById('edit_relationship').value = relationship;
     document.getElementById('edit_date_of_birth').value = dob;
     document.getElementById('edit_phone').value = phone;
+    document.getElementById('edit_email').value = email;
+    document.getElementById('edit_address').value = address;
     document.getElementById('edit_is_emergency_contact').checked = isEmergency;
+    document.getElementById('edit_is_dependent').checked = isDependent;
     document.getElementById('edit_is_next_of_kin').checked = isNextOfKin;
     document.getElementById('edit_occupation').value = occupation;
     document.getElementById('edit_notes').value = notes || '';

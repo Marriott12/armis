@@ -1,8 +1,29 @@
 <?php
+// FIX: config.php only defines constants/helper functions - it never
+// calls session_start() or opens a database connection. Without
+// session_start() here, $_SESSION is never loaded for this request (even
+// though login.php started one and redirected here), so every
+// isset($_SESSION[...]) check below would fail regardless of which keys
+// they test - the user would bounce straight back to login.php no matter
+// what. And without a real connection, $pdo->prepare() further down would
+// fatal-error on null.
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 require_once 'config.php';
+require_once __DIR__ . '/shared/database_connection.php';
+$pdo = getDbConnection();
 
-// Check if user is logged in and has temp password
-if (!isset($_SESSION['user_id']) || !isset($_SESSION['temp_password']) || $_SESSION['temp_password'] !== true) {
+// Check if user is logged in and has temp password.
+// FIX: login.php sets `temp_password_change_required` and
+// `temp_password_user_id` when redirecting here (see the isFirstLogin
+// branch in login.php) - this file was checking `temp_password` and
+// `user_id` instead, which are never set at this point in the flow
+// (user_id is only set AFTER a successful non-temp-password login).
+// That meant this condition was always true and every first-time-login
+// user got bounced straight back to login.php in an infinite loop,
+// with no way to ever actually set their permanent password.
+if (!isset($_SESSION['temp_password_change_required']) || $_SESSION['temp_password_change_required'] !== true || !isset($_SESSION['temp_password_user_id'])) {
     header('Location: login.php');
     exit();
 }
@@ -22,19 +43,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $error = 'Password must be at least 6 characters long.';
     } else {
         try {
+            // FIX: `users` table doesn't exist anywhere in the schema -
+            // staff records (including login credentials) live directly
+            // on `staff`, keyed by `svcNo` (not `id`). `temp_password`
+            // isn't a real column either - the real equivalent is
+            // `isFirstLogin`.
             $hashedPassword = password_hash($new_password, PASSWORD_DEFAULT);
-            $stmt = $pdo->prepare("UPDATE users SET password = ?, temp_password = 0 WHERE id = ?");
-            $stmt->execute([$hashedPassword, $_SESSION['user_id']]);
+            $stmt = $pdo->prepare("UPDATE staff SET password = ?, isFirstLogin = 0, passwordChangedAt = NOW() WHERE svcNo = ?");
+            $stmt->execute([$hashedPassword, $_SESSION['temp_password_user_id']]);
             
-            // Clear temp password flag from session
-            unset($_SESSION['temp_password']);
+            // Clear temp password flags from session
+            unset($_SESSION['temp_password_change_required']);
+            unset($_SESSION['temp_password_user_id']);
+            unset($_SESSION['temp_user_info']);
             
             $success = 'Password changed successfully. You can now use the system normally.';
             
             // Redirect after 2 seconds
-            header("refresh:2;url=index.php");
+            header("refresh:2;url=login.php");
         } catch (PDOException $e) {
-            $error = 'Database error: ' . $e->getMessage();
+            error_log('change_temp_password error: ' . $e->getMessage());
+            $error = 'Database error occurred while updating your password. Please try again.';
         }
     }
 }

@@ -1,0 +1,23 @@
+# Uploaded user content lives here. Never execute anything as a
+# script, no matter what extension games the server into treating it
+# as one, and no directory listings. Subfolders below opt back into
+# direct GET access only where the app actually relies on a direct
+# <img src> URL (profile photos). Everything else — CVs, staff
+# documents — is denied by default and must go through
+# shared/download_file.php, which checks the session first.
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+<FilesMatch "\.(php|phtml|php3|php4|php5|php7|phar|pl|py|cgi|sh)$">
+    Require all denied
+    <IfModule mod_access_compat.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
+Options -Indexes
+Require all denied
+<IfModule mod_access_compat.c>
+    Order deny,allow
+    Deny from all
+</IfModule>

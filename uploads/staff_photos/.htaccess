@@ -1,0 +1,15 @@
+Options -Indexes
+<FilesMatch "\.(php|phtml|php3|php4|php5|php7|phar|pl|py|cgi|sh)$">
+    Require all denied
+    <IfModule mod_access_compat.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
+<FilesMatch "\.(jpg|jpeg|png|gif|webp)$">
+    Require all granted
+    <IfModule mod_access_compat.c>
+        Order allow,deny
+        Allow from all
+    </IfModule>
+</FilesMatch>

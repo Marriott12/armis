@@ -30,9 +30,53 @@
         <label class="form-label">Unit Attached</label>
         <input type="text" class="form-control" name="unitAtt" value="<?= old('unitAtt', $staff->unitAtt ?? '') ?>">
     </div>
+    <?php
+    // CHANGELOG (branch-scoping upgrade): Role used to be a free-text input,
+    // meaning any typo became a real (and possibly meaningless) value in
+    // staff.role. It's now a dropdown sourced from the `roles` table, paired
+    // with a Branch dropdown (which branch this person is posted to for
+    // RBAC purposes — separate from Unit Attached above). Both are
+    // deliberately admin-only: reassigning someone's role/branch is a
+    // privilege-escalation-relevant action, so Chief Clerks/Staff Officers
+    // editing a colleague's profile see these as read-only text instead.
+    $__currentRole = old('role', $staff->role ?? 'user');
+    $__currentBranchId = old('branch_id', $staff->branch_id ?? '');
+    $__canAssignRole = function_exists('isAdmin') && isAdmin();
+    $__allRoles = function_exists('getAllRoles') ? getAllRoles(true) : [];
+    $__allBranches = function_exists('getAllBranches') ? getAllBranches(true) : [];
+    ?>
     <div class="col-md-3">
         <label class="form-label">Role</label>
-        <input type="text" class="form-control" name="role" value="<?= old('role', $staff->role ?? '') ?>">
+        <?php if ($__canAssignRole): ?>
+            <select class="form-control" name="role">
+                <?php foreach ($__allRoles as $code => $r): ?>
+                    <option value="<?= htmlspecialchars($code) ?>" <?= $__currentRole === $code ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($r['name']) ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        <?php else: ?>
+            <input type="text" class="form-control" value="<?= htmlspecialchars($__allRoles[$__currentRole]['name'] ?? $__currentRole) ?>" disabled>
+            <input type="hidden" name="role" value="<?= htmlspecialchars($__currentRole) ?>">
+            <small class="text-muted">Only a System Administrator can change a role.</small>
+        <?php endif; ?>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Branch</label>
+        <?php if ($__canAssignRole): ?>
+            <select class="form-control" name="branch_id">
+                <option value="">— None —</option>
+                <?php foreach ($__allBranches as $id => $b): ?>
+                    <option value="<?= (int)$id ?>" <?= (string)$__currentBranchId === (string)$id ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($b['name']) ?><?= !empty($b['is_org_wide']) ? ' (Army-wide)' : '' ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+            <small class="text-muted">Which branch this person is posted to, for record-alteration scope.</small>
+        <?php else: ?>
+            <input type="text" class="form-control" value="<?= htmlspecialchars($__allBranches[$__currentBranchId]['name'] ?? '— None —') ?>" disabled>
+            <input type="hidden" name="branch_id" value="<?= htmlspecialchars((string)$__currentBranchId) ?>">
+        <?php endif; ?>
     </div>
     <div class="col-md-3">
         <label class="form-label">Email</label>

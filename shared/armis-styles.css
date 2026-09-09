@@ -253,8 +253,12 @@
     padding: 30px;
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
+/* Responsive Design - phones only (576px); see shared/sidebar.php for the
+   canonical tablet/desktop breakpoints. This block used to fire up to
+   768px (catching most tablets) and only reveal via a .show class the
+   working toggle never sets (shared/header.php toggles .active), so
+   tablet users had no way to see or reopen the sidebar. */
+@media (max-width: 576px) {
     .sidebar {
         position: fixed;
         left: -250px;
@@ -263,18 +267,12 @@
         transition: left 0.3s ease;
     }
     
-    .sidebar.show {
+    .sidebar.active {
         left: 0;
     }
     
     .content-wrapper {
         margin-left: 0;
-    }
-}
-
-@media (min-width: 769px) {
-    .content-wrapper {
-        margin-left: 250px;
     }
 }
 

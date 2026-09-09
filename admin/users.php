@@ -1,17 +1,26 @@
 <?php
-// Start session if not already started
+/**
+ * ARMIS System Administration — Role & Branch Assignment
+ *
+ * CHANGELOG (branch-scoping upgrade): this file previously queried a
+ * `users` table that does not exist anywhere in the ARMIS schema (login
+ * credentials, role, and account status all live on `staff` — see
+ * armis1.sql). Every query here ran against a phantom table and would have
+ * thrown a fatal PDO exception the moment this page was hit. It has been
+ * rewritten end-to-end against the real `staff` table, and extended to be
+ * the canonical screen for assigning the new branch-scoped roles
+ * (cc/soi/soii/soiii/dg/ag) together with a Branch, which is what actually
+ * grants a person their record-alteration scope (see shared/rbac.php).
+ */
+
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Include configuration and database
 require_once dirname(__DIR__) . '/config.php';
 require_once dirname(__DIR__) . '/shared/database_connection.php';
-
-// Include RBAC system
 require_once dirname(__DIR__) . '/shared/rbac.php';
 
-// Initialize global database connection
 try {
     $pdo = getDbConnection();
 } catch (Exception $e) {
@@ -19,125 +28,124 @@ try {
     die("Database connection failed. Please check your configuration.");
 }
 
-// Start session if not already started
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-// Include RBAC system
-require_once dirname(__DIR__) . '/shared/rbac.php';
-require_once dirname(__DIR__) . '/shared/database_connection.php';
-
-$pageTitle = "User Management";
+$pageTitle = "Role & Branch Assignment";
 $moduleName = "System Admin";
 $moduleIcon = "users";
 $currentPage = "users";
 
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'User Management', 'url' => '/Armis2/admin/users.php', 'icon' => 'users', 'page' => 'users'],
-    ['title' => 'System Settings', 'url' => '/Armis2/admin/settings.php', 'icon' => 'cogs', 'page' => 'settings'],
-    ['title' => 'Database Management', 'url' => '/Armis2/admin/database.php', 'icon' => 'database', 'page' => 'database'],
-    ['title' => 'Security Center', 'url' => '/Armis2/admin/security.php', 'icon' => 'shield-alt', 'page' => 'security'],
-    ['title' => 'System Reports', 'url' => '/Armis2/admin/reports.php', 'icon' => 'chart-bar', 'page' => 'reports']
-];
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
-// Check if user is logged in and has admin privileges
 if (!isset($_SESSION['user_id'])) {
     header('Location: ' . dirname($_SERVER['PHP_SELF']) . '/../login.php');
     exit();
 }
 
-// Check if user has access to admin module
 requireModuleAccess('admin');
-
-// Log access
+requireBranchAdmin(); // this page reassigns roles/branches - system-admin only, not just "admin module" viewers
 logAccess('admin', 'users_view', true);
 
-// Handle user actions (create, edit, delete, role changes)
 $message = '';
 $messageType = '';
+$allRoles = getAllRoles(true);
+$allBranches = getAllBranches(true);
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    try {
-        $pdo = getDbConnection();
-        
-        if (isset($_POST['action'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    $csrf = $_POST['csrf_token'] ?? '';
+    if (!isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csrf)) {
+        $message = "Invalid CSRF token. Please reload the page and try again.";
+        $messageType = "danger";
+    } else {
+        try {
             switch ($_POST['action']) {
-                case 'update_role':
-                    $userId = intval($_POST['user_id']);
-                    $newRole = $_POST['new_role'];
-                    
-                    $stmt = $pdo->prepare("UPDATE users SET role = ? WHERE id = ?");
-                    $stmt->execute([$newRole, $userId]);
-                    
-                    $message = "User role updated successfully.";
+                case 'update_role_branch':
+                    $svcNo = trim($_POST['svcNo'] ?? '');
+                    $newRole = $_POST['new_role'] ?? '';
+                    $newBranchId = ($_POST['new_branch_id'] ?? '') !== '' ? (int)$_POST['new_branch_id'] : null;
+
+                    if (!isset($allRoles[$newRole])) {
+                        throw new Exception("Unknown role selected.");
+                    }
+                    if ($allRoles[$newRole]['is_branch_assignable'] && !$newBranchId) {
+                        throw new Exception("The role '" . $allRoles[$newRole]['name'] . "' requires a branch to be selected.");
+                    }
+
+                    $stmt = $pdo->prepare("UPDATE staff SET role = :role, branch_id = :branch_id WHERE svcNo = :svcNo");
+                    $stmt->execute(['role' => $newRole, 'branch_id' => $newBranchId, 'svcNo' => $svcNo]);
+
+                    $message = "Role/branch updated for $svcNo.";
                     $messageType = "success";
-                    logAccess('admin', 'user_role_update', true, "Updated user ID $userId role to $newRole");
+                    logAccess('admin', 'user_role_update', true, "Set svcNo=$svcNo role=$newRole branch_id=" . ($newBranchId ?? 'null'));
                     break;
-                    
+
                 case 'toggle_status':
-                    $userId = intval($_POST['user_id']);
-                    $newStatus = $_POST['new_status'];
-                    
-                    $stmt = $pdo->prepare("UPDATE users SET accStatus = ? WHERE id = ?");
-                    $stmt->execute([$newStatus, $userId]);
-                    
-                    $message = "User status updated successfully.";
+                    $svcNo = trim($_POST['svcNo'] ?? '');
+                    $newStatus = $_POST['new_status'] ?? '';
+                    if (!in_array($newStatus, ['Active', 'Inactive', 'Suspended', 'Pending'], true)) {
+                        throw new Exception("Invalid status.");
+                    }
+                    $stmt = $pdo->prepare("UPDATE staff SET accStatus = :status WHERE svcNo = :svcNo");
+                    $stmt->execute(['status' => $newStatus, 'svcNo' => $svcNo]);
+
+                    $message = "Account status updated for $svcNo.";
                     $messageType = "success";
-                    logAccess('admin', 'user_status_update', true, "Updated user ID $userId status to $newStatus");
+                    logAccess('admin', 'user_status_update', true, "Set svcNo=$svcNo accStatus=$newStatus");
                     break;
-                    
+
                 case 'reset_password':
-                    $userId = intval($_POST['user_id']);
-                    $tempPassword = 'temp' . rand(1000, 9999);
+                    $svcNo = trim($_POST['svcNo'] ?? '');
+                    $tempPassword = 'Armis' . random_int(100000, 999999);
                     $hashedPassword = password_hash($tempPassword, PASSWORD_DEFAULT);
-                    
-                    $stmt = $pdo->prepare("UPDATE users SET password = ?, password_reset_required = 1 WHERE id = ?");
-                    $stmt->execute([$hashedPassword, $userId]);
-                    
-                    $message = "Password reset successfully. Temporary password: $tempPassword";
+
+                    $stmt = $pdo->prepare("UPDATE staff SET password = :pw, isFirstLogin = 1, passwordChangedAt = NOW() WHERE svcNo = :svcNo");
+                    $stmt->execute(['pw' => $hashedPassword, 'svcNo' => $svcNo]);
+
+                    $message = "Password reset for $svcNo. Temporary password: $tempPassword (share this securely, it will not be shown again).";
                     $messageType = "info";
-                    logAccess('admin', 'password_reset', true, "Reset password for user ID $userId");
+                    logAccess('admin', 'password_reset', true, "Reset password for svcNo=$svcNo");
                     break;
             }
+        } catch (Exception $e) {
+            $message = "Error: " . $e->getMessage();
+            $messageType = "danger";
+            error_log("Admin Users Error: " . $e->getMessage());
         }
-    } catch (Exception $e) {
-        $message = "Error: " . $e->getMessage();
-        $messageType = "danger";
-        error_log("Admin Users Error: " . $e->getMessage());
     }
 }
 
-// Get user statistics and list
-$userStats = [];
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrfToken = $_SESSION['csrf_token'];
+
+// Stats - all against the real staff table/columns
+$userStats = ['total_users' => 0, 'active_users' => 0, 'privileged_users' => 0, 'new_users_month' => 0];
 $userList = [];
 
 try {
-    $pdo = getDbConnection();
-    
-    // Get user statistics
-    $stmt = $pdo->query("SELECT 
-        COUNT(*) as total_users,
-        SUM(CASE WHEN accStatus = 'active' THEN 1 ELSE 0 END) as active_users,
-        SUM(CASE WHEN accStatus = 'inactive' THEN 1 ELSE 0 END) as inactive_users,
-        SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END) as admin_users,
-        SUM(CASE WHEN createdAt >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 ELSE 0 END) as new_users_month
-        FROM users");
+    $stmt = $pdo->query("SELECT
+        COUNT(*) AS total_users,
+        SUM(CASE WHEN accStatus = 'Active' THEN 1 ELSE 0 END) AS active_users,
+        SUM(CASE WHEN role IS NOT NULL AND role <> 'user' THEN 1 ELSE 0 END) AS privileged_users,
+        SUM(CASE WHEN dateCreated >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 ELSE 0 END) AS new_users_month
+        FROM staff
+        WHERE username IS NOT NULL");
     $userStats = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    // Get user list with details
-    $stmt = $pdo->query("SELECT 
-        u.id, u.username, u.email, u.role, u.accStatus, u.createdAt, u.lastLogin,
-        s.fname, s.lname, s.svcNo, s.rank, s.unit
-        FROM users u 
-        LEFT JOIN staff s ON u.id = s.user_id 
-        WHERE u.accStatus = 'active'
-        ORDER BY u.createdAt DESC");
+
+    // Only staff who actually have login credentials (username set) are
+    // "system users" in the sense this screen manages - most rank-and-file
+    // staff records have no username/password at all.
+    $stmt = $pdo->query("SELECT
+        s.svcNo, s.username, s.officialEmail, s.role, s.accStatus, s.dateCreated, s.lastLogin,
+        s.fName, s.mName, s.lName, s.rankId, s.branch_id, b.name AS branch_name
+        FROM staff s
+        LEFT JOIN branches b ON b.id = s.branch_id
+        WHERE s.username IS NOT NULL
+        ORDER BY s.dateCreated DESC");
     $userList = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
 } catch (Exception $e) {
     error_log("User data fetch error: " . $e->getMessage());
+    $message = "Could not load staff/user data: " . $e->getMessage();
+    $messageType = "danger";
 }
 
 include dirname(__DIR__) . '/shared/header.php';
@@ -148,181 +156,120 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 <div class="content-wrapper with-sidebar">
     <div class="container-fluid">
         <div class="main-content">
-            <!-- Header Section -->
             <div class="row mb-4">
                 <div class="col-12">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
                             <h1 class="admin-section-title">
-                                <i class="fas fa-users text-primary"></i> User Management
+                                <i class="fas fa-users text-primary"></i> Role & Branch Assignment
                             </h1>
-                            <p class="text-muted mb-0">Manage system users, roles, and access permissions</p>
-                        </div>
-                        <div>
-                            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createUserModal">
-                                <i class="fas fa-plus"></i> Create User
-                            </button>
+                            <p class="text-muted mb-0">Assign roles and branches to staff with login accounts. New staff accounts are created from Admin Branch &rarr; Create Staff.</p>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Alert Messages -->
             <?php if ($message): ?>
-            <div class="alert alert-<?= $messageType ?> alert-dismissible fade show" role="alert">
+            <div class="alert alert-<?= htmlspecialchars($messageType) ?> alert-dismissible fade show" role="alert">
                 <?= htmlspecialchars($message) ?>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <?php endif; ?>
 
-            <!-- User Statistics -->
             <div class="row g-4 mb-5">
                 <div class="col-xl-3 col-lg-6">
                     <div class="card bg-primary text-white h-100">
                         <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 class="card-title text-white-75">Total Users</h6>
-                                    <h2 class="display-6 text-white"><?= $userStats['total_users'] ?? 0 ?></h2>
-                                    <small class="text-white-75">All registered users</small>
-                                </div>
-                                <div class="text-white-50">
-                                    <i class="fas fa-users fa-2x"></i>
-                                </div>
-                            </div>
+                            <h6 class="card-title text-white-75">Total Login Accounts</h6>
+                            <h2 class="display-6 text-white"><?= (int)($userStats['total_users'] ?? 0) ?></h2>
                         </div>
                     </div>
                 </div>
-                
                 <div class="col-xl-3 col-lg-6">
                     <div class="card bg-success text-white h-100">
                         <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 class="card-title text-white-75">Active Users</h6>
-                                    <h2 class="display-6 text-white"><?= $userStats['active_users'] ?? 0 ?></h2>
-                                    <small class="text-white-75">Currently active accounts</small>
-                                </div>
-                                <div class="text-white-50">
-                                    <i class="fas fa-user-check fa-2x"></i>
-                                </div>
-                            </div>
+                            <h6 class="card-title text-white-75">Active</h6>
+                            <h2 class="display-6 text-white"><?= (int)($userStats['active_users'] ?? 0) ?></h2>
                         </div>
                     </div>
                 </div>
-                
                 <div class="col-xl-3 col-lg-6">
                     <div class="card bg-warning text-white h-100">
                         <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 class="card-title text-white-75">Admin Users</h6>
-                                    <h2 class="display-6 text-white"><?= $userStats['admin_users'] ?? 0 ?></h2>
-                                    <small class="text-white-75">Administrative accounts</small>
-                                </div>
-                                <div class="text-white-50">
-                                    <i class="fas fa-user-shield fa-2x"></i>
-                                </div>
-                            </div>
+                            <h6 class="card-title text-white-75">Privileged Roles</h6>
+                            <h2 class="display-6 text-white"><?= (int)($userStats['privileged_users'] ?? 0) ?></h2>
+                            <small class="text-white-75">Not the default 'user' role</small>
                         </div>
                     </div>
                 </div>
-                
                 <div class="col-xl-3 col-lg-6">
                     <div class="card bg-info text-white h-100">
                         <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 class="card-title text-white-75">New This Month</h6>
-                                    <h2 class="display-6 text-white"><?= $userStats['new_users_month'] ?? 0 ?></h2>
-                                    <small class="text-white-75">Recently created accounts</small>
-                                </div>
-                                <div class="text-white-50">
-                                    <i class="fas fa-user-plus fa-2x"></i>
-                                </div>
-                            </div>
+                            <h6 class="card-title text-white-75">New This Month</h6>
+                            <h2 class="display-6 text-white"><?= (int)($userStats['new_users_month'] ?? 0) ?></h2>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- User List -->
             <div class="card">
                 <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="fas fa-list"></i> User Directory
-                    </h5>
+                    <h5 class="card-title mb-0"><i class="fas fa-list"></i> Accounts</h5>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
                         <table class="table table-striped table-hover">
                             <thead class="table-dark">
                                 <tr>
-                                    <th>ID</th>
-                                    <th>User Info</th>
-                                    <th>Staff Details</th>
+                                    <th>Svc No</th>
+                                    <th>Account</th>
+                                    <th>Staff</th>
                                     <th>Role</th>
+                                    <th>Branch</th>
                                     <th>Status</th>
-                                    <th>Created</th>
                                     <th>Last Login</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($userList as $user): ?>
+                                <?php foreach ($userList as $u): ?>
                                 <tr>
-                                    <td><?= htmlspecialchars($user['id']) ?></td>
+                                    <td><?= htmlspecialchars($u['svcNo']) ?></td>
                                     <td>
-                                        <div>
-                                            <strong><?= htmlspecialchars($user['username']) ?></strong><br>
-                                            <small class="text-muted"><?= htmlspecialchars($user['email']) ?></small>
-                                        </div>
+                                        <strong><?= htmlspecialchars($u['username']) ?></strong><br>
+                                        <small class="text-muted"><?= htmlspecialchars($u['officialEmail'] ?? '') ?></small>
                                     </td>
                                     <td>
-                                        <?php if ($user['fname'] || $user['lname']): ?>
-                                        <div>
-                                            <strong><?= htmlspecialchars(($user['fname'] ?? '') . ' ' . ($user['lname'] ?? '')) ?></strong><br>
-                                            <small class="text-muted">
-                                                <?= htmlspecialchars($user['svcNo'] ?? 'N/A') ?> | 
-                                                <?= htmlspecialchars($user['rank'] ?? 'N/A') ?><br>
-                                                <?= htmlspecialchars($user['unit'] ?? 'N/A') ?>
-                                            </small>
-                                        </div>
-                                        <?php else: ?>
-                                        <span class="text-muted">No staff record</span>
-                                        <?php endif; ?>
+                                        <?= htmlspecialchars(trim(($u['lName'] ?? '') . ' ' . ($u['fName'] ?? '') . ' ' . ($u['mName'] ?? ''))) ?><br>
+                                        <small class="text-muted"><?= htmlspecialchars($u['rankId'] ?? '') ?></small>
                                     </td>
                                     <td>
-                                        <span class="badge bg-<?= $user['role'] === 'admin' ? 'danger' : ($user['role'] === 'supervisor' ? 'warning' : 'primary') ?>">
-                                            <?= htmlspecialchars(ucfirst($user['role'])) ?>
+                                        <span class="badge bg-<?= ($u['role'] ?? 'user') === 'user' ? 'secondary' : 'primary' ?>">
+                                            <?= htmlspecialchars($allRoles[$u['role']]['name'] ?? $u['role'] ?? 'user') ?>
                                         </span>
                                     </td>
+                                    <td><?= htmlspecialchars($u['branch_name'] ?? '—') ?></td>
                                     <td>
-                                        <span class="badge bg-<?= $user['accStatus'] === 'active' ? 'success' : 'secondary' ?>">
-                                            <?= htmlspecialchars(ucfirst($user['accStatus'])) ?>
+                                        <span class="badge bg-<?= ($u['accStatus'] ?? '') === 'Active' ? 'success' : 'secondary' ?>">
+                                            <?= htmlspecialchars($u['accStatus'] ?? 'Unknown') ?>
                                         </span>
                                     </td>
+                                    <td><small><?= $u['lastLogin'] ? date('M j, Y H:i', strtotime($u['lastLogin'])) : 'Never' ?></small></td>
                                     <td>
-                                        <small><?= date('M j, Y', strtotime($user['createdAt'])) ?></small>
-                                    </td>
-                                    <td>
-                                        <small><?= $user['lastLogin'] ? date('M j, Y H:i', strtotime($user['lastLogin'])) : 'Never' ?></small>
-                                    </td>
-                                    <td>
-                                        <div class="btn-group btn-group-sm" role="group">
-                                            <button class="btn btn-outline-primary btn-sm" 
-                                                    onclick="editUser(<?= $user['id'] ?>, '<?= htmlspecialchars($user['username']) ?>', '<?= htmlspecialchars($user['role']) ?>', '<?= htmlspecialchars($user['accStatus']) ?>')"
-                                                    data-bs-toggle="modal" data-bs-target="#editUserModal">
-                                                <i class="fas fa-edit"></i>
-                                            </button>
-                                            <button class="btn btn-outline-warning btn-sm" 
-                                                    onclick="resetPassword(<?= $user['id'] ?>, '<?= htmlspecialchars($user['username']) ?>')">
-                                                <i class="fas fa-key"></i>
-                                            </button>
-                                        </div>
+                                        <button class="btn btn-outline-primary btn-sm"
+                                                onclick='openEdit(<?= json_encode($u) ?>)'
+                                                data-bs-toggle="modal" data-bs-target="#editUserModal">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <button class="btn btn-outline-warning btn-sm" onclick="resetPassword('<?= htmlspecialchars($u['svcNo']) ?>')">
+                                            <i class="fas fa-key"></i>
+                                        </button>
                                     </td>
                                 </tr>
                                 <?php endforeach; ?>
+                                <?php if (empty($userList)): ?>
+                                <tr><td colspan="8" class="text-center text-muted py-4">No staff with login accounts found.</td></tr>
+                                <?php endif; ?>
                             </tbody>
                         </table>
                     </div>
@@ -332,68 +279,70 @@ include dirname(__DIR__) . '/shared/sidebar.php';
     </div>
 </div>
 
-<!-- Edit User Modal -->
 <div class="modal fade" id="editUserModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Edit User</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <form method="POST">
-                <div class="modal-body">
-                    <input type="hidden" name="action" value="update_role">
-                    <input type="hidden" name="user_id" id="edit_user_id">
-                    
-                    <div class="mb-3">
-                        <label class="form-label">Username</label>
-                        <input type="text" class="form-control" id="edit_username" readonly>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label">Role</label>
-                        <select class="form-select" name="new_role" id="edit_role">
-                            <option value="user">User</option>
-                            <option value="supervisor">Supervisor</option>
-                            <option value="admin">Administrator</option>
-                        </select>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label">Status</label>
-                        <select class="form-select" name="new_status" id="edit_status">
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Update User</button>
-                </div>
-            </form>
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Assign Role & Branch</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST">
+        <div class="modal-body">
+          <input type="hidden" name="action" value="update_role_branch">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
+          <input type="hidden" name="svcNo" id="edit_svcNo">
+
+          <div class="mb-3">
+            <label class="form-label">Service Number</label>
+            <input type="text" class="form-control" id="edit_svcNo_display" readonly>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Role</label>
+            <select class="form-select" name="new_role" id="edit_role">
+              <?php foreach ($allRoles as $code => $r): ?>
+                <option value="<?= htmlspecialchars($code) ?>"><?= htmlspecialchars($r['name']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Branch</label>
+            <select class="form-select" name="new_branch_id" id="edit_branch_id">
+              <option value="">— None —</option>
+              <?php foreach ($allBranches as $id => $b): ?>
+                <option value="<?= (int)$id ?>"><?= htmlspecialchars($b['name']) ?><?= !empty($b['is_org_wide']) ? ' (Army-wide)' : '' ?></option>
+              <?php endforeach; ?>
+            </select>
+            <small class="text-muted">Required for Chief Clerk, Staff Officer I/II/III and Director General. Not required for Adjutant General (org-wide by role) or System Administrator.</small>
+          </div>
         </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
     </div>
+  </div>
 </div>
 
-<script>
-function editUser(id, username, role, status) {
-    document.getElementById('edit_user_id').value = id;
-    document.getElementById('edit_username').value = username;
-    document.getElementById('edit_role').value = role;
-    document.getElementById('edit_status').value = status;
-}
+<form method="POST" id="resetPasswordForm" style="display:none;">
+    <input type="hidden" name="action" value="reset_password">
+    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
+    <input type="hidden" name="svcNo" id="reset_svcNo">
+</form>
 
-function resetPassword(userId, username) {
-    if (confirm(`Are you sure you want to reset the password for user "${username}"?`)) {
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.innerHTML = `
-            <input type="hidden" name="action" value="reset_password">
-            <input type="hidden" name="user_id" value="${userId}">
-        `;
-        document.body.appendChild(form);
-        form.submit();
+<script>
+function openEdit(u) {
+    document.getElementById('edit_svcNo').value = u.svcNo;
+    document.getElementById('edit_svcNo_display').value = u.svcNo;
+    document.getElementById('edit_role').value = u.role || 'user';
+    document.getElementById('edit_branch_id').value = u.branch_id || '';
+}
+function resetPassword(svcNo) {
+    if (confirm('Reset the password for ' + svcNo + '? A temporary password will be generated.')) {
+        document.getElementById('reset_svcNo').value = svcNo;
+        document.getElementById('resetPasswordForm').submit();
     }
 }
 </script>

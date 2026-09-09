@@ -117,38 +117,20 @@ try {
         }
     }
     
-    // Fetch corps from corps table using correct field names
+    // Fetch corps directly from staff table corps column
     $corpsQuery = "
-        SELECT c.corpsId as corpsID, c.abbreviation as corpsAbb, c.abbreviation as corpsName,
-               COUNT(s.svcNo) as usage_count
-        FROM corps c
-        LEFT JOIN staff s ON c.corpsId = s.corpsId AND s.svcStatus = 'Active'
-        GROUP BY c.corpsId 
-        ORDER BY c.abbreviation ASC
+        SELECT DISTINCT corps as corpsID, corps as corpsAbb, corps as corpsName,
+               COUNT(*) as usage_count
+        FROM staff
+        WHERE corps IS NOT NULL AND corps != '' AND svcStatus = 'Active'
+        GROUP BY corps 
+        ORDER BY corps ASC
     ";
     $stmt = $pdo->prepare($corpsQuery);
     $stmt->execute();
     $corps = $stmt->fetchAll(PDO::FETCH_OBJ);
     foreach ($corps as $corp) {
         $corpsList[] = (object)['corps' => $corp->corpsName];
-    }
-    
-    // If no corps found from corps table, try fallback from staff table
-    if (empty($corps)) {
-        $stmt = $pdo->prepare("
-            SELECT DISTINCT corps as corpsName, corps as corpsAbb, 
-                   COUNT(*) as usage_count
-            FROM staff 
-            WHERE corps IS NOT NULL AND corps != '' 
-            GROUP BY corps 
-            ORDER BY usage_count DESC, corps ASC
-        ");
-        $stmt->execute();
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        foreach ($rows as $row) {
-            $corps[] = (object)$row;
-            $corpsList[] = (object)['corps' => $row['corpsName']];
-        }
     }
     
     // Add default corps if none exist

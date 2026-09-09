@@ -267,17 +267,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_FILES['csv_file'])) {
 
     // Duplicate email check only
     require_once dirname(__DIR__) . '/shared/database_connection.php';
+    // FIX: requiring database_connection.php only defines getDbConnection() -
+    // it does not create a $pdo variable. Every use of $pdo below was
+    // calling ->prepare() on null and fatal-erroring, regardless of the
+    // column-name fix just below.
+    $pdo = getDbConnection();
     $duplicate = false;
         if ($email) {
-            $stmt = $pdo->prepare('SELECT COUNT(*) FROM staff WHERE email = ?');
-            $stmt->execute([$email]);
-            if ($stmt->fetchColumn() > 0) {
-                $form_errors['email'] = 'A staff member with this email address already exists.';
-                $duplicate = true;
+            // FIX: `staff` has no `email` column - the real column is
+            // `officialEmail` (see officialEmail/emailPvt in the schema).
+            // The original query here referenced a column that doesn't
+            // exist, which threw an uncaught PDOException on essentially
+            // every valid submission (email is a required field, so this
+            // ran on almost every real POST). Wrapped in try/catch to
+            // match the defensive pattern used everywhere else in this
+            // codebase, so a future schema drift degrades gracefully
+            // instead of crashing the whole form.
+            try {
+                $stmt = $pdo->prepare('SELECT COUNT(*) FROM staff WHERE officialEmail = ?');
+                $stmt->execute([$email]);
+                if ($stmt->fetchColumn() > 0) {
+                    $form_errors['email'] = 'A staff member with this email address already exists.';
+                    $duplicate = true;
+                }
+            } catch (Exception $e) {
+                error_log('Duplicate email check failed: ' . $e->getMessage());
             }
         }
         if (empty($form_errors) && !$duplicate) {
             require_once __DIR__ . '/partials/create_staff_handler.php';
+        }
+
+        // Map validation errors to the tab that contains the offending
+        // field, so the tab-nav badges (see create_staff_tabs.php) and the
+        // initial "which tab opens by default" logic actually reflect
+        // where the problem is - $tabErrors was previously declared but
+        // never populated anywhere, so every tab's error badge/highlight
+        // was permanently dead.
+        if (!empty($form_errors)) {
+            $fieldToTab = [
+                'csrf' => 'personal',
+                'svcNo' => 'personal', 'category' => 'personal', 'rankID' => 'personal',
+                'lname' => 'personal', 'fname' => 'personal', 'nrc' => 'personal',
+                'email' => 'personal', 'phone' => 'personal', 'gender' => 'personal',
+                'DOB' => 'personal', 'blood_group' => 'personal', 'province' => 'personal',
+                'district' => 'personal', 'religion' => 'personal', 'village' => 'personal',
+                'unitID' => 'service', 'corps' => 'service', 'dateOfEnlistment' => 'service',
+                'trade' => 'service',
+                'marital' => 'family', 'nok' => 'family', 'nok_nrc' => 'family',
+                'nok_relationship' => 'family', 'nok_tel' => 'family', 'nok_email' => 'family',
+                'alt_nok' => 'family', 'alt_nok_nrc' => 'family', 'alt_nok_relationship' => 'family',
+                'alt_nok_tel' => 'family', 'altnok_email' => 'family',
+            ];
+            foreach ($form_errors as $field => $message) {
+                $tabKey = $fieldToTab[$field] ?? 'personal';
+                $tabErrors[$tabKey] = true;
+            }
         }
     }
 }
@@ -335,6 +380,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_FILES['csv_file']) || isse
         
         // Get database connection
         require_once dirname(__DIR__) . '/shared/database_connection.php';
+        // FIX: same missing assignment as the duplicate-email check above -
+        // requiring the file doesn't create $pdo, and ImportProcessor's
+        // constructor needs a real PDO instance, not null.
+        $pdo = getDbConnection();
         
         // Create import processor
         $userId = $_SESSION['user_id'] ?? 0;
@@ -422,35 +471,8 @@ $moduleIcon = "user-plus";
 $currentPage = "create";
 
 // Sidebar navigation
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'],
-    ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create'],
-    ['title' => 'Promotions', 'url' => '/Armis2/admin_branch/promote_staff.php', 'icon' => 'arrow-up', 'page' => 'promotions'],
-    ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/appointments.php', 'icon' => 'user-tie', 'page' => 'appointments'],
-    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medal.php', 'icon' => 'medal', 'page' => 'medals'],
-    [
-        'title' => 'Reports',
-        'icon' => 'chart-bar',
-        'page' => 'reports',
-        'children' => [
-            ['title' => 'Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php'],
-            ['title' => 'Unit List', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
-            ['title' => 'Contracts', 'url' => '/Armis2/admin_branch/reports_contract.php'],
-            ['title' => 'Courses', 'url' => '/Armis2/admin_branch/reports_courses.php'],
-            ['title' => 'Deceased', 'url' => '/Armis2/admin_branch/reports_deceased.php'],
-            ['title' => 'Gender', 'url' => '/Armis2/admin_branch/reports_gender.php'],
-            ['title' => 'Marital', 'url' => '/Armis2/admin_branch/reports_marital.php'],
-            ['title' => 'Rank', 'url' => '/Armis2/admin_branch/reports_rank.php'],
-            ['title' => 'Retired', 'url' => '/Armis2/admin_branch/reports_retired.php'],
-            ['title' => 'Trade', 'url' => '/Armis2/admin_branch/reports_trade.php'],
-            ['title' => 'Corps', 'url' => '/Armis2/admin_branch/reports_corps.php'],
-            ['title' => 'Units', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Medals', 'url' => '/Armis2/admin_branch/reports_medals.php'],
-        ]
-    ],
-];
+$sidebarLinks = []; // set by shared nav include below
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 // Ensure shared admin branch CSS is loaded
 echo '<link rel="stylesheet" href="/Armis2/assets/css/admin_branch.css">';
@@ -463,6 +485,13 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 <!-- Main Content -->
 <div class="content-wrapper with-sidebar">
     <div class="container-fluid">
+        <nav aria-label="breadcrumb" class="mb-3">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a href="/Armis2/admin_branch/index.php">Admin Branch</a></li>
+                <li class="breadcrumb-item"><a href="/Armis2/admin_branch/edit_staff.php">Staff Management</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Register New Staff Member</li>
+            </ol>
+        </nav>
         <div class="main-content">
             <!-- Main Form Content -->
             <div class="col-12">
@@ -633,7 +662,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         </div>
                         <?php endif; ?>
                         
-                        <?php //require 'partials/create_staff_tabs.php'; ?>
+                        <?php // Tab navigation now included directly above the tab-content it controls (see below) ?>
                         
                         <!-- CSV/Excel Import Form with Enhanced Features -->
                         <div class="dashboard-card mb-4">
@@ -678,16 +707,21 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                         }
                                                     } else {
                                                         // Fallback to a safe query with try/catch in case partial failed to load ranks
-                                                        try {
-                                                            require_once dirname(__DIR__) . '/shared/database_connection.php';
-                                                            $ranksStmt = $pdo->query("SELECT rankId as id, rankId as name, rankId as rankId as abbreviation FROM rank ORDER BY level ASC");
-                                                            while ($r = $ranksStmt->fetch(PDO::FETCH_ASSOC)) {
-                                                                echo "<tr><td>" . htmlspecialchars($r['id']) . "</td><td>" . htmlspecialchars($r['name']) . "</td><td>" . htmlspecialchars($r['abbreviation']) . "</td></tr>";
+                                                            try {
+                                                                require_once dirname(__DIR__) . '/shared/database_connection.php';
+                                                                $pdo = getDbConnection();
+                                                                // FIX: `rank` only has rankId/rankIndex/rankType - there
+                                                                // is no rankName/abbreviation/level column, so rankId
+                                                                // itself is used as the display value (same convention
+                                                                // used throughout this app, e.g. profile_manager.php).
+                                                                $ranksStmt = $pdo->query("SELECT rankId AS id, rankId AS name, rankIndex FROM `rank` ORDER BY rankIndex ASC");
+                                                                while ($r = $ranksStmt->fetch(PDO::FETCH_ASSOC)) {
+                                                                    echo "<tr><td>" . htmlspecialchars($r['id']) . "</td><td>" . htmlspecialchars($r['name']) . "</td><td>" . htmlspecialchars($r['rankIndex'] ?? '') . "</td></tr>";
+                                                                }
+                                                            } catch (Exception $e) {
+                                                                error_log('create_staff: ranks lookup failed: ' . $e->getMessage());
+                                                                // show nothing to avoid fatal errors
                                                             }
-                                                        } catch (Exception $e) {
-                                                            error_log('create_staff: ranks lookup failed: ' . $e->getMessage());
-                                                            // show nothing to avoid fatal errors
-                                                        }
                                                     }
                                                     ?>
                                                     </tbody>
@@ -760,7 +794,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                     } else {
                                                         try {
                                                             // corps table uses corpsId as primary key and abbreviation for name
-                                                            $corpsStmt = $pdo->query("SELECT corpsId as id, abbreviation as name FROM corps ORDER BY abbreviation ASC");
+                                                            $corpsStmt = $pdo->query("SELECT DISTINCT corps as id, corps as name FROM staff WHERE corps IS NOT NULL AND corps != '' ORDER BY corps ASC");
                                                             while ($c = $corpsStmt->fetch(PDO::FETCH_ASSOC)) {
                                                                 echo "<tr><td>" . htmlspecialchars($c['id']) . "</td><td>" . htmlspecialchars($c['name']) . "</td></tr>";
                                                             }
@@ -1057,10 +1091,16 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 
                         <form id="createStaffForm" method="post" action="<?=htmlspecialchars($_SERVER["PHP_SELF"]);?>" autocomplete="off" novalidate aria-labelledby="formTitle">
                             <input type="hidden" name="csrf" value="<?=htmlspecialchars($csrfToken)?>">
+                            <?php require 'partials/create_staff_tabs.php'; ?>
                             <div class="tab-content" id="staffTabContent">
                                 <?php require 'partials/tab_personal.php'; ?>
+                                <?php require 'partials/tab_service.php'; ?>
+                                <?php require 'partials/tab_family.php'; ?>
+                                <?php require 'partials/tab_academic.php'; ?>
                                 <?php require 'partials/tab_honours.php'; ?>
                                 <?php require 'partials/tab_id.php'; ?>
+                                <?php require 'partials/tab_residence.php'; ?>
+                                <?php require 'partials/tab_language.php'; ?>
                             </div>
                             
                                 <div class="d-flex justify-content-between align-items-center mt-4" aria-label="Form Actions">
@@ -1288,11 +1328,13 @@ Generated: ${new Date().toLocaleString()}
                     });
                 })();
                 </script>
-            </div>
-            </div>
-        </div>
-    </div>
-</div>
-</div></div>
+            </div> <!-- /.modal-body -->
+        </div> <!-- /.modal-content -->
+    </div> <!-- /.modal-dialog -->
+</div> <!-- /#validationModal -->
+            </div> <!-- /.col-12 -->
+        </div> <!-- /.main-content -->
+    </div> <!-- /.container-fluid -->
+</div> <!-- /.content-wrapper -->
 
 <?php include dirname(__DIR__) . '/shared/footer.php'; ?>

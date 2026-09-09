@@ -34,6 +34,7 @@ if (!$isAdmin && !$emergency) {
 $pdo = null;
 try {
     require_once dirname(__DIR__) . '/shared/database_connection.php';
+    require_once dirname(__DIR__) . '/shared/rbac.php';
     $pdo = getDbConnection();
 } catch (Exception $e) {
     // Just log error, don't stop execution
@@ -49,14 +50,7 @@ $userRole = $_SESSION['role'] ?? 'admin';
 $lastLogin = isset($_SESSION['last_login_time']) ? date('Y-m-d H:i:s', $_SESSION['last_login_time']) : 'Unknown';
 
 // Define sidebar links
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'User Management', 'url' => '/Armis2/admin/users.php', 'icon' => 'users', 'page' => 'users'],
-    ['title' => 'System Settings', 'url' => '/Armis2/admin/settings.php', 'icon' => 'cogs', 'page' => 'settings'],
-    ['title' => 'Database Management', 'url' => '/Armis2/admin/database.php', 'icon' => 'database', 'page' => 'database'],
-    ['title' => 'Security Center', 'url' => '/Armis2/admin/security.php', 'icon' => 'shield-alt', 'page' => 'security'],
-    ['title' => 'System Reports', 'url' => '/Armis2/admin/reports.php', 'icon' => 'chart-bar', 'page' => 'reports']
-];
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 // Get some basic system statistics
 $stats = [
@@ -170,33 +164,7 @@ if ($pdo) {
 
     <!-- Main Content -->
     <div class="with-sidebar">
-        <!-- Sidebar -->
-        <div class="sidebar">
-            <div class="px-3 mb-3">
-                <select class="form-select form-select-sm">
-                    <option selected>System Admin</option>
-                    <option>Admin Branch</option>
-                    <option>Command</option>
-                    <option>Operations</option>
-                </select>
-            </div>
-            
-            <ul class="nav flex-column">
-                <?php foreach ($sidebarLinks as $link): ?>
-                <li class="nav-item">
-                    <a class="sidebar-link <?php echo $link['page'] === $currentPage ? 'active' : ''; ?>" href="<?php echo $link['url']; ?>">
-                        <i class="fas fa-<?php echo $link['icon']; ?> me-2"></i> <?php echo $link['title']; ?>
-                    </a>
-                </li>
-                <?php endforeach; ?>
-                
-                <li class="nav-item mt-3">
-                    <a class="sidebar-link" href="/Armis2/logout.php">
-                        <i class="fas fa-sign-out-alt me-2"></i> Logout
-                    </a>
-                </li>
-            </ul>
-        </div>
+        <?php include dirname(__DIR__) . '/shared/sidebar.php'; ?>
         
         <!-- Page Content -->
         <div class="main-content">

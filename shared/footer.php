@@ -63,6 +63,9 @@
     </script>
     <script src="/Armis2/shared/session-management.js"></script>
     <?php endif; ?>
+    <?php if (!empty($moduleScript)): ?>
+    <script src="<?= htmlspecialchars($moduleScript, ENT_QUOTES) ?>"></script>
+    <?php endif; ?>
     <script>
         // If page defines initAppointmentsPage, call it after DOM is ready
         document.addEventListener('DOMContentLoaded', function() {
@@ -93,18 +96,11 @@
             }
         });
         
-        // Toggle sidebar function for mobile
-        function toggleSidebar() {
-            const sidebar = document.querySelector('.sidebar');
-            const overlay = document.querySelector('.sidebar-overlay');
-            if (sidebar) {
-                sidebar.classList.toggle('show');
-            }
-            if (overlay) {
-                overlay.style.display = sidebar.classList.contains('show') ? 'block' : 'none';
-            }
-        }
-        
+        // Note: toggleSidebar() is defined once in shared/header.php (toggles the
+        // .active class, matching shared/sidebar.php's CSS) - a second conflicting
+        // definition used to live here toggling a non-existent .show/.sidebar-overlay
+        // pair, silently breaking the mobile toggle button by overriding header's version.
+
         // Initialize notifications when page loads
         document.addEventListener('DOMContentLoaded', function() {
             // Welcome notification deactivated

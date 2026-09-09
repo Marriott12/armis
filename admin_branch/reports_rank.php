@@ -11,42 +11,17 @@ $currentPage = "reports";
 $moduleName = "Admin Branch";
 $moduleIcon = "users-cog";
 
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'],
-    ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create'],
-    ['title' => 'Promotions', 'url' => '/Armis2/admin_branch/promote_staff.php', 'icon' => 'arrow-up', 'page' => 'promotions'],
-    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medal.php', 'icon' => 'medal', 'page' => 'medals'],
-    [
-        'title' => 'Reports',
-        'icon' => 'chart-bar',
-        'page' => 'reports',
-        'children' => [
-            ['title' => 'Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php'],
-            ['title' => 'Unit List', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
-            ['title' => 'Contracts', 'url' => '/Armis2/admin_branch/reports_contract.php'],
-            ['title' => 'Courses', 'url' => '/Armis2/admin_branch/reports_courses.php'],
-            ['title' => 'Deceased', 'url' => '/Armis2/admin_branch/reports_deceased.php'],
-            ['title' => 'Gender', 'url' => '/Armis2/admin_branch/reports_gender.php'],
-            ['title' => 'Marital', 'url' => '/Armis2/admin_branch/reports_marital.php'],
-            ['title' => 'Rank', 'url' => '/Armis2/admin_branch/reports_rank.php'],
-            ['title' => 'Retired', 'url' => '/Armis2/admin_branch/reports_retired.php'],
-            ['title' => 'Trade', 'url' => '/Armis2/admin_branch/reports_trade.php'],
-            ['title' => 'Corps', 'url' => '/Armis2/admin_branch/reports_corps.php'],
-            ['title' => 'Units', 'url' => '/Armis2/admin_branch/reports_units.php'],
-        ]
-    ],
-];
+$sidebarLinks = []; // set by shared nav include below
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 $pdo = getDbConnection();
 
 function getRankOptions($pdo, $unit, $cat) {
     // Use rankId which exists across installs
-    $rankSql = "SELECT DISTINCT r.rankId as id, r.rankId as name FROM `rank` r JOIN staff s ON s.rankId = r.rankId WHERE s.svcStatus = 'Active' ORDER BY r.level ASC";
-    $unitSql = "SELECT DISTINCT u.unitId, u.code as name FROM unit u JOIN staff s ON s.unitId = u.unitId WHERE s.svcStatus = 'Active' ORDER BY u.code ASC";
-    $catSql  = "SELECT DISTINCT " . getRankCategoryCaseSQL('r') . " as id, " . getRankCategoryCaseSQL('r') . " as name FROM `rank` r JOIN staff s ON s.rankId = r.rankId WHERE r.level IS NOT NULL AND s.svcStatus = 'Active' ORDER BY r.level ASC";
-    
+    $rankSql = "SELECT DISTINCT r.rankId as id, r.rankId as name FROM `rank` r JOIN staff s ON s.rankId = r.rankId WHERE s.svcStatus = 'Active' ORDER BY r.rankIndex ASC";
+    $unitSql = "SELECT DISTINCT u.unitId as id, COALESCE(u.unitId, u.unitLoc, u.mainUnit) as name FROM unit u JOIN staff s ON s.unitId = u.unitId WHERE s.svcStatus = 'Active' ORDER BY COALESCE(u.unitId, u.unitLoc, u.mainUnit, u.unitId) ASC";
+    $catSql  = "SELECT DISTINCT " . getRankCategoryCaseSQL('r') . " as id, " . getRankCategoryCaseSQL('r') . " as name FROM `rank` r JOIN staff s ON s.rankId = r.rankId WHERE r.rankIndex IS NOT NULL AND s.svcStatus = 'Active' ORDER BY r.rankIndex ASC";
+
     $stmt = $pdo->prepare($rankSql);
     $stmt->execute();
     $ranks = $stmt->fetchAll(PDO::FETCH_OBJ);
@@ -69,7 +44,7 @@ $search = trim($_GET['search'] ?? '');
 list($ranks, $units, $categories) = getRankOptions($pdo, $filter_unit, $filter_category);
 
 $params = [];
-    $sql = "SELECT s.*, r.rankId as rankName, r.rankId as rankAbbr, u.code as unitName, u.code as unitCode, " . getRankCategoryCaseSQL('r') . " as category FROM staff s
+    $sql = "SELECT s.*, r.rankId as rankName, r.rankId as rankAbbr, COALESCE(u.unitId, u.unitLoc, u.mainUnit) as unitName, COALESCE(u.unitId, u.unitLoc, u.mainUnit) as unitCode, " . getRankCategoryCaseSQL('r') . " as category FROM staff s
     LEFT JOIN `rank` r ON s.rankId = r.rankId
     LEFT JOIN unit u ON s.unitId = u.unitId
     WHERE s.svcStatus = 'Active'";
@@ -80,14 +55,14 @@ if ($filter_category !== '')  {
     $sql .= " AND (" . $categorySQL . ")"; 
 }
 if ($search !== '') {
-    $sql .= " AND (r.rankId LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR u.code LIKE ?)";
+    $sql .= " AND (r.rankId LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR COALESCE(u.unitId, u.unitLoc, u.mainUnit) LIKE ?)";
     for ($i = 0; $i < 5; $i++) $params[] = "%$search%";
 }
 // Default seniority sorting: rank level, then subWef, then tempWef, then attestDate, then service number
 // Personnel without ranks (NULL rankId) are listed last
 $sql .= " ORDER BY 
     CASE WHEN s.rankId IS NULL THEN 1 ELSE 0 END,
-    r.level ASC,
+    r.rankIndex ASC,
     s.subWef ASC,
     s.tempWef ASC,
     s.attestDate ASC,
@@ -114,7 +89,7 @@ if ($filter_category !== '')  {
     $count_sql .= " AND (" . $categorySQL . ")"; 
 }
 if ($search !== '') {
-    $count_sql .= " AND (r.rankId LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR u.code LIKE ?)";
+    $count_sql .= " AND (r.rankId LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR COALESCE(u.code, u.unitLoc, u.mainUnit, u.unitId) LIKE ?)";
     for ($i = 0; $i < 5; $i++) $count_params[] = "%$search%";
 }
 $stmt = $pdo->prepare($count_sql);
@@ -175,7 +150,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     <select name="category" id="categoryFilter" class="form-select" aria-label="Filter by category">
                         <option value="">Category</option>
                         <?php foreach ($categories as $cat): ?>
-                            <option value="<?= htmlspecialchars($cat->category) ?>" <?= ($filter_category == $cat->category) ? 'selected' : '' ?>><?= htmlspecialchars($cat->category) ?></option>
+                            <option value="<?= htmlspecialchars($cat->name) ?>" <?= ($filter_category == $cat->name) ? 'selected' : '' ?>><?= htmlspecialchars($cat->name) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>

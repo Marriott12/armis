@@ -111,6 +111,9 @@ temp/
 database_backup_*
 config_backup.*
 .env.backup
+.env
+.env.*
+!.env.example
 credentials_*
 
 # Temporary uploads and user files

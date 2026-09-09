@@ -18,15 +18,17 @@ class ARMISMailer {
     }
     
     private function loadConfig() {
-        // Email configuration - Update these settings for your environment
-        $this->smtp_host = 'smtp.envisagezm.com'; // or your SMTP server
+        // Safe, non-secret fallbacks only. The real values (including
+        // smtp_password) come exclusively from config/email.php, which
+        // itself reads from .env / server environment variables. No
+        // credential lives in this file.
+        $this->smtp_host = '';
         $this->smtp_port = 587;
-        $this->smtp_username = 'support@envisagezm.com'; // Update this
-        $this->smtp_password = 'Envisage@2025'; // Update this
-        $this->from_email = 'support@envisagezm.com'; // Update this
+        $this->smtp_username = '';
+        $this->smtp_password = '';
+        $this->from_email = '';
         $this->from_name = 'ARMIS System';
         
-        // You can also load from environment variables or config file
         if (file_exists(__DIR__ . '/../config/email.php')) {
             $email_config = require __DIR__ . '/../config/email.php';
             foreach ($email_config as $key => $value) {

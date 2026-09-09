@@ -28,18 +28,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $personalData = [
                 'fName' => $_POST['fName'] ?? '',
                 'lName' => $_POST['lName'] ?? '',
-                'dob' => $_POST['dob'] ?? '',
+                'DOB' => $_POST['dob'] ?? '',
                 'gender' => $_POST['gender'] ?? '',
                 'marital_status' => $_POST['marital_status'] ?? '',
-                'phone' => $_POST['phone'] ?? '',
-                'email' => $_POST['email'] ?? '',
-                'employment_date' => $_POST['employment_date'] ?? '',
-                'combatSize' => $_POST['combatSize'] ?? '',
-                'bsize' => $_POST['bsize'] ?? '',
-                'ssize' => $_POST['ssize'] ?? '',
-                'hdress' => $_POST['hdress'] ?? ''
+                'tel' => $_POST['phone'] ?? '',
+                'email' => $_POST['email'] ?? ''
             ];
-            
+
             $result = $profileManager->updatePersonalInfo($personalData);
         }
         
@@ -51,11 +46,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 foreach ($_POST['contact_types'] as $index => $type) {
                     if (!empty($_POST['contact_values'][$index])) {
                         $contactData[] = [
-                            'type' => $type,
-                            'value' => $_POST['contact_values'][$index],
+                            'contact_type' => $type,
+                            'contact_value' => $_POST['contact_values'][$index],
                             'contact_name' => $_POST['contact_names'][$index] ?? '',
-                            'relationship' => $_POST['relationships'][$index] ?? '',
-                            'is_primary' => isset($_POST['is_primary']) && $_POST['is_primary'] == $index
+                            'relationship' => $_POST['contact_relationships'][$index] ?? '',
+                            'is_primary' => !empty($_POST['contact_primary'][$index]) ? 1 : 0
                         ];
                     }
                 }
@@ -495,44 +490,113 @@ $contactInfo = $profileManager->getContactInfo();
                 </h2>
                 <div id="contact" class="accordion-collapse collapse" data-bs-parent="#mobileFormAccordion">
                     <div class="accordion-body">
-                        <div id="contactList">
-                            <?php if (!empty($contactInfo)): ?>
-                                <?php foreach ($contactInfo as $index => $contact): ?>
-                                    <div class="contact-item <?php echo $contact->is_primary ? 'primary' : ''; ?>">
-                                        <div class="d-flex justify-content-between align-items-start mb-2">
-                                            <strong><?php echo ucfirst($contact->contact_type); ?></strong>
-                                            <?php if ($contact->is_primary): ?>
-                                                <span class="badge bg-success">Primary</span>
-                                            <?php endif; ?>
-                                        </div>
-                                        <div class="mb-1">
-                                            <i class="fas fa-phone me-2"></i><?php echo htmlspecialchars($contact->contact_value); ?>
-                                        </div>
-                                        <?php if ($contact->contact_name): ?>
-                                            <div class="mb-1">
-                                                <i class="fas fa-user me-2"></i><?php echo htmlspecialchars($contact->contact_name); ?>
-                                            </div>
-                                        <?php endif; ?>
-                                        <?php if ($contact->relationship): ?>
-                                            <div class="mb-1">
-                                                <i class="fas fa-heart me-2"></i><?php echo htmlspecialchars($contact->relationship); ?>
-                                            </div>
-                                        <?php endif; ?>
-                                    </div>
-                                <?php endforeach; ?>
-                            <?php else: ?>
-                                <div class="text-center text-muted py-4">
-                                    <i class="fas fa-phone-slash fa-3x mb-3"></i>
-                                    <p>No contact information added yet</p>
+                        <form id="contactForm">
+                            <input type="hidden" name="action" value="update_contact">
+                            <input type="hidden" name="ajax" value="1">
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <div>
+                                    <h5 class="mb-0">Contact Information</h5>
+                                    <p class="small text-muted mb-0">Add emergency, family, and other contact details.</p>
                                 </div>
-                            <?php endif; ?>
-                        </div>
-                        
-                        <div class="d-grid">
-                            <button type="button" class="btn btn-info btn-lg" onclick="openContactModal()">
-                                <i class="fas fa-plus me-2"></i>Add/Edit Contacts
-                            </button>
-                        </div>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="addContactRow()">
+                                    <i class="fas fa-plus me-1"></i>Add Contact
+                                </button>
+                            </div>
+
+                            <div id="mobileContactRows">
+                                <?php if (!empty($contactInfo)): ?>
+                                    <?php foreach ($contactInfo as $index => $contact): ?>
+                                        <div class="card card-body mb-3 p-3 contact-row">
+                                            <input type="hidden" name="contact_ids[<?= $index ?>]" value="<?= htmlspecialchars($contact->id ?? '') ?>">
+                                            <input type="hidden" name="contact_verified[<?= $index ?>]" value="<?= $contact->is_verified ? 1 : 0 ?>">
+                                            <input type="hidden" name="contact_notes[<?= $index ?>]" value="<?= htmlspecialchars($contact->notes ?? '') ?>">
+                                            <div class="row g-2">
+                                                <div class="col-12 col-md-6">
+                                                    <label class="form-label small">Type</label>
+                                                    <select class="form-select" name="contact_types[]">
+                                                        <option value="">Select Type</option>
+                                                        <option value="Mobile" <?= $contact->contact_type === 'Mobile' ? 'selected' : '' ?>>Mobile</option>
+                                                        <option value="Home" <?= $contact->contact_type === 'Home' ? 'selected' : '' ?>>Home</option>
+                                                        <option value="Work" <?= $contact->contact_type === 'Work' ? 'selected' : '' ?>>Work</option>
+                                                        <option value="Email" <?= $contact->contact_type === 'Email' ? 'selected' : '' ?>>Email</option>
+                                                        <option value="Emergency" <?= $contact->contact_type === 'Emergency' ? 'selected' : '' ?>>Emergency</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-12 col-md-6">
+                                                    <label class="form-label small">Value</label>
+                                                    <input type="text" class="form-control" name="contact_values[]" value="<?= htmlspecialchars($contact->contact_value ?? '') ?>" placeholder="Contact value">
+                                                </div>
+                                                <div class="col-12 col-md-6">
+                                                    <label class="form-label small">Name</label>
+                                                    <input type="text" class="form-control" name="contact_names[]" value="<?= htmlspecialchars($contact->contact_name ?? '') ?>" placeholder="Contact name">
+                                                </div>
+                                                <div class="col-12 col-md-6">
+                                                    <label class="form-label small">Relationship</label>
+                                                    <input type="text" class="form-control" name="contact_relationships[]" value="<?= htmlspecialchars($contact->relationship ?? '') ?>" placeholder="Relationship">
+                                                </div>
+                                                <div class="col-12 d-flex align-items-center justify-content-between">
+                                                    <div class="form-check form-switch">
+                                                        <input type="hidden" name="contact_primary[<?= $index ?>]" value="0">
+                                                        <input class="form-check-input" type="checkbox" name="contact_primary[<?= $index ?>]" value="1" <?= $contact->is_primary ? 'checked' : '' ?> id="contactPrimary<?= $index ?>">
+                                                        <label class="form-check-label" for="contactPrimary<?= $index ?>">Primary contact</label>
+                                                    </div>
+                                                    <button type="button" class="btn btn-sm btn-danger" onclick="removeContactRow(this)">
+                                                        <i class="fas fa-trash"></i> Remove
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <div class="card card-body mb-3 p-3 contact-row">
+                                        <input type="hidden" name="contact_ids[0]" value="">
+                                        <input type="hidden" name="contact_verified[0]" value="0">
+                                        <input type="hidden" name="contact_notes[0]" value="">
+                                        <div class="row g-2">
+                                            <div class="col-12 col-md-6">
+                                                <label class="form-label small">Type</label>
+                                                <select class="form-select" name="contact_types[]">
+                                                    <option value="">Select Type</option>
+                                                    <option value="Mobile">Mobile</option>
+                                                    <option value="Home">Home</option>
+                                                    <option value="Work">Work</option>
+                                                    <option value="Email">Email</option>
+                                                    <option value="Emergency">Emergency</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-12 col-md-6">
+                                                <label class="form-label small">Value</label>
+                                                <input type="text" class="form-control" name="contact_values[]" placeholder="Contact value">
+                                            </div>
+                                            <div class="col-12 col-md-6">
+                                                <label class="form-label small">Name</label>
+                                                <input type="text" class="form-control" name="contact_names[]" placeholder="Contact name">
+                                            </div>
+                                            <div class="col-12 col-md-6">
+                                                <label class="form-label small">Relationship</label>
+                                                <input type="text" class="form-control" name="contact_relationships[]" placeholder="Relationship">
+                                            </div>
+                                            <div class="col-12 d-flex align-items-center justify-content-between">
+                                                <div class="form-check form-switch">
+                                                    <input type="hidden" name="contact_primary[0]" value="0">
+                                                    <input class="form-check-input" type="checkbox" name="contact_primary[0]" value="1" id="contactPrimary0">
+                                                    <label class="form-check-label" for="contactPrimary0">Primary contact</label>
+                                                </div>
+                                                <button type="button" class="btn btn-sm btn-danger" onclick="removeContactRow(this)">
+                                                    <i class="fas fa-trash"></i> Remove
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+
+                            <div class="d-grid mt-3">
+                                <button type="submit" class="btn btn-success btn-lg">
+                                    <i class="fas fa-save me-2"></i>Save Contacts
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -550,6 +614,10 @@ $contactInfo = $profileManager->getContactInfo();
         // Form submission handling
         document.getElementById('personalForm').addEventListener('submit', handleFormSubmit);
         document.getElementById('sizingForm').addEventListener('submit', handleFormSubmit);
+        const contactForm = document.getElementById('contactForm');
+        if (contactForm) {
+            contactForm.addEventListener('submit', handleFormSubmit);
+        }
         
         function handleFormSubmit(e) {
             e.preventDefault();
@@ -613,10 +681,93 @@ $contactInfo = $profileManager->getContactInfo();
         }
         
         function openContactModal() {
-            // For now, redirect to full contact form
-            window.location.href = 'personal.php#contact-section';
+            const contactHeader = document.querySelector('#contactHeading button');
+            if (contactHeader && contactHeader.getAttribute('aria-expanded') !== 'true') {
+                contactHeader.click();
+            }
+            const form = document.getElementById('contactForm');
+            if (form) {
+                form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
         }
-        
+
+        function addContactRow(existing = null) {
+            const container = document.getElementById('mobileContactRows');
+            const index = container.querySelectorAll('.contact-row').length;
+            const row = document.createElement('div');
+            row.className = 'card card-body mb-3 p-3 contact-row';
+            const type = existing?.contact_type || '';
+            const value = existing?.contact_value || '';
+            const name = existing?.contact_name || '';
+            const relationship = existing?.relationship || '';
+            const isPrimary = existing?.is_primary ? 'checked' : '';
+
+            row.innerHTML = `
+                <input type="hidden" name="contact_ids[${index}]" value="${existing?.id || ''}">
+                <input type="hidden" name="contact_verified[${index}]" value="${existing?.is_verified ? 1 : 0}">
+                <input type="hidden" name="contact_notes[${index}]" value="${existing?.notes || ''}">
+                <div class="row g-2">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label small">Type</label>
+                        <select class="form-select" name="contact_types[]">
+                            <option value="">Select Type</option>
+                            <option value="Mobile" ${type === 'Mobile' ? 'selected' : ''}>Mobile</option>
+                            <option value="Home" ${type === 'Home' ? 'selected' : ''}>Home</option>
+                            <option value="Work" ${type === 'Work' ? 'selected' : ''}>Work</option>
+                            <option value="Email" ${type === 'Email' ? 'selected' : ''}>Email</option>
+                            <option value="Emergency" ${type === 'Emergency' ? 'selected' : ''}>Emergency</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label small">Value</label>
+                        <input type="text" class="form-control" name="contact_values[]" value="${value}" placeholder="Contact value">
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label small">Name</label>
+                        <input type="text" class="form-control" name="contact_names[]" value="${name}" placeholder="Contact name">
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label small">Relationship</label>
+                        <input type="text" class="form-control" name="contact_relationships[]" value="${relationship}" placeholder="Relationship">
+                    </div>
+                    <div class="col-12 d-flex align-items-center justify-content-between">
+                        <div class="form-check form-switch">
+                            <input type="hidden" name="contact_primary[${index}]" value="0">
+                            <input class="form-check-input" type="checkbox" name="contact_primary[${index}]" value="1" ${isPrimary} id="contactPrimary${index}">
+                            <label class="form-check-label" for="contactPrimary${index}">Primary contact</label>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-danger" onclick="removeContactRow(this)">
+                            <i class="fas fa-trash"></i> Remove
+                        </button>
+                    </div>
+                </div>
+            `;
+            container.appendChild(row);
+            reindexContactRows();
+        }
+
+        function removeContactRow(button) {
+            const row = button.closest('.contact-row');
+            if (row) {
+                row.remove();
+                reindexContactRows();
+            }
+        }
+
+        function reindexContactRows() {
+            const rows = document.querySelectorAll('#mobileContactRows .contact-row');
+            rows.forEach((row, index) => {
+                const idInput = row.querySelector('[name^="contact_ids["]');
+                const verifiedInput = row.querySelector('[name^="contact_verified["]');
+                const notesInput = row.querySelector('[name^="contact_notes["]');
+                const primaryInputs = row.querySelectorAll('[name^="contact_primary["]');
+                if (idInput) idInput.name = `contact_ids[${index}]`;
+                if (verifiedInput) verifiedInput.name = `contact_verified[${index}]`;
+                if (notesInput) notesInput.name = `contact_notes[${index}]`;
+                primaryInputs.forEach(input => input.name = `contact_primary[${index}]`);
+            });
+        }
+
         // Progressive Web App features
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/Armis2/sw.js');

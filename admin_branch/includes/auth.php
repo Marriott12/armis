@@ -10,40 +10,14 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 // --- SESSION TIMEOUT ENFORCEMENT ---
-// Set timeout duration (in seconds)
-$SESSION_TIMEOUT = 20 * 60; // 20 minutes
-
-if (isset($_SESSION['LAST_ACTIVITY'])) {
-    if (time() - $_SESSION['LAST_ACTIVITY'] > $SESSION_TIMEOUT) {
-        // Session expired due to inactivity
-        
-        // Save current URL and page state for restoration after re-login
-        $currentUrl = $_SERVER['REQUEST_URI'] ?? '';
-        $currentPath = parse_url($currentUrl, PHP_URL_PATH);
-        $currentQuery = parse_url($currentUrl, PHP_URL_QUERY);
-        
-        // Store in a temporary variable before destroying session
-        $returnUrl = $currentPath;
-        if ($currentQuery) {
-            $returnUrl .= '?' . $currentQuery;
-        }
-        
-        // Clear session data
-        session_unset();
-        session_destroy();
-        
-        // Start a new session to show timeout message
-        session_start();
-        $_SESSION['timeout_message'] = 'Your session has expired due to inactivity. Please log in again.';
-        $_SESSION['timeout_return_url'] = $returnUrl;
-        
-        // Redirect to login with timeout reason
-        header('Location: /Armis2/login.php?reason=timeout&return_url=' . urlencode($returnUrl));
-        exit();
-    }
-}
-// Update last activity timestamp
-$_SESSION['LAST_ACTIVITY'] = time();
+// FIX: this used to be its own inline 20-minute check, completely
+// independent of config.php's SESSION_TIMEOUT constant (which said 1
+// hour and wasn't enforced anywhere at all). Both now go through
+// shared/session_guard.php's single implementation, reading the one
+// SESSION_TIMEOUT value every module agrees on.
+require_once dirname(dirname(__DIR__)) . '/config.php';
+require_once dirname(dirname(__DIR__)) . '/shared/session_guard.php';
+enforceSessionTimeout();
 
 // Include configuration and utilities
 require_once __DIR__ . '/config.php';
@@ -88,10 +62,18 @@ function requireAuth() {
 }
 
 /**
- * Check if user has admin privileges
+ * Check if user has system-administrator privileges.
+ *
+ * CHANGELOG (branch-scoping upgrade): this previously checked for the
+ * literal role string 'administrator', which has never actually been a
+ * value in staff.role (the real ENUM/seed values are 'admin', 'superadmin',
+ * 'admin_branch', etc.) — so this function was effectively always false in
+ * production. Fixed to check against the roles actually seeded as full
+ * system administrators.
  */
 function isAdmin() {
-    return isset($_SESSION['role']) && $_SESSION['role'] === 'administrator';
+    $role = strtolower($_SESSION['role'] ?? '');
+    return in_array($role, ['admin', 'administrator', 'superadmin'], true);
 }
 
 /**
@@ -159,7 +141,8 @@ function initializeDefaultSession() {
         $_SESSION['fname'] = 'John';
         $_SESSION['lname'] = 'Smith';
         $_SESSION['category'] = 'Officer';
-        $_SESSION['role'] = 'administrator';
+        $_SESSION['role'] = 'admin'; // was 'administrator' — not a seeded role code, left getRoleInfo() falling back to 'user'
+        $_SESSION['branch_id'] = null;
         $_SESSION['unit'] = 'Headquarters Command';
         $_SESSION['unit_name'] = 'HQ Command';
         $_SESSION['lastLogin'] = date('Y-m-d H:i:s');

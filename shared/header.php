@@ -51,6 +51,10 @@ $formattedUserName = function_exists('formatMilitaryName')
     ? formatMilitaryName($userRank, $userRankAbbr, $userFirstName, $userLastName, $userCategory)
     : htmlspecialchars(trim($userRank . ' ' . $userFirstName . ' ' . $userLastName));
 
+if (empty($moduleStylesheet) && ($moduleName ?? '') === 'Operations') {
+    $moduleStylesheet = '/Armis2/operations/module.css';
+}
+
 // Set performance headers with fallback for REQUEST_TIME_FLOAT
 $startTime = $_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true);
 header('X-Powered-By: ARMIS v1.0');
@@ -68,6 +72,15 @@ header('X-Response-Time: ' . (microtime(true) - $startTime));
 
     <!-- Performance optimizations -->
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <?php
+    // Global CSRF token, available to every page that includes this
+    // header. shared/js/csrf-fetch.js reads this meta tag and
+    // automatically attaches it to every fetch()/AJAX POST as an
+    // X-CSRF-Token header, so individual AJAX call sites don't each
+    // need to remember to include it by hand.
+    require_once dirname(__DIR__) . '/shared/csrf.php';
+    ?>
+    <meta name="csrf-token" content="<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>">
     <link rel="dns-prefetch" href="//cdn.jsdelivr.net">
     <link rel="dns-prefetch" href="//cdnjs.cloudflare.com">
     <link rel="preconnect" href="https://cdn.jsdelivr.net">
@@ -161,6 +174,9 @@ header('X-Response-Time: ' . (microtime(true) - $startTime));
         <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
         <link href="/Armis2/shared/armis-styles.css" rel="stylesheet">
     </noscript>
+    <?php if (!empty($moduleStylesheet)): ?>
+    <link href="<?= htmlspecialchars($moduleStylesheet, ENT_QUOTES) ?>" rel="stylesheet">
+    <?php endif; ?>
     <link rel="icon" type="image/x-icon" href="/Armis2/favicon.ico">
     <link rel="apple-touch-icon" href="/Armis2/logo.png">
 
@@ -182,6 +198,8 @@ header('X-Response-Time: ' . (microtime(true) - $startTime));
             }
         }
     </script>
+    <script src="/Armis2/shared/js/csrf-fetch.js"></script>
+    <script src="/Armis2/shared/js/notification-bell.js" defer></script>
 </head>
 <body>
     <!-- Page Loader -->
@@ -202,7 +220,7 @@ header('X-Response-Time: ' . (microtime(true) - $startTime));
                 <!--<span class="system-title-short">ARMIS</span>-->
             </a>
             <?php if ($isLoggedIn): ?>
-            <button class="btn btn-outline-light d-md-none me-2" type="button" onclick="toggleSidebar()">
+            <button class="btn btn-outline-light d-sm-none me-2" type="button" onclick="toggleSidebar()">
                 <i class="fas fa-bars"></i>
             </button>
             <?php endif; ?>
@@ -303,6 +321,24 @@ header('X-Response-Time: ' . (microtime(true) - $startTime));
                                 </li>
                             <?php } ?>
                         </ul>
+                    </li>
+                    <!-- Notification bell — real, DB-backed, polls
+                         shared/notifications_api.php. Replaces the
+                         previously-disabled notification system. -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle position-relative" href="#" role="button" data-bs-toggle="dropdown" id="notificationBellToggle">
+                            <i class="fas fa-bell"></i>
+                            <span id="notificationBadge" class="badge rounded-pill bg-danger position-absolute" style="top:0; right:0; font-size:0.6rem; display:none;">0</span>
+                        </a>
+                        <div class="dropdown-menu dropdown-menu-end p-0" id="notificationDropdown" style="width:340px; max-height:420px; overflow-y:auto;">
+                            <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
+                                <strong>Notifications</strong>
+                                <button type="button" class="btn btn-link btn-sm p-0" id="markAllReadBtn">Mark all read</button>
+                            </div>
+                            <div id="notificationList">
+                                <div class="text-center text-muted py-3">Loading...</div>
+                            </div>
+                        </div>
                     </li>
                     <?php if (function_exists('hasModuleAccess') && (hasModuleAccess('admin_branch') || hasModuleAccess('admin'))): ?>
                         <li class="nav-item dropdown">

@@ -1,4 +1,4 @@
-<div class="tab-pane fade p-3 border rounded <?=isset($tabErrors['family']) ? 'show active' : ''?>" id="family" role="tabpanel">
+<div class="tab-pane fade p-3 border rounded <?=$activeTabKey === 'family' ? 'show active' : ''?>" id="family" role="tabpanel">
     <h5 class="mb-3 text-success">Family Details</h5>
         <div class="row mb-3">
         <div class="col-md-4 mb-2">
@@ -114,11 +114,16 @@ function addChild() {
 }
 
 // Remove handler for all dynamic sections
+// Guarded: this script runs inline, before shared/footer.php (which loads jQuery)
+// is reached in the document, so $ is not defined yet at parse time here.
 function addDynamicRemoveHandler(listId) {
     $('#' + listId).on('click', '.btn-remove-block', function() {
         $(this).closest('.row').remove();
     });
 }
-['childrenList','academicList','profTechList','milCourseList','tradeGroupList','awardList','appointmentList','promotionList','languageList'].forEach(addDynamicRemoveHandler);
-
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof $ !== 'undefined') {
+        ['childrenList','academicList','profTechList','milCourseList','tradeGroupList','awardList','appointmentList','promotionList','languageList'].forEach(addDynamicRemoveHandler);
+    }
+});
 </script>

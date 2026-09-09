@@ -5,6 +5,7 @@ require_once __DIR__ . '/includes/report_helpers.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once dirname(__DIR__) . '/shared/database_connection.php';
 require_once dirname(__DIR__) . '/shared/rank_levels.php';
+require_once __DIR__ . '/includes/db_helpers.php';
 requireAuth();
 
 $pageTitle = "Trade Report as at " . date('d-M-Y');
@@ -12,33 +13,8 @@ $currentPage = "reports";
 $moduleName = "Admin Branch";
 $moduleIcon = "users-cog";
 
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'],
-    ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create'],
-    ['title' => 'Promotions', 'url' => '/Armis2/admin_branch/promote_staff.php', 'icon' => 'arrow-up', 'page' => 'promotions'],
-    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medal.php', 'icon' => 'medal', 'page' => 'medals'],
-    [
-        'title' => 'Reports',
-        'icon' => 'chart-bar',
-        'page' => 'reports',
-        'children' => [
-            ['title' => 'Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php'],
-            ['title' => 'Unit List', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
-            ['title' => 'Contracts', 'url' => '/Armis2/admin_branch/reports_contract.php'],
-            ['title' => 'Courses', 'url' => '/Armis2/admin_branch/reports_courses.php'],
-            ['title' => 'Deceased', 'url' => '/Armis2/admin_branch/reports_deceased.php'],
-            ['title' => 'Gender', 'url' => '/Armis2/admin_branch/reports_gender.php'],
-            ['title' => 'Marital', 'url' => '/Armis2/admin_branch/reports_marital.php'],
-            ['title' => 'Rank', 'url' => '/Armis2/admin_branch/reports_rank.php'],
-            ['title' => 'Retired', 'url' => '/Armis2/admin_branch/reports_retired.php'],
-            ['title' => 'Trade', 'url' => '/Armis2/admin_branch/reports_trade.php'],
-            ['title' => 'Corps', 'url' => '/Armis2/admin_branch/reports_corps.php'],
-            ['title' => 'Units', 'url' => '/Armis2/admin_branch/reports_units.php'],
-        ]
-    ],
-];
+$sidebarLinks = []; // set by shared nav include below
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 $pdo = getDbConnection();
 
@@ -47,7 +23,7 @@ require_once __DIR__ . '/includes/report_helpers.php';
 
 function getTradeOptions($pdo, $unit, $rank, $cat) {
     $tradeSql = "SELECT DISTINCT trade FROM staff WHERE svcStatus = 'Active'"; // allow empty trades
-    $unitSql = "SELECT DISTINCT u.unitId, u.name FROM unit u JOIN staff s ON s.unitId = u.unitId WHERE s.svcStatus = 'Active'";
+    $unitSql = "SELECT DISTINCT u.unitId as id, u.unitId AS name FROM unit u JOIN staff s ON s.unitId = u.unitId WHERE s.svcStatus = 'Active'";
     $rankSql = "SELECT DISTINCT r.rankId as id, COALESCE(r.rankId, r.rankId) as name FROM `rank` r JOIN staff s ON s.rankId = r.rankId WHERE s.svcStatus = 'Active'";
     $catSql  = "SELECT DISTINCT s.category FROM staff s WHERE s.category IS NOT NULL AND s.category <> '' AND s.svcStatus = 'Active'";
     $trades = $pdo->query($tradeSql)->fetchAll(PDO::FETCH_COLUMN);
@@ -60,7 +36,7 @@ function getTradeOptions($pdo, $unit, $rank, $cat) {
     }
     return [
         $trades,
-        fetchAll($unitSql . " ORDER BY u.name ASC"),
+        fetchAll($unitSql . " ORDER BY u.unitId ASC"),
         fetchAll($rankSql . " ORDER BY r.rankId ASC"),
         fetchAll($catSql . " ORDER BY s.category ASC")
     ];
@@ -80,10 +56,10 @@ $search = trim($_GET['search'] ?? '');
 // Sorting functionality
 $sortable_columns = [
     'svcNo' => 's.svcNo',
-    'rank' => 'r.level',
+    'rank' => 'r.rankIndex',
     'fName' => 's.fName', 
     'lName' => 's.lName',
-    'unit' => 'u.name',
+    'unit' => 'u.unitId',
     'trade' => 's.trade',
     'category' => 's.category',
     'DOB' => 's.DOB',
@@ -93,11 +69,11 @@ $sort_col = $_GET['sort_col'] ?? '';
 $sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
 
 $params = [];
-$sql = "SELECT s.*, r.rankId as rankName, r.rankId as rankAbbr, " . getRankCategoryCaseSQL('r') . " as rankCategory, u.name as unitName, u.code as unitCode FROM staff s
+$sql = "SELECT s.*, r.rankId as rankName, r.rankId as rankAbbr, " . getRankCategoryCaseSQL('r') . " as rankCategory, u.unitId as unitName, u.unitId as unitCode FROM staff s
     LEFT JOIN `rank` r ON s.rankId = r.rankId
         LEFT JOIN unit u ON s.unitId = u.unitId
         WHERE s.svcStatus = 'Active'
-        AND (r.level >= 15 AND r.level <= 28)";
+        AND (r.rankIndex >= 15 AND r.rankIndex <= 28)";
 if (isset($_GET['trade']) && $_GET['trade'] !== '') {
     if ($filter_no_trade) {
         $sql .= " AND (s.trade IS NULL OR s.trade = '')";
@@ -119,7 +95,7 @@ if ($filter_category !== '') {
     $params[] = $filter_category;
 }
 if ($search !== '') {
-    $sql .= " AND (s.trade LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR r.rankId LIKE ? OR u.name LIKE ? OR s.category LIKE ?)";
+    $sql .= " AND (s.trade LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR r.rankId LIKE ? OR u.unitId LIKE ? OR s.category LIKE ?)";
     for ($i = 0; $i < 7; $i++) $params[] = "%$search%";
 }
 
@@ -132,7 +108,7 @@ if ($sort_col && isset($sortable_columns[$sort_col])) {
     // Personnel without ranks (NULL rankId) are listed last
     $order_clause = " ORDER BY 
         CASE WHEN s.rankId IS NULL THEN 1 ELSE 0 END,
-        r.level ASC,
+        r.rankIndex ASC,
         s.subWef ASC,
         s.tempWef ASC,
         s.attestDate ASC,
@@ -151,7 +127,7 @@ $count_sql = "SELECT COUNT(*) FROM staff s
     LEFT JOIN `rank` r ON s.rankId = r.rankId
         LEFT JOIN unit u ON s.unitId = u.unitId
     WHERE s.svcStatus = 'Active'
-    AND (r.level >= 15 AND r.level <= 28)";
+    AND (r.rankIndex >= 15 AND r.rankIndex <= 28)";
 if (isset($_GET['trade']) && $_GET['trade'] !== '') {
     if ($filter_no_trade) {
         $count_sql .= " AND (s.trade IS NULL OR s.trade = '')";
@@ -170,7 +146,7 @@ if ($filter_category !== '') {
 }
 if ($search !== '') {
     $search_esc = addslashes($search);
-    $count_sql .= " AND (s.trade LIKE '%$search_esc%' OR s.svcNo LIKE '%$search_esc%' OR s.lName LIKE '%$search_esc%' OR s.fName LIKE '%$search_esc%' OR r.rankId LIKE '%$search_esc%' OR u.name LIKE '%$search_esc%' OR s.category LIKE '%$search_esc%')";
+    $count_sql .= " AND (s.trade LIKE '%$search_esc%' OR s.svcNo LIKE '%$search_esc%' OR s.lName LIKE '%$search_esc%' OR s.fName LIKE '%$search_esc%' OR r.rankId LIKE '%$search_esc%' OR u.unitId LIKE '%$search_esc%' OR s.category LIKE '%$search_esc%')";
 }
 $total_staff = $pdo->query($count_sql)->fetchColumn();
 $total_pages = ceil($total_staff / $per_page);

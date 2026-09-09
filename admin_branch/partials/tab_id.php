@@ -1,4 +1,4 @@
-<div class="tab-pane fade p-3 border rounded <?=isset($tabErrors['id']) ? 'show active' : ''?>" id="id" role="tabpanel">
+<div class="tab-pane fade p-3 border rounded <?=$activeTabKey === 'id' ? 'show active' : ''?>" id="id" role="tabpanel">
     <h5 class="mb-3 text-success">
         <i class="fas fa-id-card"></i> Identification Documents
     </h5>
@@ -276,7 +276,8 @@
 <script>
 // Enhanced Identity Tab Validation and Functionality
 document.addEventListener('DOMContentLoaded', function() {
-    // NRC Format Validation
+    // NRC Format Validation - guarded since the two-part nrc_part1/nrc_part2
+    // inputs were removed from this tab's markup (single #nrc field remains)
     const nrcPart1 = document.getElementById('nrc_part1');
     const nrcPart2 = document.getElementById('nrc_part2');
     
@@ -295,18 +296,20 @@ document.addEventListener('DOMContentLoaded', function() {
         return false;
     }
     
-    nrcPart1.addEventListener('input', function() {
-        this.value = this.value.replace(/\D/g, '').substring(0, 6);
-        if (this.value.length === 6) {
-            nrcPart2.focus();
-        }
-        validateNRC();
-    });
-    
-    nrcPart2.addEventListener('input', function() {
-        this.value = this.value.replace(/\D/g, '').substring(0, 2);
-        validateNRC();
-    });
+    if (nrcPart1 && nrcPart2) {
+        nrcPart1.addEventListener('input', function() {
+            this.value = this.value.replace(/\D/g, '').substring(0, 6);
+            if (this.value.length === 6) {
+                nrcPart2.focus();
+            }
+            validateNRC();
+        });
+        
+        nrcPart2.addEventListener('input', function() {
+            this.value = this.value.replace(/\D/g, '').substring(0, 2);
+            validateNRC();
+        });
+    }
         // NRC validation removed
     
     // Passport Number Validation

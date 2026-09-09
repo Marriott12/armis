@@ -204,7 +204,6 @@ $roleInfo = getRoleInfo();
                    data-search-terms="training education courses certification">
                     <span class="nav-link-content">
                         <i class="fas fa-graduation-cap me-2" aria-hidden="true"></i> Training
-                        <span class="badge bg-info ms-auto">3</span>
                     </span>
                     <button class="favorite-btn" data-url="/Armis2/training/" data-title="Training" data-icon="graduation-cap" title="Add to favorites" tabindex="-1">
                         <i class="fas fa-star"></i>
@@ -217,7 +216,6 @@ $roleInfo = getRoleInfo();
                    data-search-terms="finance budget money accounting">
                     <span class="nav-link-content">
                         <i class="fas fa-calculator me-2" aria-hidden="true"></i> Finance
-                        <span class="badge bg-info ms-auto">5</span>
                     </span>
                     <button class="favorite-btn" data-url="/Armis2/finance/" data-title="Finance" data-icon="calculator" title="Add to favorites" tabindex="-1">
                         <i class="fas fa-star"></i>
@@ -298,11 +296,9 @@ $roleInfo = getRoleInfo();
             <div class="quick-access-toolbar">
                 <button class="btn btn-sm btn-outline-light" title="Notifications" id="notificationsBtn" tabindex="0">
                     <i class="fas fa-bell"></i>
-                    <span class="badge bg-danger">3</span>
                 </button>
                 <button class="btn btn-sm btn-outline-light" title="Messages" id="messagesBtn" tabindex="0">
                     <i class="fas fa-envelope"></i>
-                    <span class="badge bg-info">7</span>
                 </button>
                 <button class="btn btn-sm btn-outline-light" title="Help" id="helpBtn" tabindex="0">
                     <i class="fas fa-question-circle"></i>
@@ -656,7 +652,7 @@ $roleInfo = getRoleInfo();
     margin-left: 220px;
 }
 
-/* Mobile responsiveness - sidebar remains static but responsive */
+/* Tablet: sidebar stays visible/static, just narrower, so it is never hidden */
 @media (max-width: 768px) {
     .sidebar {
         width: 250px;
@@ -684,19 +680,26 @@ $roleInfo = getRoleInfo();
     }
 }
 
+/* Phone only: sidebar becomes off-canvas (toggled via .active), content/footer full width */
 @media (max-width: 576px) {
     .sidebar {
         width: 220px;
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+    }
+
+    .sidebar.active {
+        transform: translateX(0);
     }
     
     .content-wrapper,
     .content-wrapper.with-sidebar {
-        margin-left: 220px;
+        margin-left: 0 !important;
         padding: 10px;
     }
     
     .footer {
-        margin-left: 220px;
+        margin-left: 0 !important;
     }
     
     .sidebar-header h5 {
@@ -1006,8 +1009,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const footer = document.querySelector('.footer');
             
             sidebar.style.width = width + 'px';
-            if (contentWrapper) contentWrapper.style.marginLeft = width + 'px';
-            if (footer) footer.style.marginLeft = width + 'px';
+            if (window.innerWidth <= 576) {
+                if (contentWrapper) contentWrapper.style.marginLeft = '0px';
+                if (footer) footer.style.marginLeft = '0px';
+            } else {
+                if (contentWrapper) contentWrapper.style.marginLeft = width + 'px';
+                if (footer) footer.style.marginLeft = width + 'px';
+            }
         }
     }
 
@@ -1113,8 +1121,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const footer = document.querySelector('.footer');
             
             sidebar.style.width = width + 'px';
-            if (contentWrapper) contentWrapper.style.marginLeft = width + 'px';
-            if (footer) footer.style.marginLeft = width + 'px';
+            if (window.innerWidth <= 576) {
+                if (contentWrapper) contentWrapper.style.marginLeft = '0px';
+                if (footer) footer.style.marginLeft = '0px';
+            } else {
+                if (contentWrapper) contentWrapper.style.marginLeft = width + 'px';
+                if (footer) footer.style.marginLeft = width + 'px';
+            }
         }
     }
 

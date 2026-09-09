@@ -13,6 +13,15 @@ class DashboardService {
     private $cache = [];
     private $cacheExpiry = [];
     private $defaultCacheTTL = 300; // 5 minutes
+
+    // Rank index boundaries derived from the real `rank` table data
+    const OFFICER_MIN = 1;
+    const OFFICER_MAX = 14;   // Gen ... 2Lt (commissioned, non-recruit)
+    const OFFICER_CADET = 15; // OCdt (officer recruit)
+    const NCO_MIN = 16;
+    const NCO_MAX = 27;       // WOI ... Pte (non-recruit)
+    const RECRUIT_NCO = 28;   // Rct
+    const CIVILIAN_INDEX = 29; // Mr / Ms
     
     public function __construct($database_connection) {
         $this->db = $database_connection;
@@ -44,7 +53,7 @@ class DashboardService {
     }
 
     /**
-     * Return the appropriate rank table name (prefer canonical `rank` if present)
+     * Return the appropriate rank table name (the schema only ships `rank`)
      * @return string
      */
     private function getRankTableName() {
@@ -54,8 +63,24 @@ class DashboardService {
         if ($this->tableExists('ranks')) {
             return '`ranks`';
         }
-        // fallback to 'ranks' name to keep older code paths working
-        return '`ranks`';
+        // fallback to 'rank' name to keep older code paths working
+        return '`rank`';
+    }
+
+    /**
+     * Return the unit table name. The schema only ships `unit` (singular)
+     * with columns unitId/unitLoc/mainUnit - there is no `units` table
+     * and no code/name/id columns on it.
+     * @return string|null
+     */
+    private function getUnitTableName() {
+        if ($this->tableExists('unit')) {
+            return 'unit';
+        }
+        if ($this->tableExists('units')) {
+            return 'units';
+        }
+        return null;
     }
     
     /**
@@ -134,12 +159,14 @@ class DashboardService {
                         'active' => 0,
                         'officers' => 0,
                         'ncos' => 0,
+                        'cont' => 0,
                         'recruits' => 0,
                         'enlisted' => 0,
                         'warrant' => 0,
                         'by_gender' => ['male' => 0, 'female' => 0],
                         'officers_by_gender' => ['male' => 0, 'female' => 0],
                         'ncos_by_gender' => ['male' => 0, 'female' => 0],
+                        'cont_by_gender' => ['male' => 0, 'female' => 0],
                         'recruit_officers' => 0,
                         'recruit_ncos' => 0,
                         'recruit_officers_by_gender' => ['male' => 0, 'female' => 0],
@@ -172,13 +199,13 @@ class DashboardService {
                 } elseif ($timeFilter === '1_year') {
                     $militaryDateFilter = ' AND s.attestDate >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)';
                 }
-                // If a rank table exists use it for fine-grained breakdowns, otherwise fall back
-                // to aggregating directly from the staff table so the dashboard still shows useful data
+                // The `rank` table always ships with this schema and carries the
+                // rankIndex column used for officer/NCO/civilian classification.
                 if ($this->tableExists('rank') || $this->tableExists('ranks')) {
                     $rankTable = $this->getRankTableName();
                     $militaryQuery = "
                         SELECT 
-                            r.level,
+                            r.rankIndex,
                             r.rankId as rank_abbr,
                             r.rankId as rank_id_or_name,
                             s.svcStatus,
@@ -188,39 +215,39 @@ class DashboardService {
                         INNER JOIN " . $rankTable . " r ON s.rankId = r.rankId
                         WHERE s.svcNo IS NOT NULL 
                         AND s.svcStatus != 'Discharged'
-                        AND r.level IS NOT NULL
+                        AND r.rankIndex IS NOT NULL
                         " . $militaryDateFilter . "
-                        GROUP BY r.level, r.rankId, s.svcStatus, s.gender
+                        GROUP BY r.rankIndex, r.rankId, s.svcStatus, s.gender
                     ";
                     $stmt = $this->db->prepare($militaryQuery);
                     $stmt->execute($militaryParams);
                     $militaryResults = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
                     foreach ($militaryResults as $row) {
-                        $level = (int)($row['level'] ?? 0);
+                        $rankIndex = (int)($row['rankIndex'] ?? 0);
                         
-                        // Determine category from level
-                        // Officers: 1-13, Officer Cadets: 14, NCOs: 15-26, Recruits: 27, Civilian: 28
+                        // Determine category from rankIndex
+                        // Officers: 1-14, Officer Cadets: 15, NCOs: 16-27, Recruits: 28, Civilian: 29
                         $category = '';
                         $isRecruit = false;
                         
-                        if ($level >= 1 && $level <= 13) {
+                        if ($rankIndex >= self::OFFICER_MIN && $rankIndex <= self::OFFICER_MAX) {
                             $category = 'Officer';
                             $isRecruit = false;
-                        } elseif ($level == 14) {
+                        } elseif ($rankIndex == self::OFFICER_CADET) {
                             $category = 'Officer';
                             $isRecruit = true; // Officer Cadets are recruits
-                        } elseif ($level >= 15 && $level <= 26) {
+                        } elseif ($rankIndex >= self::NCO_MIN && $rankIndex <= self::NCO_MAX) {
                             $category = 'NCO';
                             $isRecruit = false;
-                        } elseif ($level == 27) {
+                        } elseif ($rankIndex == self::RECRUIT_NCO) {
                             $category = 'NCO';
                             $isRecruit = true; // Recruits counted as NCO recruits
-                        } elseif ($level == 28) {
+                        } elseif ($rankIndex == self::CIVILIAN_INDEX) {
                             // Civilian - skip for military stats
                             continue;
                         } else {
-                            // Unknown level - skip
+                            // Unknown rankIndex - skip
                             continue;
                         }
                         
@@ -233,12 +260,25 @@ class DashboardService {
                             $stats['military']['active'] += $count;
                         }
 
+                        // Contract Personnel: svcStatus = 'On Contract'. This is a
+                        // status that cuts across both Officer and NCO rank
+                        // categories, so it's tallied separately here rather than
+                        // being its own rankIndex bracket - a contract Officer and
+                        // a contract NCO both land in 'cont', in addition to being
+                        // counted toward their respective officers/ncos totals above.
+                        if ($status === 'on contract') {
+                            $stats['military']['cont'] += $count;
+                            if ($gender === 'male' || $gender === 'female') {
+                                $stats['military']['cont_by_gender'][$gender] += $count;
+                            }
+                        }
+
                         // Gender breakdown
                         if ($gender === 'male' || $gender === 'female') {
                             $stats['military']['by_gender'][$gender] += $count;
                         }
 
-                        // Category and recruit classification based on level (already determined above)
+                        // Category and recruit classification based on rankIndex (already determined above)
                         if ($category === 'Officer') {
                             if ($isRecruit) {
                                 $stats['military']['recruit_officers'] += $count;
@@ -266,52 +306,11 @@ class DashboardService {
                         }
                     }
                 } else {
-                    // Fallback: no rank reference table present. Aggregate officers/NCOs directly from staff.category
-                    $fallbackQuery = "
-                        SELECT
-                            s.category,
-                            s.svcStatus,
-                            s.gender,
-                            COUNT(*) as count
-                        FROM staff s
-                        WHERE s.svcNo IS NOT NULL
-                        AND s.svcStatus != 'Discharged'
-                        AND s.category IN ('Officer', 'NCO')
-                        " . $militaryDateFilter . "
-                        GROUP BY s.category, s.svcStatus, s.gender
-                    ";
-                    $stmt = $this->db->prepare($fallbackQuery);
-                    $stmt->execute();
-                    $militaryResults = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-                    foreach ($militaryResults as $row) {
-                        $category = trim($row['category']);
-                        $status = strtolower(trim($row['svcStatus'] ?? ''));
-                        $gender = strtolower(trim($row['gender'] ?? ''));
-                        $count = (int)$row['count'];
-
-                        $stats['military']['total'] += $count;
-                        if ($status === 'active') {
-                            $stats['military']['active'] += $count;
-                        }
-
-                        if ($gender === 'male' || $gender === 'female') {
-                            $stats['military']['by_gender'][$gender] += $count;
-                        }
-
-                        // Cannot reliably detect recruits without rank table; attribute all to officers/ncos
-                        if ($category === 'Officer') {
-                            $stats['military']['officers'] += $count;
-                            if ($gender === 'male' || $gender === 'female') {
-                                $stats['military']['officers_by_gender'][$gender] += $count;
-                            }
-                        } elseif ($category === 'NCO') {
-                            $stats['military']['ncos'] += $count;
-                            if ($gender === 'male' || $gender === 'female') {
-                                $stats['military']['ncos_by_gender'][$gender] += $count;
-                            }
-                        }
-                    }
+                    // Fallback: no rank reference table present. There is no `category`
+                    // column on staff in this schema, so we cannot classify personnel
+                    // at all without the rank table. Leave stats at zero rather than
+                    // querying a non-existent column.
+                    error_log('DashboardService: rank table missing - cannot classify military personnel without it');
                 }
 
                 // Civilian Personnel - Separated current staff vs new hires
@@ -324,7 +323,7 @@ class DashboardService {
                         COUNT(*) as count
                     FROM staff s
                     INNER JOIN " . $rankTable . " r ON s.rankId = r.rankId
-                    WHERE r.level = 28
+                    WHERE r.rankIndex = " . self::CIVILIAN_INDEX . "
                     AND s.svcNo IS NOT NULL
                     AND s.svcStatus = 'Active'
                     AND s.attestDate < DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
@@ -356,7 +355,7 @@ class DashboardService {
                         COUNT(*) as count
                     FROM staff s
                     INNER JOIN " . $rankTable . " r ON s.rankId = r.rankId
-                    WHERE r.level = 28
+                    WHERE r.rankIndex = " . self::CIVILIAN_INDEX . "
                     AND s.svcNo IS NOT NULL
                     AND s.svcStatus = 'Active'
                     AND s.attestDate >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
@@ -383,9 +382,9 @@ class DashboardService {
 
                 // New civilian employees by time periods
                 $timeQueries = [
-                    'new_1_month' => "SELECT COUNT(*) as count FROM staff s INNER JOIN " . $rankTable . " r ON s.rankId = r.rankId WHERE r.level = 28 AND s.svcStatus = 'Active' AND s.attestDate >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)",
-                    'new_3_months' => "SELECT COUNT(*) as count FROM staff s INNER JOIN " . $rankTable . " r ON s.rankId = r.rankId WHERE r.level = 28 AND s.svcStatus = 'Active' AND s.attestDate >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)",
-                    'new_1_year' => "SELECT COUNT(*) as count FROM staff s INNER JOIN " . $rankTable . " r ON s.rankId = r.rankId WHERE r.level = 28 AND s.svcStatus = 'Active' AND s.attestDate >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)"
+                    'new_1_month' => "SELECT COUNT(*) as count FROM staff s INNER JOIN " . $rankTable . " r ON s.rankId = r.rankId WHERE r.rankIndex = " . self::CIVILIAN_INDEX . " AND s.svcStatus = 'Active' AND s.attestDate >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)",
+                    'new_3_months' => "SELECT COUNT(*) as count FROM staff s INNER JOIN " . $rankTable . " r ON s.rankId = r.rankId WHERE r.rankIndex = " . self::CIVILIAN_INDEX . " AND s.svcStatus = 'Active' AND s.attestDate >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)",
+                    'new_1_year' => "SELECT COUNT(*) as count FROM staff s INNER JOIN " . $rankTable . " r ON s.rankId = r.rankId WHERE r.rankIndex = " . self::CIVILIAN_INDEX . " AND s.svcStatus = 'Active' AND s.attestDate >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)"
                 ];
 
                 foreach ($timeQueries as $key => $query) {
@@ -413,10 +412,11 @@ class DashboardService {
                 error_log("Enhanced Personnel Stats Error: " . $e->getMessage());
                 return [
                     'military' => [
-                        'total' => 0, 'active' => 0, 'officers' => 0, 'ncos' => 0, 'recruits' => 0, 'enlisted' => 0, 'warrant' => 0,
+                        'total' => 0, 'active' => 0, 'officers' => 0, 'ncos' => 0, 'cont' => 0, 'recruits' => 0, 'enlisted' => 0, 'warrant' => 0,
                         'by_gender' => ['male' => 0, 'female' => 0],
                         'officers_by_gender' => ['male' => 0, 'female' => 0],
                         'ncos_by_gender' => ['male' => 0, 'female' => 0],
+                        'cont_by_gender' => ['male' => 0, 'female' => 0],
                         'recruit_officers' => 0, 'recruit_ncos' => 0,
                         'recruit_officers_by_gender' => ['male' => 0, 'female' => 0],
                         'recruit_ncos_by_gender' => ['male' => 0, 'female' => 0]
@@ -436,6 +436,136 @@ class DashboardService {
     }
 
     /**
+     * Get Contract Personnel statistics (gender totals + percentages).
+     *
+     * Contract Personnel are staff whose `svcStatus` is 'On Contract' -
+     * a real, distinct enum value in this schema, separate from
+     * Active/Retired/Deceased/awol/Discharged. This cuts across both
+     * Officer and NCO rank categories (a contract hire can hold any
+     * rank), so it's queried directly off svcStatus rather than being
+     * its own rankIndex bracket.
+     */
+    public function getContractPersonnelStats() {
+        return $this->getCachedData('contract_personnel_stats', function() {
+            $stats = [
+                'total' => 0,
+                'by_gender' => ['male' => 0, 'female' => 0]
+            ];
+
+            try {
+                $sql = "
+                    SELECT s.gender, COUNT(*) as count
+                    FROM staff s
+                    WHERE s.svcStatus = 'On Contract'
+                    GROUP BY s.gender
+                ";
+                $stmt = $this->db->prepare($sql);
+                $stmt->execute();
+                $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+                foreach ($results as $row) {
+                    $gender = strtolower(trim($row['gender'] ?? ''));
+                    $count = (int)$row['count'];
+                    $stats['total'] += $count;
+                    if ($gender === 'male' || $gender === 'female') {
+                        $stats['by_gender'][$gender] += $count;
+                    }
+                }
+            } catch (PDOException $e) {
+                error_log("getContractPersonnelStats Error: " . $e->getMessage());
+            }
+
+            return $stats;
+        }, 120); // Cache for 2 minutes
+    }
+
+    /**
+     * Get detailed rank + gender breakdown for the Rank Distribution
+     * bar charts, restricted to a single personnel category.
+     *
+     * NOTE: this deliberately does NOT filter rankIndex at the SQL level
+     * (no `BETWEEN` in the WHERE clause). It fetches all non-discharged
+     * military rows joined to `rank` and buckets by rankIndex in PHP,
+     * mirroring the proven approach in getEnhancedPersonnelStats(). Some
+     * schemas store rankIndex as a non-strict-numeric column type, and an
+     * SQL-side BETWEEN against bound params can silently exclude rows in
+     * that case even though the values look numeric - bucketing after
+     * casting to (int) in PHP avoids that class of bug entirely.
+     *
+     * @param string $category 'officer' (Gen ... OCdt, rankIndex 1-15)
+     *                         or 'nco' (WOI ... Pte, rankIndex 16-27)
+     * @return array ['labels' => [...], 'male' => [...], 'female' => [...], 'total' => [...]]
+     */
+    public function getRankDistributionByCategory($category) {
+        return $this->getCachedData('rank_distribution_' . $category, function() use ($category) {
+            $result = ['labels' => [], 'male' => [], 'female' => [], 'total' => []];
+
+            if ($category !== 'officer' && $category !== 'nco') {
+                return $result;
+            }
+
+            try {
+                $rankTable = $this->getRankTableName();
+                $sql = "
+                    SELECT r.rankIndex, r.rankId as rank_name, s.gender, COUNT(*) as count
+                    FROM staff s
+                    INNER JOIN " . $rankTable . " r ON s.rankId = r.rankId
+                    WHERE s.svcStatus != 'Discharged'
+                    AND r.rankIndex IS NOT NULL
+                    GROUP BY r.rankIndex, r.rankId, s.gender
+                ";
+                $stmt = $this->db->prepare($sql);
+                $stmt->execute();
+                $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+                error_log("getRankDistributionByCategory($category): fetched " . count($rows) . " grouped rows before bucketing");
+
+                // Keep male/female counts aligned per rank, ordered by rankIndex.
+                // Bucket entirely in PHP after casting rankIndex to int, same as
+                // the working military classification logic elsewhere in this class.
+                $byRank = [];
+                foreach ($rows as $row) {
+                    $rankIndex = (int)$row['rankIndex'];
+
+                    $inOfficerRange = ($rankIndex >= self::OFFICER_MIN && $rankIndex <= self::OFFICER_CADET);
+                    $inNcoRange = ($rankIndex >= self::NCO_MIN && $rankIndex <= self::NCO_MAX);
+
+                    if ($category === 'officer' && !$inOfficerRange) {
+                        continue;
+                    }
+                    if ($category === 'nco' && !$inNcoRange) {
+                        continue;
+                    }
+
+                    $gender = strtolower(trim($row['gender'] ?? ''));
+                    $count = (int)$row['count'];
+
+                    if (!isset($byRank[$rankIndex])) {
+                        $byRank[$rankIndex] = ['label' => $row['rank_name'], 'male' => 0, 'female' => 0];
+                    }
+                    if ($gender === 'male' || $gender === 'female') {
+                        $byRank[$rankIndex][$gender] += $count;
+                    }
+                }
+
+                ksort($byRank);
+                foreach ($byRank as $data) {
+                    $result['labels'][] = $data['label'];
+                    $result['male'][] = $data['male'];
+                    $result['female'][] = $data['female'];
+                    $result['total'][] = $data['male'] + $data['female'];
+                }
+
+                error_log("getRankDistributionByCategory($category): bucketed into " . count($byRank) . " ranks");
+            } catch (PDOException $e) {
+                error_log("getRankDistributionByCategory Error: " . $e->getMessage());
+            }
+
+            return $result;
+        }, 300); // Cache for 5 minutes
+    }
+
+    /**
      * Get detailed personnel list by category
      * @param string $category - Category filter: 'military-officers', 'military-ncos', 'civilian-current', 'civilian-new'
      * @param string|null $gender - Optional gender filter: 'male' or 'female'
@@ -449,22 +579,20 @@ class DashboardService {
             switch ($category) {
                 case 'military-officers':
                     // Officers (excluding recruits/cadets)
-                    // This database uses `unit` table with columns unitId and code
-                    $unitTable = $this->tableExists('unit') ? 'unit' : ($this->tableExists('units') ? 'units' : null);
-                    $unitSelect = $unitTable ? "COALESCE(u.code, u.unitId, '') as unit" : "'' as unit";
+                    // This database's `unit` table only has unitId/unitLoc/mainUnit (no code/name)
+                    $unitTable = $this->getUnitTableName();
+                    $unitSelect = $unitTable ? "COALESCE(u.unitId, '') as unit" : "s.unitId as unit";
                     $unitJoin = $unitTable ? "LEFT JOIN {$unitTable} u ON s.unitId = u.unitId" : "";
 
-                    // If rank table exists, join to get human-friendly rank fields; otherwise fall back to staff.rankId
-                    if ($this->tableExists('rank') || $this->tableExists('ranks')) {
-                        $rankTable = $this->getRankTableName();
-                        $query = "
+                    $rankTable = $this->getRankTableName();
+                    $query = "
                 SELECT 
-                    s.id,
+                    s.svcNo,
                     s.svcNo,
                     s.fName,
                     s.lName,
-                    COALESCE(r.rankId, r.rankId) as `rank`,
-                    COALESCE(r.rankId, '') as rank_abbr,
+                    r.rankId as `rank`,
+                    r.rankId as rank_abbr,
                     s.gender,
                     s.svcStatus as status,
                     s.attestDate as joined_date,
@@ -473,66 +601,35 @@ class DashboardService {
                             INNER JOIN " . $rankTable . " r ON s.rankId = r.rankId
                             {$unitJoin}
                             WHERE s.svcStatus != 'Discharged'
-                            AND r.level >= 1 AND r.level <= 13
+                            AND r.rankIndex BETWEEN " . self::OFFICER_MIN . " AND " . self::OFFICER_MAX . "
                         ";
-                    } else {
-                        // Fallback when no rank table: use staff.category and return rankId as rank
-                        $query = "
-                SELECT
-                    s.id,
-                    s.svcNo,
-                    s.fName,
-                    s.lName,
-                    s.rankId as `rank`,
-                    '' as rank_abbr,
-                    s.gender,
-                    s.svcStatus as status,
-                    s.attestDate as joined_date,
-                    {$unitSelect}
-                            FROM staff s
-                            {$unitJoin}
-                            WHERE s.svcNo != ''
-                            AND s.svcStatus != 'Discharged'
-                            AND s.category = 'Officer'
-                        ";
-                    }
                     if ($gender) {
                         $query .= " AND s.gender = :gender";
                         $params['gender'] = $gender;
                     }
-                    // Order differently depending on whether rank table is available
-                    if ($this->tableExists('rank') || $this->tableExists('ranks')) {
-                        $query .= " ORDER BY 
-                            r.level ASC,
+                    $query .= " ORDER BY 
+                            r.rankIndex ASC,
                             s.subWef ASC,
                             s.tempWef ASC,
                             s.attestDate ASC,
                             s.svcNo ASC";
-                    } else {
-                        $query .= " ORDER BY 
-                            s.subWef ASC,
-                            s.tempWef ASC,
-                            s.attestDate ASC,
-                            s.svcNo ASC";
-                    }
                     break;
                     
                 case 'military-ncos':
                     // NCOs (excluding recruits)
-                    $unitTable = $this->tableExists('unit') ? 'unit' : ($this->tableExists('units') ? 'units' : null);
-                    $unitSelect = $unitTable ? "COALESCE(u.code, u.unitId, '') as unit" : "'' as unit";
+                    $unitTable = $this->getUnitTableName();
+                    $unitSelect = $unitTable ? "COALESCE(u.unitId, '') as unit" : "s.unitId as unit";
                     $unitJoin = $unitTable ? "LEFT JOIN {$unitTable} u ON s.unitId = u.unitId" : "";
 
-                    if ($this->tableExists('rank') || $this->tableExists('ranks')) {
-                        $rankTable = $this->getRankTableName();
-                        $query = "
+                    $rankTable = $this->getRankTableName();
+                    $query = "
                     SELECT 
-                        s.id,
+                        s.svcNo,
                         s.svcNo,
                         s.fName,
                         s.lName,
-                        COALESCE(r.rankId, r.rankId) as `rank`,
-                        COALESCE(r.rankId, '') as rank_abbr,
+                        r.rankId as `rank`,
+                        r.rankId as rank_abbr,
                         s.gender,
                         s.svcStatus as status,
                         s.attestDate as joined_date,
@@ -542,156 +639,112 @@ class DashboardService {
                                 {$unitJoin}
                                 WHERE s.svcNo != ''
                                 AND s.svcStatus != 'Discharged'
-                                AND r.level >= 15 AND r.level <= 26
+                                AND r.rankIndex BETWEEN " . self::NCO_MIN . " AND " . self::NCO_MAX . "
                             ";
-                    } else {
-                        // Fallback when no rank table: use staff.category and return rankId as rank
-                        $query = "
-                SELECT
-                    s.id,
-                    s.svcNo,
-                    s.fName,
-                    s.lName,
-                    s.rankId as `rank`,
-                    '' as rank_abbr,
-                    s.gender,
-                    s.svcStatus as status,
-                    s.attestDate as joined_date,
-                    {$unitSelect}
-                            FROM staff s
-                            {$unitJoin}
-                            WHERE s.svcNo != ''
-                            AND s.svcStatus != 'Discharged'
-                            AND s.category = 'NCO'
-                        ";
-                    }
                     if ($gender) {
                         $query .= " AND s.gender = :gender";
                         $params['gender'] = $gender;
                     }
-                    // Order differently depending on whether rank table is available
-                    if ($this->tableExists('rank') || $this->tableExists('ranks')) {
-                        $query .= " ORDER BY 
-                            r.level ASC,
+                    $query .= " ORDER BY 
+                            r.rankIndex ASC,
                             s.subWef ASC,
                             s.tempWef ASC,
                             s.attestDate ASC,
                             s.svcNo ASC";
-                    } else {
-                        $query .= " ORDER BY 
-                            s.subWef ASC,
-                            s.tempWef ASC,
-                            s.attestDate ASC,
-                            s.svcNo ASC";
-                    }
                     break;
                     
                 case 'civilian-current':
-                    // Current civilian staff
-                    // Prefer rank abbreviations if rank table exists to provide consistent Rank column
-                    if ($this->tableExists('rank') || $this->tableExists('ranks')) {
-                        $rankTable = $this->getRankTableName();
-                        $query = "
-                            SELECT
-                                s.id,
-                                s.svcNo,
-                                s.fName,
-                                s.lName,
-                                COALESCE(r.rankId, r.rankId) as `rank`,
-                                COALESCE(r.rankId, '') as rank_abbr,
-                                s.gender,
-                                s.svcStatus as status,
-                                s.attestDate as joined_date,
-                                COALESCE(u.code, u.name, '') as unit
-                            FROM staff s
-                            LEFT JOIN " . $rankTable . " r ON s.rankId = r.rankId
-                            LEFT JOIN unit u ON s.unitId = u.unitId
-                            WHERE s.category = 'CE'
-                            AND s.svcStatus = 'Active'
-                        ";
-                    } else {
-                        $query = "
-                            SELECT 
-                                s.id,
-                                s.svcNo,
-                                s.fName,
-                                s.lName,
-                                '' as `rank`,
-                                '' as rank_abbr,
-                                s.gender,
-                                s.svcStatus as status,
-                                s.attestDate as joined_date,
-                                COALESCE(u.code, '') as unit
-                            FROM staff s
-                            LEFT JOIN unit u ON s.unitId = u.unitId
-                            WHERE s.category = 'CE'
-                            AND s.svcStatus = 'Active'
-                        ";
-                    }
+                    // Current civilian staff (rankIndex 29 = Mr/Ms)
+                    $unitTable = $this->getUnitTableName();
+                    $unitSelect = $unitTable ? "COALESCE(u.unitId, '') as unit" : "s.unitId as unit";
+                    $unitJoin = $unitTable ? "LEFT JOIN {$unitTable} u ON s.unitId = u.unitId" : "";
+                    $rankTable = $this->getRankTableName();
+                    $query = "
+                        SELECT
+                            s.svcNo,
+                            s.svcNo,
+                            s.fName,
+                            s.lName,
+                            r.rankId as `rank`,
+                            r.rankId as rank_abbr,
+                            s.gender,
+                            s.svcStatus as status,
+                            s.attestDate as joined_date,
+                            {$unitSelect}
+                        FROM staff s
+                        LEFT JOIN " . $rankTable . " r ON s.rankId = r.rankId
+                        {$unitJoin}
+                        WHERE r.rankIndex = " . self::CIVILIAN_INDEX . "
+                        AND s.svcStatus = 'Active'
+                    ";
                     if ($gender) {
                         $query .= " AND s.gender = :gender";
                         $params['gender'] = $gender;
                     }
-                    // Use uniform seniority ordering when rank table exists, otherwise fallback to service number ordering
-                    if ($this->tableExists('rank') || $this->tableExists('ranks')) {
-                        $query .= " ORDER BY r.level ASC, s.subWef ASC, s.tempWef ASC, s.attestDate ASC, s.svcNo ASC";
-                    } else {
-                        $query .= " ORDER BY s.svcNo ASC";
-                    }
+                    $query .= " ORDER BY r.rankIndex ASC, s.subWef ASC, s.tempWef ASC, s.attestDate ASC, s.svcNo ASC";
                     break;
                     
                 case 'civilian-new':
                     // New civilian hires (within last year)
-                    if ($this->tableExists('rank') || $this->tableExists('ranks')) {
-                        $rankTable = $this->getRankTableName();
-                        $query = "
-                            SELECT
-                                s.id,
-                                s.svcNo,
-                                s.fName,
-                                s.lName,
-                                COALESCE(r.rankId, r.rankId) as `rank`,
-                                COALESCE(r.rankId, '') as rank_abbr,
-                                s.gender,
-                                s.svcStatus as status,
-                                s.attestDate as joined_date,
-                                COALESCE(u.code, u.name, '') as unit
-                            FROM staff s
-                            LEFT JOIN " . $rankTable . " r ON s.rankId = r.rankId
-                            LEFT JOIN unit u ON s.unitId = u.unitId
-                            WHERE s.category = 'CE'
-                            AND s.svcStatus = 'Active'
-                            AND s.attestDate >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
-                        ";
-                    } else {
-                        $query = "
-                            SELECT 
-                                s.id,
-                                s.svcNo,
-                                s.fName,
-                                s.lName,
-                                '' as `rank`,
-                                '' as rank_abbr,
-                                s.gender,
-                                s.svcStatus as status,
-                                s.attestDate as joined_date,
-                                COALESCE(u.code, '') as unit
-                            FROM staff s
-                            LEFT JOIN unit u ON s.unitId = u.unitId
-                            WHERE s.category = 'CE'
-                            AND s.svcStatus = 'Active'
-                            AND s.attestDate >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
-                        ";
-                    }
+                    $unitTable = $this->getUnitTableName();
+                    $unitSelect = $unitTable ? "COALESCE(u.unitId, '') as unit" : "s.unitId as unit";
+                    $unitJoin = $unitTable ? "LEFT JOIN {$unitTable} u ON s.unitId = u.unitId" : "";
+                    $rankTable = $this->getRankTableName();
+                    $query = "
+                        SELECT
+                            s.svcNo,
+                            s.svcNo,
+                            s.fName,
+                            s.lName,
+                            r.rankId as `rank`,
+                            r.rankId as rank_abbr,
+                            s.gender,
+                            s.svcStatus as status,
+                            s.attestDate as joined_date,
+                            {$unitSelect}
+                        FROM staff s
+                        LEFT JOIN " . $rankTable . " r ON s.rankId = r.rankId
+                        {$unitJoin}
+                        WHERE r.rankIndex = " . self::CIVILIAN_INDEX . "
+                        AND s.svcStatus = 'Active'
+                        AND s.attestDate >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
+                    ";
                     if ($gender) {
                         $query .= " AND s.gender = :gender";
                         $params['gender'] = $gender;
                     }
-                    if ($this->tableExists('rank') || $this->tableExists('ranks')) {
-                        $query .= " ORDER BY r.level ASC, s.subWef ASC, s.tempWef ASC, s.attestDate ASC, s.svcNo ASC";
-                    } else {
-                        $query .= " ORDER BY s.svcNo ASC";
+                    $query .= " ORDER BY r.rankIndex ASC, s.subWef ASC, s.tempWef ASC, s.attestDate ASC, s.svcNo ASC";
+                    break;
+
+                case 'military-all':
+                    // All military personnel (officers + NCOs, any rankIndex 1-28)
+                    $unitTable = $this->getUnitTableName();
+                    $unitSelect = $unitTable ? "COALESCE(u.unitId, '') as unit" : "s.unitId as unit";
+                    $unitJoin = $unitTable ? "LEFT JOIN {$unitTable} u ON s.unitId = u.unitId" : "";
+                    $rankTable = $this->getRankTableName();
+                    $query = "
+                        SELECT
+                            s.svcNo,
+                            s.svcNo,
+                            s.fName,
+                            s.lName,
+                            r.rankId as `rank`,
+                            r.rankId as rank_abbr,
+                            s.gender,
+                            s.svcStatus as status,
+                            s.attestDate as joined_date,
+                            {$unitSelect}
+                        FROM staff s
+                        INNER JOIN " . $rankTable . " r ON s.rankId = r.rankId
+                        {$unitJoin}
+                        WHERE s.svcStatus != 'Discharged'
+                        AND r.rankIndex BETWEEN " . self::OFFICER_MIN . " AND " . self::RECRUIT_NCO . "
+                    ";
+                    if ($gender) {
+                        $query .= " AND s.gender = :gender";
+                        $params['gender'] = $gender;
                     }
+                    $query .= " ORDER BY r.rankIndex ASC, s.attestDate ASC, s.svcNo ASC";
                     break;
                     
                 default:
@@ -740,12 +793,14 @@ class DashboardService {
                     'active' => 0,
                     'officers' => 0,
                     'ncos' => 0,
+                    'cont' => 0,
                     'recruits' => 0,
                     'enlisted' => 0,
                     'warrant' => 0,
                     'by_gender' => ['male' => 0, 'female' => 0],
                     'officers_by_gender' => ['male' => 0, 'female' => 0],
                     'ncos_by_gender' => ['male' => 0, 'female' => 0],
+                    'cont_by_gender' => ['male' => 0, 'female' => 0],
                     'recruit_officers' => 0,
                     'recruit_ncos' => 0,
                     'recruit_officers_by_gender' => ['male' => 0, 'female' => 0],
@@ -774,7 +829,7 @@ class DashboardService {
             $rankTable = $this->getRankTableName();
             $militaryQuery = "
                 SELECT 
-                    r.level,
+                    r.rankIndex,
                     r.rankId as rank_abbr,
                     r.rankId as rank_id_or_name,
                     s.svcStatus,
@@ -784,9 +839,9 @@ class DashboardService {
                 INNER JOIN " . $rankTable . " r ON s.rankId = r.rankId
                 WHERE s.svcNo IS NOT NULL 
                 AND s.svcStatus != 'Discharged'
-                AND r.level IS NOT NULL
+                AND r.rankIndex IS NOT NULL
                 AND s.attestDate BETWEEN :startDate AND :endDate
-                GROUP BY r.level, r.rankId, s.svcStatus, s.gender
+                GROUP BY r.rankIndex, r.rankId, s.svcStatus, s.gender
             ";
             
             $stmt = $this->db->prepare($militaryQuery);
@@ -797,28 +852,28 @@ class DashboardService {
             $militaryResults = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
             foreach ($militaryResults as $row) {
-                $level = (int)$row['level'];
+                $rankIndex = (int)$row['rankIndex'];
                 $status = strtolower(trim($row['svcStatus']));
                 $gender = strtolower(trim($row['gender']));
                 $count = (int)$row['count'];
                 
-                // Skip civilian employees (level 28)
-                if ($level === 28) {
+                // Skip civilian employees (rankIndex 29)
+                if ($rankIndex === self::CIVILIAN_INDEX) {
                     continue;
                 }
                 
-                // Determine category and recruit status based on level
+                // Determine category and recruit status based on rankIndex
                 $category = '';
                 $isRecruit = false;
                 
-                if ($level >= 1 && $level <= 13) {
+                if ($rankIndex >= self::OFFICER_MIN && $rankIndex <= self::OFFICER_MAX) {
                     $category = 'Officer';
-                } elseif ($level === 14) {
+                } elseif ($rankIndex === self::OFFICER_CADET) {
                     $category = 'Officer';
                     $isRecruit = true;
-                } elseif ($level >= 15 && $level <= 26) {
+                } elseif ($rankIndex >= self::NCO_MIN && $rankIndex <= self::NCO_MAX) {
                     $category = 'NCO';
-                } elseif ($level === 27) {
+                } elseif ($rankIndex === self::RECRUIT_NCO) {
                     $category = 'NCO';
                     $isRecruit = true;
                 }
@@ -827,6 +882,15 @@ class DashboardService {
                 
                 if ($status === 'active') {
                     $stats['military']['active'] += $count;
+                }
+
+                // Contract Personnel: svcStatus = 'On Contract', cuts across
+                // Officer/NCO rank categories, tallied separately.
+                if ($status === 'on contract') {
+                    $stats['military']['cont'] += $count;
+                    if ($gender === 'male' || $gender === 'female') {
+                        $stats['military']['cont_by_gender'][$gender] += $count;
+                    }
                 }
                 
                 // Gender breakdown
@@ -870,7 +934,7 @@ class DashboardService {
                     COUNT(*) as count
                 FROM staff s
                 INNER JOIN " . $rankTable . " r ON s.rankId = r.rankId
-                WHERE r.level = 28
+                WHERE r.rankIndex = " . self::CIVILIAN_INDEX . "
                 AND s.svcNo IS NOT NULL
                 AND s.attestDate BETWEEN :startDate AND :endDate
                 GROUP BY s.svcStatus, s.gender
@@ -899,7 +963,7 @@ class DashboardService {
                 }
             }
 
-            // Retirees filtered by retirement date
+            // Retirees filtered by attestDate (no separate retirement-date column exists)
             $retireesQuery = "
                 SELECT COUNT(*) as count
                 FROM staff s
@@ -965,19 +1029,23 @@ class DashboardService {
             $kpis['new_recruits'] = (int)($result['new_recruits'] ?? 0);
             error_log("DashboardService: New recruits = " . $kpis['new_recruits']);
             
-            // Personnel on Leave/Training - using svcStatus variations
+            // Personnel on Leave/Training - the staff.svcStatus enum in this schema is
+            // only ('Active','Retired','Deceased','awol','Discharged'); there is no
+            // separate Leave/Training/Secondment status, so 'awol' is the closest
+            // available proxy for "not on normal active duty".
             $stmt = $this->db->prepare("
                 SELECT COUNT(*) as on_leave 
                 FROM staff 
-                WHERE svcStatus IN ('On Leave', 'Training', 'Secondment', 'Leave')
+                WHERE svcStatus = 'awol'
                 AND svcNo IS NOT NULL
             ");
             $stmt->execute();
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
             $kpis['on_leave_training'] = (int)($result['on_leave'] ?? 0);
-            error_log("DashboardService: On leave/training = " . $kpis['on_leave_training']);
+            error_log("DashboardService: On leave/training (awol proxy) = " . $kpis['on_leave_training']);
             
-            // Performance Average (if performance reviews exist)
+            // Performance Average (no staff_performance_reviews table exists in this
+            // schema, so this always falls back to the calculated estimate below)
             try {
                 $stmt = $this->db->prepare("
                     SELECT AVG(overallRating) as avg_performance 
@@ -988,7 +1056,7 @@ class DashboardService {
                 $result = $stmt->fetch(PDO::FETCH_ASSOC);
                 $kpis['performance_avg'] = $result['avg_performance'] ? round($result['avg_performance'], 1) : 88.5;
             } catch (PDOException $e) {
-                // Table might not exist, use calculated performance based on personnel data
+                // Table doesn't exist in this schema, use calculated performance based on personnel data
                 $kpis['performance_avg'] = $this->calculateBasePerformance();
             }
             
@@ -1035,11 +1103,11 @@ class DashboardService {
             $stmt->execute();
             $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
+            // svcStatus enum in this schema: Active, Retired, Deceased, awol, Discharged
             $distribution = [
                 'active' => 0,
-                'leave' => 0,
-                'training' => 0,
-                'deployed' => 0,
+                'awol' => 0,
+                'deceased' => 0,
                 'retired' => 0
             ];
             
@@ -1047,13 +1115,11 @@ class DashboardService {
                 $status = strtolower($row['svcStatus']);
                 if ($status === 'active') {
                     $distribution['active'] = (int)$row['count'];
-                } elseif (in_array($status, ['on leave', 'leave'])) {
-                    $distribution['leave'] += (int)$row['count'];
-                } elseif (in_array($status, ['training', 'secondment'])) {
-                    $distribution['training'] += (int)$row['count'];
-                } elseif ($status === 'deployed') {
-                    $distribution['deployed'] = (int)$row['count'];
-                } elseif (in_array($status, ['retired', 'pension'])) {
+                } elseif ($status === 'awol') {
+                    $distribution['awol'] += (int)$row['count'];
+                } elseif ($status === 'deceased') {
+                    $distribution['deceased'] += (int)$row['count'];
+                } elseif ($status === 'retired') {
                     $distribution['retired'] += (int)$row['count'];
                 }
             }
@@ -1062,7 +1128,7 @@ class DashboardService {
             
         } catch (PDOException $e) {
             error_log("Personnel Distribution Error: " . $e->getMessage());
-            return ['active' => 0, 'leave' => 0, 'training' => 0, 'deployed' => 0, 'retired' => 0];
+            return ['active' => 0, 'awol' => 0, 'deceased' => 0, 'retired' => 0];
         }
         }, 300); // Cache for 5 minutes
     }
@@ -1081,7 +1147,9 @@ class DashboardService {
                     'corps_distribution' => $this->getCorpsDistribution(),
                     'service_length_distribution' => $this->getServiceLengthDistribution(),
                     'marital_status_distribution' => $this->getMaritalStatusDistribution(),
-                    'military_vs_civilian' => $this->getMilitaryCivilianDistribution()
+                    'military_vs_civilian' => $this->getMilitaryCivilianDistribution(),
+                    'officer_rank_distribution' => $this->getRankDistributionByCategory('officer'),
+                    'soldier_rank_distribution' => $this->getRankDistributionByCategory('nco')
                 ];
                 
                 return $analytics;
@@ -1096,7 +1164,9 @@ class DashboardService {
                     'corps_distribution' => [],
                     'service_length_distribution' => [],
                     'marital_status_distribution' => [],
-                    'military_vs_civilian' => []
+                    'military_vs_civilian' => [],
+                    'officer_rank_distribution' => [],
+                    'soldier_rank_distribution' => []
                 ];
             }
         }, 300);
@@ -1111,13 +1181,13 @@ class DashboardService {
             $sql = "
                 SELECT 
                     r.rankId as rank_name,
-                    r.level,
+                    r.rankIndex,
                     COUNT(*) as count
                 FROM staff s
                 INNER JOIN " . $rankTable . " r ON s.rankId = r.rankId
                 WHERE s.svcStatus != 'Discharged' AND s.svcNo IS NOT NULL
-                GROUP BY r.rankId, r.level
-                ORDER BY r.level ASC
+                GROUP BY r.rankId, r.rankIndex
+                ORDER BY r.rankIndex ASC
             ";
             $stmt = $this->db->prepare($sql);
             $stmt->execute();
@@ -1140,15 +1210,15 @@ class DashboardService {
             ];
             
             foreach ($results as $row) {
-                $level = (int)$row['level'];
+                $rankIndex = (int)$row['rankIndex'];
                 $category = 'civilian'; // default
                 
-                // Determine category from level
-                if ($level >= 1 && $level <= 14) {
+                // Determine category from rankIndex (1-15 officer incl. cadet, 16-28 NCO incl. recruit, 29 civilian)
+                if ($rankIndex >= self::OFFICER_MIN && $rankIndex <= self::OFFICER_CADET) {
                     $category = 'officer';
-                } elseif ($level >= 15 && $level <= 27) {
+                } elseif ($rankIndex >= self::NCO_MIN && $rankIndex <= self::RECRUIT_NCO) {
                     $category = 'nco';
-                } elseif ($level === 28) {
+                } elseif ($rankIndex === self::CIVILIAN_INDEX) {
                     $category = 'civilian';
                 }
                 
@@ -1171,14 +1241,18 @@ class DashboardService {
      */
     private function getUnitDistribution() {
         try {
+            $unitTable = $this->getUnitTableName();
+            if (!$unitTable) {
+                return ['labels' => [], 'data' => [], 'colors' => []];
+            }
             $stmt = $this->db->prepare("
                 SELECT 
-                    u.name as unit_name,
+                    u.unitId as unit_name,
                     COUNT(*) as count
                 FROM staff s
-                INNER JOIN units u ON s.unitId = u.id
+                INNER JOIN {$unitTable} u ON s.unitId = u.unitId
                 WHERE s.svcStatus != 'Discharged' AND s.svcNo IS NOT NULL
-                GROUP BY u.id, u.name
+                GROUP BY u.unitId
                 ORDER BY count DESC
                 LIMIT 15
             ");
@@ -1255,20 +1329,21 @@ class DashboardService {
      */
     private function getAgeDistribution() {
         try {
+            // staff uses `DOB`, not `dateOfBirth`
             $stmt = $this->db->prepare("
                 SELECT 
                     CASE 
-                        WHEN TIMESTAMPDIFF(YEAR, dateOfBirth, CURDATE()) < 25 THEN 'Under 25'
-                        WHEN TIMESTAMPDIFF(YEAR, dateOfBirth, CURDATE()) BETWEEN 25 AND 34 THEN '25-34'
-                        WHEN TIMESTAMPDIFF(YEAR, dateOfBirth, CURDATE()) BETWEEN 35 AND 44 THEN '35-44'
-                        WHEN TIMESTAMPDIFF(YEAR, dateOfBirth, CURDATE()) BETWEEN 45 AND 54 THEN '45-54'
-                        WHEN TIMESTAMPDIFF(YEAR, dateOfBirth, CURDATE()) >= 55 THEN '55+'
+                        WHEN TIMESTAMPDIFF(YEAR, DOB, CURDATE()) < 25 THEN 'Under 25'
+                        WHEN TIMESTAMPDIFF(YEAR, DOB, CURDATE()) BETWEEN 25 AND 34 THEN '25-34'
+                        WHEN TIMESTAMPDIFF(YEAR, DOB, CURDATE()) BETWEEN 35 AND 44 THEN '35-44'
+                        WHEN TIMESTAMPDIFF(YEAR, DOB, CURDATE()) BETWEEN 45 AND 54 THEN '45-54'
+                        WHEN TIMESTAMPDIFF(YEAR, DOB, CURDATE()) >= 55 THEN '55+'
                         ELSE 'Unknown'
                     END as age_group,
                     COUNT(*) as count
                 FROM staff 
                 WHERE svcStatus != 'Discharged' AND svcNo IS NOT NULL
-                AND dateOfBirth IS NOT NULL
+                AND DOB IS NOT NULL
                 GROUP BY age_group
                 ORDER BY age_group
             ");
@@ -1404,14 +1479,15 @@ class DashboardService {
      */
     private function getMaritalStatusDistribution() {
         try {
+            // staff uses `marital`, not `maritalStatus`
             $stmt = $this->db->prepare("
                 SELECT 
-                    maritalStatus,
+                    marital,
                     COUNT(*) as count
                 FROM staff 
                 WHERE svcStatus != 'Discharged' AND svcNo IS NOT NULL
-                AND maritalStatus IS NOT NULL AND maritalStatus != ''
-                GROUP BY maritalStatus
+                AND marital IS NOT NULL AND marital != ''
+                GROUP BY marital
                 ORDER BY count DESC
             ");
             $stmt->execute();
@@ -1432,7 +1508,7 @@ class DashboardService {
             ];
             
             foreach ($results as $row) {
-                $status = ucfirst(strtolower($row['maritalStatus']));
+                $status = ucfirst(strtolower($row['marital']));
                 $distribution['labels'][] = $status;
                 $distribution['data'][] = (int)$row['count'];
                 $distribution['colors'][] = $maritalColors[$status] ?? '#6c757d';
@@ -1451,16 +1527,17 @@ class DashboardService {
      */
     private function getMilitaryCivilianDistribution() {
         try {
+            $rankTable = $this->getRankTableName();
             $stmt = $this->db->prepare("
                 SELECT 
                     CASE 
-                        WHEN r.level >= 1 AND r.level <= 27 THEN 'Military'
-                        WHEN r.level = 28 THEN 'Civilian'
+                        WHEN r.rankIndex BETWEEN " . self::OFFICER_MIN . " AND " . self::RECRUIT_NCO . " THEN 'Military'
+                        WHEN r.rankIndex = " . self::CIVILIAN_INDEX . " THEN 'Civilian'
                         ELSE 'Other'
                     END as personnel_type,
                     COUNT(*) as count
                 FROM staff s
-                LEFT JOIN rank r ON s.rankId = r.rankId
+                LEFT JOIN " . $rankTable . " r ON s.rankId = r.rankId
                 WHERE s.svcStatus != 'Discharged' AND s.svcNo IS NOT NULL
                 GROUP BY personnel_type
             ");
@@ -1545,6 +1622,8 @@ class DashboardService {
     
     /**
      * Get performance metrics by quarter
+     * (No staff_performance_reviews table exists in this schema, so this
+     * always falls through to the estimated performance figures.)
      */
     public function getPerformanceMetrics() {
         return $this->getCachedData('performance_metrics', function() {
@@ -1594,24 +1673,22 @@ class DashboardService {
     }
     
     /**
-     * Get recent activities from activity logs
+     * Get recent activities from the activity log
+     * (uses the real `activity_log` table: id, user_id, username, action,
+     * details, ip_address, user_agent, createdAt - there is no
+     * `staff_activity_log` table and no svcNo/rank linkage available)
      */
     public function getRecentActivities($limit = 10) {
         return $this->getCachedData('recent_activities_'.$limit, function() use ($limit) {
             try {
                 $stmt = $this->db->prepare("
                 SELECT 
-                    sa.action,
-                    sa.description,
-                    sa.createdAt,
-                    s.svcNo,
-                    s.fName,
-                    s.lName,
-                    r.rankId as rank
-                FROM staff_activity_log sa
-                LEFT JOIN staff s ON sa.svcNo = s.id
-                LEFT JOIN rank r ON s.rankId = r.id
-                ORDER BY sa.createdAt DESC
+                    action,
+                    details,
+                    createdAt,
+                    username
+                FROM activity_log
+                ORDER BY createdAt DESC
                 LIMIT :limit
             ");
             $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
@@ -1622,10 +1699,10 @@ class DashboardService {
             foreach ($results as $row) {
                 $activities[] = [
                     'action' => $row['action'],
-                    'description' => $row['description'],
-                    'staff_name' => trim($row['fName'] . ' ' . $row['lName']),
-                    'rank' => $row['rank'],
-                    'svcNo' => $row['svcNo'],
+                    'description' => $row['details'],
+                    'staff_name' => $row['username'],
+                    'rank' => '',
+                    'svcNo' => '',
                     'time' => $this->timeAgo($row['createdAt'])
                 ];
             }
@@ -1642,6 +1719,7 @@ class DashboardService {
     
     /**
      * Calculate trends by comparing current period with previous
+     * (staff has no `enlistmentDate`/`createdAt`; use attestDate/dateCreated)
      */
     private function calculateTrends() {
         try {
@@ -1650,10 +1728,10 @@ class DashboardService {
             // Current month vs previous month for new recruits
             $stmt = $this->db->prepare("
                 SELECT 
-                    COUNT(CASE WHEN enlistmentDate >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH) THEN 1 END) as current_month,
-                    COUNT(CASE WHEN enlistmentDate >= DATE_SUB(CURDATE(), INTERVAL 2 MONTH) AND enlistmentDate < DATE_SUB(CURDATE(), INTERVAL 1 MONTH) THEN 1 END) as previous_month
+                    COUNT(CASE WHEN attestDate >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH) THEN 1 END) as current_month,
+                    COUNT(CASE WHEN attestDate >= DATE_SUB(CURDATE(), INTERVAL 2 MONTH) AND attestDate < DATE_SUB(CURDATE(), INTERVAL 1 MONTH) THEN 1 END) as previous_month
                 FROM staff 
-                WHERE svcStatus != 'Discharged' AND enlistmentDate IS NOT NULL
+                WHERE svcStatus != 'Discharged' AND attestDate IS NOT NULL
             ");
             $stmt->execute();
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -1662,11 +1740,11 @@ class DashboardService {
             $previous = (int)$result['previous_month'];
             $trends['new_recruits'] = $previous > 0 ? round((($current - $previous) / $previous) * 100, 1) : 0;
             
-            // Calculate total personnel trend
+            // Calculate total personnel trend based on when records were created
             $stmt = $this->db->prepare("
                 SELECT 
-                    COUNT(CASE WHEN createdAt >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH) THEN 1 END) as current_total,
-                    COUNT(CASE WHEN createdAt >= DATE_SUB(CURDATE(), INTERVAL 2 MONTH) AND createdAt < DATE_SUB(CURDATE(), INTERVAL 1 MONTH) THEN 1 END) as previous_total
+                    COUNT(CASE WHEN dateCreated >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH) THEN 1 END) as current_total,
+                    COUNT(CASE WHEN dateCreated >= DATE_SUB(CURDATE(), INTERVAL 2 MONTH) AND dateCreated < DATE_SUB(CURDATE(), INTERVAL 1 MONTH) THEN 1 END) as previous_total
                 FROM staff 
                 WHERE svcStatus != 'Discharged'
             ");
@@ -1772,21 +1850,23 @@ class DashboardService {
     
     /**
      * Get detailed personnel data for drill-down
+     * (staff has no `id`/`fname`/`lname`/`rankID`/`unit`/`enlistmentDate`;
+     * use svcNo/fName/lName/rankId/unitId/attestDate)
      */
     public function getPersonnelDetails() {
         try {
             $stmt = $this->db->prepare("
                 SELECT 
-                    id,
-                    CONCAT(fname, ' ', lname) as full_name,
-                    rankID as rank,
+                    svcNo,
+                    CONCAT(fName, ' ', lName) as full_name,
+                    rankId as `rank`,
                     svcStatus as status,
-                    unit,
-                    enlistmentDate as enlisted,
-                    ROUND(DATEDIFF(CURDATE(), enlistmentDate) / 365.25, 1) as years_service
+                    unitId as unit,
+                    attestDate as enlisted,
+                    ROUND(DATEDIFF(CURDATE(), attestDate) / 365.25, 1) as years_service
                 FROM staff 
                 WHERE svcStatus IS NOT NULL 
-                ORDER BY enlistmentDate DESC
+                ORDER BY attestDate DESC
                 LIMIT 50
             ");
             $stmt->execute();
@@ -1806,10 +1886,10 @@ class DashboardService {
             
             // By rank
             $stmt = $this->db->prepare("
-                SELECT rankID as rank, COUNT(*) as count 
+                SELECT rankId as `rank`, COUNT(*) as count 
                 FROM staff 
                 WHERE svcStatus = 'Active' 
-                GROUP BY rankID 
+                GROUP BY rankId 
                 ORDER BY count DESC
             ");
             $stmt->execute();
@@ -1817,10 +1897,10 @@ class DashboardService {
             
             // By unit
             $stmt = $this->db->prepare("
-                SELECT unit, COUNT(*) as count 
+                SELECT unitId as unit, COUNT(*) as count 
                 FROM staff 
-                WHERE svcStatus = 'Active' AND unit IS NOT NULL
-                GROUP BY unit 
+                WHERE svcStatus = 'Active' AND unitId IS NOT NULL
+                GROUP BY unitId 
                 ORDER BY count DESC
             ");
             $stmt->execute();
@@ -1829,14 +1909,14 @@ class DashboardService {
             // Recent recruits
             $stmt = $this->db->prepare("
                 SELECT 
-                    CONCAT(fname, ' ', lname) as name,
-                    rankID as rank,
-                    unit,
-                    enlistmentDate
+                    CONCAT(fName, ' ', lName) as name,
+                    rankId as `rank`,
+                    unitId as unit,
+                    attestDate as enlistmentDate
                 FROM staff 
                 WHERE svcStatus = 'Active' 
-                AND enlistmentDate >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)
-                ORDER BY enlistmentDate DESC
+                AND attestDate >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)
+                ORDER BY attestDate DESC
                 LIMIT 10
             ");
             $stmt->execute();
@@ -1851,6 +1931,8 @@ class DashboardService {
     
     /**
      * Get recruitment analytics for drill-down
+     * (staff has no `recruitment_source` column, so `by_source` cannot be
+     * derived from this schema and is returned empty)
      */
     public function getRecruitmentAnalytics() {
         try {
@@ -1859,29 +1941,19 @@ class DashboardService {
             // Monthly recruitment for last 12 months
             $stmt = $this->db->prepare("
                 SELECT 
-                    DATE_FORMAT(enlistmentDate, '%Y-%m') as month,
+                    DATE_FORMAT(attestDate, '%Y-%m') as month,
                     COUNT(*) as recruits
                 FROM staff 
-                WHERE enlistmentDate >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+                WHERE attestDate >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
                 AND svcStatus != 'Discharged'
-                GROUP BY DATE_FORMAT(enlistmentDate, '%Y-%m')
+                GROUP BY DATE_FORMAT(attestDate, '%Y-%m')
                 ORDER BY month
             ");
             $stmt->execute();
             $data['monthly_trend'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
-            // Recruitment source (if available)
-            $stmt = $this->db->prepare("
-                SELECT 
-                    COALESCE(recruitment_source, 'Direct') as source,
-                    COUNT(*) as count
-                FROM staff 
-                WHERE enlistmentDate >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-                GROUP BY recruitment_source
-                ORDER BY count DESC
-            ");
-            $stmt->execute();
-            $data['by_source'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            // No recruitment_source column exists in this schema
+            $data['by_source'] = [];
             
             return $data;
         } catch (PDOException $e) {
@@ -1900,12 +1972,12 @@ class DashboardService {
             // Performance by rank
             $stmt = $this->db->prepare("
                 SELECT 
-                    rankID as rank,
+                    rankId as `rank`,
                     COUNT(*) as personnel_count,
-                    ROUND(AVG(DATEDIFF(CURDATE(), enlistmentDate) / 365.25), 1) as avg_years_service
+                    ROUND(AVG(DATEDIFF(CURDATE(), attestDate) / 365.25), 1) as avg_years_service
                 FROM staff 
                 WHERE svcStatus = 'Active'
-                GROUP BY rankID
+                GROUP BY rankId
                 ORDER BY personnel_count DESC
             ");
             $stmt->execute();
@@ -1915,15 +1987,15 @@ class DashboardService {
             $stmt = $this->db->prepare("
                 SELECT 
                     CASE 
-                        WHEN DATEDIFF(CURDATE(), enlistmentDate) / 365.25 < 1 THEN 'Less than 1 year'
-                        WHEN DATEDIFF(CURDATE(), enlistmentDate) / 365.25 < 5 THEN '1-5 years'
-                        WHEN DATEDIFF(CURDATE(), enlistmentDate) / 365.25 < 10 THEN '5-10 years'
-                        WHEN DATEDIFF(CURDATE(), enlistmentDate) / 365.25 < 20 THEN '10-20 years'
+                        WHEN DATEDIFF(CURDATE(), attestDate) / 365.25 < 1 THEN 'Less than 1 year'
+                        WHEN DATEDIFF(CURDATE(), attestDate) / 365.25 < 5 THEN '1-5 years'
+                        WHEN DATEDIFF(CURDATE(), attestDate) / 365.25 < 10 THEN '5-10 years'
+                        WHEN DATEDIFF(CURDATE(), attestDate) / 365.25 < 20 THEN '10-20 years'
                         ELSE '20+ years'
                     END as service_bracket,
                     COUNT(*) as count
                 FROM staff 
-                WHERE svcStatus = 'Active' AND enlistmentDate IS NOT NULL
+                WHERE svcStatus = 'Active' AND attestDate IS NOT NULL
                 GROUP BY service_bracket
                 ORDER BY 
                     CASE service_bracket
@@ -1951,13 +2023,13 @@ class DashboardService {
         try {
             $stmt = $this->db->prepare("
                 SELECT 
-                    unit,
+                    unitId as unit,
                     COUNT(*) as strength,
                     SUM(CASE WHEN svcStatus = 'Active' THEN 1 ELSE 0 END) as active_count,
                     AVG(CASE WHEN svcStatus = 'Active' THEN 1 ELSE 0 END) * 100 as readiness
                 FROM staff 
-                WHERE unit IS NOT NULL
-                GROUP BY unit
+                WHERE unitId IS NOT NULL
+                GROUP BY unitId
                 ORDER BY strength DESC
                 LIMIT 10
             ");
@@ -1971,62 +2043,20 @@ class DashboardService {
     
     /**
      * Get alerts and notifications
+     * (staff has no `contractEndDate` or `lastTrainingDate` columns in this
+     * schema, so these alert types cannot be computed; returns no alerts
+     * rather than querying columns that don't exist. The Alerts panel is
+     * already disabled in the dashboard UI.)
      */
     public function getAlerts() {
-        try {
-            $alerts = [];
-            
-            // Contract renewals due
-            $stmt = $this->db->prepare("
-                SELECT COUNT(*) as count
-                FROM staff 
-                WHERE svcStatus = 'Active' 
-                AND contractEndDate IS NOT NULL 
-                AND contractEndDate <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
-            ");
-            $stmt->execute();
-            $contractRenewals = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if ($contractRenewals['count'] > 0) {
-                $alerts[] = [
-                    'type' => 'high',
-                    'icon' => 'exclamation-triangle',
-                    'title' => 'Contract Renewals Due',
-                    'message' => $contractRenewals['count'] . ' personnel contracts expire within 30 days',
-                    'time' => 'Today'
-                ];
-            }
-            
-            // Training due (simulate based on service length)
-            $stmt = $this->db->prepare("
-                SELECT COUNT(*) as count
-                FROM staff 
-                WHERE svcStatus = 'Active' 
-                AND DATEDIFF(CURDATE(), lastTrainingDate) > 365
-                OR lastTrainingDate IS NULL
-            ");
-            $stmt->execute();
-            $trainingDue = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if ($trainingDue['count'] > 0) {
-                $alerts[] = [
-                    'type' => 'medium',
-                    'icon' => 'calendar',
-                    'title' => 'Training Due',
-                    'message' => $trainingDue['count'] . ' personnel require annual training',
-                    'time' => '2 days ago'
-                ];
-            }
-            
-            return $alerts;
-        } catch (PDOException $e) {
-            error_log("Alerts error: " . $e->getMessage());
-            return [];
-        }
+        return [];
     }
     
     /**
      * Get upcoming events
+     * (no `events` table exists in this schema; the try/catch below always
+     * falls through to the default placeholder events, which is the
+     * intended graceful behaviour)
      */
     public function getUpcomingEvents() {
         try {
@@ -2089,13 +2119,13 @@ class DashboardService {
         try {
             $stats = [];
             
-            // New personnel (last 30 days)
-            $stmt = $this->db->prepare("SELECT COUNT(*) as count FROM staff WHERE enlistmentDate >= DATE_SUB(NOW(), INTERVAL 30 DAY)");
+            // New personnel (last 30 days) - use attestDate, not enlistmentDate
+            $stmt = $this->db->prepare("SELECT COUNT(*) as count FROM staff WHERE attestDate >= DATE_SUB(NOW(), INTERVAL 30 DAY)");
             $stmt->execute();
             $stats['new_personnel'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'] ?? 0;
             
-            // Pending assignments (staff without units)
-            $stmt = $this->db->prepare("SELECT COUNT(*) as count FROM staff WHERE unit IS NULL OR unit = ''");
+            // Pending assignments (staff without units) - use unitId, not unit
+            $stmt = $this->db->prepare("SELECT COUNT(*) as count FROM staff WHERE unitId IS NULL OR unitId = ''");
             $stmt->execute();
             $stats['pending_assignments'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'] ?? 0;
             
@@ -2126,17 +2156,16 @@ class DashboardService {
         try {
             $stmt = $this->db->prepare("
                 SELECT 
-                    unit as unitName,
+                    unitId as unitName,
                     COUNT(*) as personnel_count,
-                    ROUND((COUNT(*) / (SELECT COUNT(*) FROM staff WHERE unit IS NOT NULL)) * 100, 1) as strength_percentage,
+                    ROUND((COUNT(*) / (SELECT COUNT(*) FROM staff WHERE unitId IS NOT NULL)) * 100, 1) as strength_percentage,
                     ROUND(AVG(CASE 
                         WHEN svcStatus = 'Active' THEN 95 
-                        WHEN svcStatus = 'Training' THEN 75 
                         ELSE 60 
                     END), 0) as readiness_percentage
                 FROM staff 
-                WHERE unit IS NOT NULL AND unit != '' 
-                GROUP BY unit 
+                WHERE unitId IS NOT NULL AND unitId != '' 
+                GROUP BY unitId 
                 ORDER BY personnel_count DESC 
                 LIMIT 6
             ");
@@ -2150,18 +2179,18 @@ class DashboardService {
     
     /**
      * Get dynamic recent activities
+     * (activity_log has no `module` or `user_name`/`status` columns)
      */
     public function getDynamicRecentActivities() {
         try {
             $stmt = $this->db->prepare("
                 SELECT 
                     action as activity_type,
-                    description,
-                    user_name,
+                    details as description,
+                    username as user_name,
                     createdAt,
                     'completed' as status
                 FROM activity_log 
-                WHERE module = 'admin_branch' 
                 ORDER BY createdAt DESC 
                 LIMIT 8
             ");
@@ -2175,6 +2204,8 @@ class DashboardService {
     
     /**
      * Get personnel categories summary
+     * (staff has no `category` column - classification is derived from the
+     * `rank` table's rankIndex instead)
      */
     public function getPersonnelCategories() {
         $categories = [
@@ -2183,20 +2214,28 @@ class DashboardService {
             'CE' => 0,
             'Retired' => 0
         ];
-        $stmt = $this->db->prepare("SELECT category, svcStatus, COUNT(*) as count FROM staff GROUP BY category, svcStatus");
+        $rankTable = $this->getRankTableName();
+        $stmt = $this->db->prepare("
+            SELECT r.rankIndex, s.svcStatus, COUNT(*) as count
+            FROM staff s
+            LEFT JOIN " . $rankTable . " r ON s.rankId = r.rankId
+            GROUP BY r.rankIndex, s.svcStatus
+        ");
         $stmt->execute();
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
         foreach ($results as $row) {
-            $cat = strtolower(trim($row['category'] ?? ''));
+            $rankIndex = (int)($row['rankIndex'] ?? 0);
             $status = strtolower(trim($row['svcStatus'] ?? ''));
+            $count = (int)$row['count'];
+
             if ($status === 'retired') {
-                $categories['Retired'] += (int)$row['count'];
-            } elseif ($cat === 'officer') {
-                $categories['Officer'] += (int)$row['count'];
-            } elseif ($cat === 'nco') {
-                $categories['NCO'] += (int)$row['count'];
-            } elseif ($cat === 'ce') {
-                $categories['CE'] += (int)$row['count'];
+                $categories['Retired'] += $count;
+            } elseif ($rankIndex >= self::OFFICER_MIN && $rankIndex <= self::OFFICER_CADET) {
+                $categories['Officer'] += $count;
+            } elseif ($rankIndex >= self::NCO_MIN && $rankIndex <= self::RECRUIT_NCO) {
+                $categories['NCO'] += $count;
+            } elseif ($rankIndex === self::CIVILIAN_INDEX) {
+                $categories['CE'] += $count;
             }
         }
         return $categories;
@@ -2204,6 +2243,8 @@ class DashboardService {
     
     /**
      * Get gender statistics for all categories
+     * (staff has no `category` column - classification is derived from the
+     * `rank` table's rankIndex instead)
      */
     public function getGenderStats() {
         $stats = [
@@ -2212,25 +2253,33 @@ class DashboardService {
             'CE' => ['male' => 0, 'female' => 0],
             'Retired' => ['male' => 0, 'female' => 0]
         ];
-        $stmt = $this->db->prepare("SELECT category, svcStatus, gender, COUNT(*) as count FROM staff GROUP BY category, svcStatus, gender");
+        $rankTable = $this->getRankTableName();
+        $stmt = $this->db->prepare("
+            SELECT r.rankIndex, s.svcStatus, s.gender, COUNT(*) as count
+            FROM staff s
+            LEFT JOIN " . $rankTable . " r ON s.rankId = r.rankId
+            GROUP BY r.rankIndex, s.svcStatus, s.gender
+        ");
         $stmt->execute();
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
         foreach ($results as $row) {
-            $cat = strtolower(trim($row['category'] ?? ''));
+            $rankIndex = (int)($row['rankIndex'] ?? 0);
             $status = strtolower(trim($row['svcStatus'] ?? ''));
             $gender = strtolower(trim($row['gender'] ?? ''));
+            $count = (int)$row['count'];
+
             if ($status === 'retired') {
-                if ($gender === 'male') $stats['Retired']['male'] += (int)$row['count'];
-                if ($gender === 'female') $stats['Retired']['female'] += (int)$row['count'];
-            } elseif ($cat === 'officer') {
-                if ($gender === 'male') $stats['Officer']['male'] += (int)$row['count'];
-                if ($gender === 'female') $stats['Officer']['female'] += (int)$row['count'];
-            } elseif ($cat === 'nco') {
-                if ($gender === 'male') $stats['NCO']['male'] += (int)$row['count'];
-                if ($gender === 'female') $stats['NCO']['female'] += (int)$row['count'];
-            } elseif ($cat === 'ce') {
-                if ($gender === 'male') $stats['CE']['male'] += (int)$row['count'];
-                if ($gender === 'female') $stats['CE']['female'] += (int)$row['count'];
+                if ($gender === 'male') $stats['Retired']['male'] += $count;
+                if ($gender === 'female') $stats['Retired']['female'] += $count;
+            } elseif ($rankIndex >= self::OFFICER_MIN && $rankIndex <= self::OFFICER_CADET) {
+                if ($gender === 'male') $stats['Officer']['male'] += $count;
+                if ($gender === 'female') $stats['Officer']['female'] += $count;
+            } elseif ($rankIndex >= self::NCO_MIN && $rankIndex <= self::RECRUIT_NCO) {
+                if ($gender === 'male') $stats['NCO']['male'] += $count;
+                if ($gender === 'female') $stats['NCO']['female'] += $count;
+            } elseif ($rankIndex === self::CIVILIAN_INDEX) {
+                if ($gender === 'male') $stats['CE']['male'] += $count;
+                if ($gender === 'female') $stats['CE']['female'] += $count;
             }
         }
         return $stats;
@@ -2238,6 +2287,7 @@ class DashboardService {
     
     /**
      * Get real-time updates for dashboard
+     * (activity_log has no `time` column - use createdAt)
      * @return array Updates since last check
      */
     public function getRealtimeUpdates() {
@@ -2247,10 +2297,10 @@ class DashboardService {
         
         try {
             $stmt = $this->db->prepare("
-                SELECT 'activity' as update_type, id, action, time 
+                SELECT 'activity' as update_type, id, action, createdAt as time 
                 FROM activity_log 
-                WHERE time > ?
-                ORDER BY time DESC
+                WHERE createdAt > ?
+                ORDER BY createdAt DESC
                 LIMIT 10
             ");
             $stmt->execute([$lastCheck]);
@@ -2298,8 +2348,9 @@ class DashboardService {
                 $sumXX += $i * $i;
             }
             
-            $slope = ($n * $sumXY - $sumX * $sumY) / ($n * $sumXX - $sumX * $sumX);
-            $intercept = ($sumY - $slope * $sumX) / $n;
+            $denominator = ($n * $sumXX - $sumX * $sumX);
+            $slope = $denominator != 0 ? ($n * $sumXY - $sumX * $sumY) / $denominator : 0;
+            $intercept = $n > 0 ? ($sumY - $slope * $sumX) / $n : 0;
             
             // Predict next 3 months
             $predictions = [];
@@ -2317,7 +2368,9 @@ class DashboardService {
     
     /**
      * Get predictive attrition analytics
-     * Analyzes patterns to predict potential staff attrition
+     * Analyzes patterns to predict potential staff attrition.
+     * (staff has no `dischargeDate` column - the closest equivalent is
+     * `dateSeparated`. The `unit` table has no `name`/`id` columns.)
      */
     public function getPredictiveAttrition() {
         return $this->getCachedData('predictive_attrition', function() {
@@ -2325,13 +2378,13 @@ class DashboardService {
                 // Calculate attrition rate trends
                 $stmt = $this->db->prepare("
                     SELECT 
-                        YEAR(dischargeDate) as year,
-                        MONTH(dischargeDate) as month,
+                        YEAR(dateSeparated) as year,
+                        MONTH(dateSeparated) as month,
                         COUNT(*) as count
                     FROM staff
-                    WHERE dischargeDate IS NOT NULL 
-                    AND dischargeDate >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
-                    GROUP BY YEAR(dischargeDate), MONTH(dischargeDate)
+                    WHERE dateSeparated IS NOT NULL 
+                    AND dateSeparated >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
+                    GROUP BY YEAR(dateSeparated), MONTH(dateSeparated)
                     ORDER BY year DESC, month DESC
                 ");
                 $stmt->execute();
@@ -2354,20 +2407,24 @@ class DashboardService {
                 $attritionRate = $totalActive > 0 ? ($avgMonthlyAttrition / $totalActive) * 100 : 0;
                 
                 // Identify high-risk factors (example: units with high attrition)
-                $stmtRisk = $this->db->prepare("
-                    SELECT 
-                        u.name as unit_name,
-                        COUNT(*) as attrition_count
-                    FROM staff s
-                    LEFT JOIN unit u ON s.unitId = u.unitId
-                    WHERE s.dischargeDate >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
-                    GROUP BY u.id, u.name
-                    HAVING attrition_count > 3
-                    ORDER BY attrition_count DESC
-                    LIMIT 5
-                ");
-                $stmtRisk->execute();
-                $highRiskUnits = $stmtRisk->fetchAll(PDO::FETCH_ASSOC);
+                $unitTable = $this->getUnitTableName();
+                $highRiskUnits = [];
+                if ($unitTable) {
+                    $stmtRisk = $this->db->prepare("
+                        SELECT 
+                            u.unitId as unit_name,
+                            COUNT(*) as attrition_count
+                        FROM staff s
+                        LEFT JOIN {$unitTable} u ON s.unitId = u.unitId
+                        WHERE s.dateSeparated >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+                        GROUP BY u.unitId
+                        HAVING attrition_count > 3
+                        ORDER BY attrition_count DESC
+                        LIMIT 5
+                    ");
+                    $stmtRisk->execute();
+                    $highRiskUnits = $stmtRisk->fetchAll(PDO::FETCH_ASSOC);
+                }
                 
                 return [
                     'attrition_rate' => round($attritionRate, 2),
@@ -2396,23 +2453,26 @@ class DashboardService {
     }
     
     /**
-     * Get training completion rates and statistics
+     * Get training completion / course statistics
+     * (there is no `staff_courses` table - the real table is `staff_course`
+     * with columns svcNo, instId, cseId, qualification, cseStart, cseEnd,
+     * grade, result, isHighest, authID; there is no completion_date/endDate
+     * pair, so "Completed" vs "In Progress" is derived from cseEnd/result)
      */
     public function getTrainingCompletionRates() {
         return $this->getCachedData('training_completion', function() {
             try {
-                // Get completed vs ongoing courses
                 $stmt = $this->db->prepare("
                     SELECT 
                         CASE 
-                            WHEN completion_date IS NOT NULL THEN 'Completed'
-                            WHEN endDate < CURDATE() THEN 'Overdue'
+                            WHEN cseEnd IS NOT NULL AND cseEnd <= CURDATE() AND result IS NOT NULL AND result != '' THEN 'Completed'
+                            WHEN cseEnd IS NOT NULL AND cseEnd < CURDATE() THEN 'Overdue'
                             ELSE 'In Progress'
                         END as status,
                         COUNT(*) as count
-                    FROM staff_courses
+                    FROM staff_course
                     WHERE svcNo IN (
-                        SELECT id FROM staff WHERE LOWER(TRIM(svcStatus)) = 'active'
+                        SELECT svcNo FROM staff WHERE LOWER(TRIM(svcStatus)) = 'active'
                     )
                     GROUP BY status
                 ");
@@ -2433,16 +2493,17 @@ class DashboardService {
                 
                 $completionRate = $total > 0 ? ($completed / $total) * 100 : 0;
                 
-                // Get most popular courses
+                // Get most popular courses (by qualification, since there is no course_name column)
                 $stmtPopular = $this->db->prepare("
                     SELECT 
-                        course_name,
+                        qualification as course_name,
                         COUNT(*) as enrollment_count
-                    FROM staff_courses
+                    FROM staff_course
                     WHERE svcNo IN (
-                        SELECT id FROM staff WHERE LOWER(TRIM(svcStatus)) = 'active'
+                        SELECT svcNo FROM staff WHERE LOWER(TRIM(svcStatus)) = 'active'
                     )
-                    GROUP BY course_name
+                    AND qualification IS NOT NULL AND qualification != ''
+                    GROUP BY qualification
                     ORDER BY enrollment_count DESC
                     LIMIT 5
                 ");
@@ -2507,6 +2568,9 @@ class DashboardService {
     
     /**
      * Enhanced function to get personnel table data with pagination and filtering
+     * (staff has no `id`/`name`/`unit`/`category` columns - use svcNo,
+     * fName/lName, unitId; there is no category column at all so that
+     * filter has been removed)
      */
     public function getPersonnelTableData($params) {
         // Extract and sanitize parameters
@@ -2520,13 +2584,8 @@ class DashboardService {
             $filterParams = [];
             
             if (!empty($params['rank'])) {
-                $filters[] = "rank = ?";
+                $filters[] = "rankId = ?";
                 $filterParams[] = $params['rank'];
-            }
-            
-            if (!empty($params['category'])) {
-                $filters[] = "category = ?";
-                $filterParams[] = $params['category'];
             }
             
             // Build WHERE clause
@@ -2546,7 +2605,7 @@ class DashboardService {
             $total = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
             
             // Get data with pagination
-            $sql = "SELECT id, name, rank, svcNo, category, unit FROM staff $where ORDER BY name LIMIT ? OFFSET ?";
+            $sql = "SELECT svcNo, CONCAT(fName, ' ', lName) as name, rankId as `rank`, svcNo as service_no, unitId as unit FROM staff $where ORDER BY fName LIMIT ? OFFSET ?";
             $stmt = $this->db->prepare($sql);
             
             // Combine parameters
@@ -2580,6 +2639,9 @@ class DashboardService {
     
     /**
      * Enhanced export functionality with multiple formats
+     * (staff has no `name`/`rank`/`category`/`unit` columns as such - use
+     * fName/lName, rankId, unitId; activity_log has no `staff`/`time`
+     * columns - use username/createdAt)
      */
     public function exportDashboardData($params) {
         $format = strtolower($params['format'] ?? 'csv');
@@ -2590,10 +2652,10 @@ class DashboardService {
             // Get data based on export type
             switch ($exportType) {
                 case 'personnel':
-                    $sql = "SELECT name, rank, svcNo, category, unit FROM staff ORDER BY name";
+                    $sql = "SELECT CONCAT(fName, ' ', lName) as name, rankId as `rank`, svcNo, unitId as unit FROM staff ORDER BY fName";
                     break;
                 case 'activities':
-                    $sql = "SELECT action, description, staff, time FROM activity_log ORDER BY time DESC LIMIT 1000";
+                    $sql = "SELECT action, details as description, username as staff, createdAt as time FROM activity_log ORDER BY createdAt DESC LIMIT 1000";
                     break;
                 default:
                     return ['success' => false, 'message' => 'Invalid export type'];
@@ -2673,7 +2735,23 @@ class DashboardService {
     }
     
     /**
-     * Enhanced widget state management with user preferences
+     * Enhanced widget state management with user preferences.
+     * NOTE: there is no `user_widget_state` table in this schema. Adding
+     * one is a database migration, not a code fix, so this method is left
+     * functional-but-inert: it will safely return a "Database error"
+     * response via the existing try/catch rather than crash the request.
+     * Create the table below (outside of PHP) if this feature is needed:
+     *
+     *   CREATE TABLE user_widget_state (
+     *     user_id INT NOT NULL,
+     *     widget_id VARCHAR(100) NOT NULL,
+     *     state TEXT,
+     *     position VARCHAR(50),
+     *     visible TINYINT(1) DEFAULT 1,
+     *     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+     *     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+     *     PRIMARY KEY (user_id, widget_id)
+     *   );
      */
     public function handleWidgetState($params) {
         // Get user ID from session
@@ -2753,7 +2831,6 @@ class DashboardService {
  * 
  * The following functions were removed as they are no longer used:
  * - getDashboardDataJSON() - Replaced by dashboard_api.php
- * - getPersonnelTableData() - Now a class method
  * - getActivitiesTableData() - Undefined, not implemented
  * - getAlertsTableData() - Undefined, not implemented
  * - getDrilldownData() - Undefined, not implemented
@@ -2770,5 +2847,17 @@ class DashboardService {
  * - All methods are properly implemented as class methods above
  * - Uses PDO consistently throughout
  * - Proper error handling and caching implemented
+ * - Column/table names now match the real `armis1` schema (rankIndex not
+ *   level; rank not ranks; unit not units; unit.unitId not unit.code/name;
+ *   activity_log not staff_activity_log; staff_course not staff_courses;
+ *   attestDate not enlistmentDate; DOB not dateOfBirth; marital not
+ *   maritalStatus; svcNo/fName/lName not id/name; no `category` column on
+ *   staff at all - officer/NCO/civilian status is derived from the rank
+ *   table's rankIndex)
+ * - Added getContractPersonnelStats() and getRankDistributionByCategory()
+ *   for the Contract Personnel card and the Officer/Soldier Rank
+ *   Distribution bar charts. getContractPersonnelStats() assumes a
+ *   `contract` table exists; verify/adjust its column names against your
+ *   real schema.
  */
 ?>

@@ -24,15 +24,7 @@ $moduleName = "Operations";
 $moduleIcon = "shield-alt";
 $currentPage = "resources";
 
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/operations/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Mission Planning', 'url' => '/Armis2/operations/missions.php', 'icon' => 'map-marked-alt', 'page' => 'missions'],
-    ['title' => 'Deployments', 'url' => '/Armis2/operations/deployments.php', 'icon' => 'plane', 'page' => 'deployments'],
-    ['title' => 'Resource Allocation', 'url' => '/Armis2/operations/resources.php', 'icon' => 'boxes', 'page' => 'resources'],
-    ['title' => 'Status Reports', 'url' => '/Armis2/operations/reports.php', 'icon' => 'clipboard-list', 'page' => 'reports'],
-    ['title' => 'Field Operations', 'url' => '/Armis2/operations/field.php', 'icon' => 'crosshairs', 'page' => 'field'],
-    ['title' => 'Setup Database', 'url' => '/Armis2/operations/setup_database.php', 'icon' => 'database', 'page' => 'setup']
-];
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';
@@ -41,36 +33,21 @@ $manager = new OperationsManager();
 
 // Handle Add Resource
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resource_name']) && !isset($_POST['edit_id'])) {
-    $resourceData = [
-        'resource_name' => $_POST['resource_name'],
-        'resource_type' => $_POST['resource_type'],
-        'quantity' => $_POST['quantity'],
-        'status' => $_POST['status'],
-        'description' => $_POST['description']
-    ];
-    $operationsManager->addResource($resourceData);
+    $manager->addResource($_POST['resource_name'], $_POST['resource_type'], (int) $_POST['quantity'], $_POST['status']);
     header('Location: resources.php');
     exit;
 }
 
 // Handle Edit Resource
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_id'])) {
-    $resourceData = [
-        'resource_id' => $_POST['edit_id'],
-        'resource_name' => $_POST['resource_name'],
-        'resource_type' => $_POST['resource_type'],
-        'quantity' => $_POST['quantity'],
-        'status' => $_POST['status'],
-        'description' => $_POST['description']
-    ];
-    $operationsManager->updateResource($resourceData);
+    $manager->updateResource($_POST['edit_id'], $_POST['resource_name'], $_POST['resource_type'], (int) $_POST['quantity'], $_POST['status']);
     header('Location: resources.php');
     exit;
 }
 
 // Handle Delete Resource
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
-    $operationsManager->deleteResource($_POST['delete_id']);
+    $manager->deleteResource($_POST['delete_id']);
     header('Location: resources.php');
     exit;
 }
@@ -170,7 +147,7 @@ $resources = $manager->searchResources($searchTerm, $searchType, $searchStatus);
             <?php endif; ?>
 
             <?php if (isset($_GET['action']) && $_GET['action'] === 'edit' && isset($_GET['id'])): ?>
-                <?php $editResource = $operationsManager->getResourceDetails($_GET['id']); ?>
+                <?php $editResource = $manager->getResourceDetails($_GET['id']); ?>
                 <!-- Edit Resource Form -->
                 <div class="card mb-4">
                     <div class="card-header">Edit Resource</div>
@@ -218,7 +195,7 @@ $resources = $manager->searchResources($searchTerm, $searchType, $searchStatus);
             <?php endif; ?>
 
             <?php if (isset($_GET['action']) && $_GET['action'] === 'view' && isset($_GET['id'])): ?>
-                <?php $viewResource = $operationsManager->getResourceDetails($_GET['id']); ?>
+                <?php $viewResource = $manager->getResourceDetails($_GET['id']); ?>
                 <!-- View Resource Details -->
                 <div class="card mb-4">
                     <div class="card-header">Resource Details</div>
@@ -244,7 +221,7 @@ $resources = $manager->searchResources($searchTerm, $searchType, $searchStatus);
             <?php endif; ?>
 
             <?php if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])): ?>
-                <?php $deleteResource = $operationsManager->getResourceDetails($_GET['id']); ?>
+                <?php $deleteResource = $manager->getResourceDetails($_GET['id']); ?>
                 <!-- Delete Resource Confirmation -->
                 <div class="card mb-4">
                     <div class="card-header bg-danger text-white">Delete Resource</div>

@@ -8,6 +8,7 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+require_once dirname(__DIR__) . '/shared/csrf.php';
 
 // Security headers
 header('X-Frame-Options: DENY');
@@ -56,6 +57,7 @@ try {
 // Handle AJAX requests for dynamic functionality
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
     header('Content-Type: application/json');
+    require_csrf();
     
     switch ($_POST['action']) {
         case 'assign_role':
@@ -84,14 +86,7 @@ $moduleName = "System Admin";
 $moduleIcon = "cogs";
 $currentPage = "dashboard";
 
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'User Management', 'url' => '/Armis2/admin/users.php', 'icon' => 'users', 'page' => 'users'],
-    ['title' => 'System Settings', 'url' => '/Armis2/admin/settings.php', 'icon' => 'cogs', 'page' => 'settings'],
-    ['title' => 'Database Management', 'url' => '/Armis2/admin/database.php', 'icon' => 'database', 'page' => 'database'],
-    ['title' => 'Security Center', 'url' => '/Armis2/admin/security.php', 'icon' => 'shield-alt', 'page' => 'security'],
-    ['title' => 'System Reports', 'url' => '/Armis2/admin/reports.php', 'icon' => 'chart-bar', 'page' => 'reports']
-];
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 // Log successful access
 error_log("Admin dashboard accessed by admin user: " . $_SESSION['username']);
@@ -564,21 +559,21 @@ try {
                         </div>
                         <div class="card-body">
                             <div class="d-grid gap-2">
-                                <button class="btn admin-btn btn-primary">
+                                <a href="/Armis2/admin_branch/create_staff.php" class="btn admin-btn btn-primary">
                                     <i class="fas fa-user-plus"></i> Create New User
-                                </button>
-                                <button class="btn admin-btn btn-success">
+                                </a>
+                                <a href="/Armis2/admin/database.php#backup" class="btn admin-btn btn-success">
                                     <i class="fas fa-download"></i> Database Backup
-                                </button>
-                                <button class="btn admin-btn btn-warning">
+                                </a>
+                                <a href="/Armis2/admin/security.php" class="btn admin-btn btn-warning">
                                     <i class="fas fa-shield-alt"></i> Security Scan
-                                </button>
-                                <button class="btn admin-btn btn-info">
+                                </a>
+                                <a href="/Armis2/admin/reports.php" class="btn admin-btn btn-info">
                                     <i class="fas fa-chart-line"></i> Generate Report
-                                </button>
-                                <button class="btn admin-btn btn-secondary">
+                                </a>
+                                <a href="/Armis2/admin/settings.php" class="btn admin-btn btn-secondary">
                                     <i class="fas fa-cogs"></i> System Settings
-                                </button>
+                                </a>
                             </div>
                         </div>
                     </div>

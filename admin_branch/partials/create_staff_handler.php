@@ -30,8 +30,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $success = false;
     
     try {
-        // Database connection using centralized function
-        $conn = getMysqliConnection();
+        // Database connection using centralized function.
+        // FIX: getMysqliConnection() does not exist anywhere in this
+        // codebase - only getDbConnection() (PDO) does. This handler is
+        // converted to PDO throughout to match the rest of the app.
+        $pdo = getDbConnection();
         
         // Basic CSRF validation (simplified)
         if (!isset($_POST['csrf']) || empty($_POST['csrf'])) {
@@ -102,13 +105,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $hashedPassword = password_hash($tempPassword, PASSWORD_DEFAULT);
             $activationToken = ARMISMailer::generateActivationToken();
             
-            // Check if username already exists
-            $checkStmt = $conn->prepare("SELECT id FROM staff WHERE username = ? OR svcNo = ?");
-            $checkStmt->bind_param('ss', $username, $serviceNumber);
-            $checkStmt->execute();
-            $existing = $checkStmt->get_result();
+            // Check if username already exists.
+            // FIX: `staff` has no `id` column - its primary key is
+            // `svcNo` (varchar). This existence check only needs a
+            // column to select, so svcNo itself is used.
+            $checkStmt = $pdo->prepare("SELECT svcNo FROM staff WHERE username = ? OR svcNo = ?");
+            $checkStmt->execute([$username, $serviceNumber]);
+            $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
             
-            if ($existing->num_rows > 0) {
+            if ($existing) {
                 $errors['svcNo'] = 'Service number already exists in the system';
             } else {
                 // Prepare comprehensive data for insertion
@@ -116,14 +121,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Required Personal Information
                     'fName' => trim($_POST['fname']),
                     'lName' => trim($_POST['lname']),
-                    'email' => trim($_POST['email']),
-                    'tel' => trim($_POST['phone']),
+                    // FIX: `staff` has no `email`/`tel` columns - the
+                    // real columns are `officialEmail` and `telNo`.
+                    'officialEmail' => trim($_POST['email']),
+                    'telNo' => trim($_POST['phone']),
                     'DOB' => $_POST['DOB'],
                     'gender' => $_POST['gender'],
                     
-                    // Service Information
+                    // Service Information.
+                    // FIX: `category` (Officer/NCO/Civilian Employee) has
+                    // no backing column on `staff` at all - it's UI-only,
+                    // used just to filter which ranks the Rank dropdown
+                    // shows (see tab_personal.php), and is already
+                    // implicitly captured via rankId -> rank.rankType.
+                    // Attempting to INSERT it always failed with an
+                    // unknown-column error, which is why staff creation
+                    // could never actually complete even after every
+                    // other fix in this file. Intentionally not inserted.
                     'svcNo' => $serviceNumber,
-                    'category' => $_POST['category'],
                     'rankId' => $_POST['rankID'],
                     'svcStatus' => 'Active',
                     
@@ -165,8 +180,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!empty($_POST['unitID']) || !empty($_POST['unitId'])) {
                     $insertData['unitId'] = trim($_POST['unitID'] ?? $_POST['unitId']);
                 }
+                // FIX: `staff` has no `corpsId` column - corps is a
+                // free-text column on staff named `corps` (see
+                // profile_manager.php's corps_name handling for the same
+                // note).
                 if (!empty($_POST['corps']) || !empty($_POST['corpsId'])) {
-                    $insertData['corpsId'] = trim($_POST['corps'] ?? $_POST['corpsId']);
+                    $insertData['corps'] = trim($_POST['corps'] ?? $_POST['corpsId']);
                 }
                 if (!empty($_POST['apptId'])) $insertData['apptId'] = trim($_POST['apptId']);
                 if (!empty($_POST['attestDate'])) $insertData['attestDate'] = $_POST['attestDate'];
@@ -177,7 +196,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 // Add uniform/sizing information
                 if (!empty($_POST['bootSize'])) $insertData['bootSize'] = trim($_POST['bootSize']);
-                if (!empty($_POST['shoeSize'])) $insertData['shoeSize'] = trim($_POST['shoeSize']);
+                // FIX: the real column is `sSize`, not `shoeSize`.
+                if (!empty($_POST['shoeSize'])) $insertData['sSize'] = trim($_POST['shoeSize']);
                 if (!empty($_POST['hDress'])) $insertData['hDress'] = trim($_POST['hDress']);
                 if (!empty($_POST['combatSize'])) $insertData['combatSize'] = trim($_POST['combatSize']);
                 
@@ -207,7 +227,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!empty($_POST['altNokName']) || !empty($_POST['altNok'])) {
                     $insertData['altNok'] = trim($_POST['altNokName'] ?? $_POST['altNok']);
                 }
-                if (!empty($_POST['altNokNrc'])) $insertData['altNokNrc'] = trim($_POST['altNokNrc']);
+                // NOTE: `staff` has no column for the alternate Next of
+                // Kin's NRC (only altNok/altNokTel/altNokRelat exist) -
+                // tab_family.php's "Alternate Next of Kin NRC" field is
+                // therefore collected from the user but has nowhere to be
+                // stored. Flagging rather than guessing a column to
+                // invent; this needs either a real schema migration or
+                // the input removed from the form.
                 if (!empty($_POST['altNokRelat'])) $insertData['altNokRelat'] = trim($_POST['altNokRelat']);
                 if (!empty($_POST['altNokTel']) || !empty($_POST['alt_nok_tel'])) {
                     $insertData['altNokTel'] = trim($_POST['altNokTel'] ?? $_POST['alt_nok_tel']);
@@ -226,79 +252,95 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 $query = "INSERT INTO staff (" . implode(',', $fields) . ") VALUES ($placeholders)";
                 
-                // Execute insertion
-                $stmt = $conn->prepare($query);
-                if (!$stmt) {
-                    throw new Exception("Database prepare error: " . $conn->error);
+                // Execute insertion.
+                // FIX: PDO (with ERRMODE_EXCEPTION, set centrally in
+                // getDbConnection()) throws on a failed prepare/execute
+                // rather than returning false, so the old
+                // "if (!$stmt) throw" / "if ($stmt->execute()) {...} else
+                // throw" pattern is redundant - a failure is already
+                // caught by this function's outer try/catch.
+                $stmt = $pdo->prepare($query);
+                $stmt->execute($values);
+
+                // FIX: svcNo (the real primary key) is a plain VARCHAR,
+                // not an auto-increment column, so mysqli's insert_id
+                // (and PDO's lastInsertId()) would never actually
+                // correspond to it. The service number we already have
+                // is the correct identifier for everything downstream.
+                $staffId = $serviceNumber;
+
+                // Notify system admins — part of reviving the
+                // previously-disabled app-wide notification system.
+                require_once dirname(__DIR__) . '/shared/notifications_helper.php';
+                $newStaffName = trim(($_POST['fname'] ?? '') . ' ' . ($_POST['lname'] ?? ''));
+                notifyRoles(
+                    ['admin', 'superadmin'],
+                    'admin_branch',
+                    'staff_created',
+                    'New staff record created',
+                    "$newStaffName (svcNo $serviceNumber) was added to the system.",
+                    '/Armis2/admin_branch/view_staff.php?svcNo=' . urlencode($serviceNumber),
+                    $_SESSION['user_id'] ?? null
+                );
+
+                // Prepare staff data for email
+                $staffData = [
+                    'rank_name' => '', // Will be populated from rank lookup
+                    'fName' => trim($_POST['fname']),
+                    'lName' => trim($_POST['lname']),
+                    'username' => $username,
+                    'email' => trim($_POST['email']),
+                    'svcNo' => trim($_POST['svcNo'])
+                ];
+                
+                // Get rank name for email (rank table only has rankId and level)
+                if (!empty($_POST['rankID'])) {
+                    $rankStmt = $pdo->prepare("SELECT rankId as rankName FROM `rank` WHERE rankId = ?");
+                    $rankStmt->execute([$_POST['rankID']]);
+                    $rankRow = $rankStmt->fetch(PDO::FETCH_ASSOC);
+                    if ($rankRow) {
+                        $staffData['rank_name'] = $rankRow['rankName'];
+                    }
                 }
                 
-                // Bind parameters (all as strings for simplicity)
-                $types = str_repeat('s', count($values));
-                $stmt->bind_param($types, ...$values);
-                
-                if ($stmt->execute()) {
-                    $staffId = $conn->insert_id;
+                // Send welcome email with credentials (with development/production awareness)
+                try {
+                    $mailer = new ARMISMailer();
+                    $emailResult = $mailer->sendWelcomeEmail($staffData, $tempPassword);
                     
-                    // Prepare staff data for email
-                    $staffData = [
-                        'rank_name' => '', // Will be populated from rank lookup
-                        'fName' => trim($_POST['fname']),
-                        'lName' => trim($_POST['lname']),
-                        'username' => $username,
-                        'email' => trim($_POST['email']),
-                        'svcNo' => trim($_POST['svcNo'])
-                    ];
-                    
-                    // Get rank name for email (rank table only has rankId and level)
-                    if (!empty($_POST['rankID'])) {
-                        $rankStmt = $conn->prepare("SELECT rankId as rankName FROM rank WHERE rankId = ?");
-                        $rankStmt->bind_param("s", $_POST['rankID']);
-                        $rankStmt->execute();
-                        $rankResult = $rankStmt->get_result();
-                        if ($rankRow = $rankResult->fetch_assoc()) {
-                            $staffData['rank_name'] = $rankRow['rankName'];
-                        }
-                        $rankStmt->close();
-                    }
-                    
-                    // Send welcome email with credentials (with development/production awareness)
-                    try {
-                        $mailer = new ARMISMailer();
-                        $emailResult = $mailer->sendWelcomeEmail($staffData, $tempPassword);
+                    // Determine appropriate success message based on environment and email result
+                    if ($emailResult['success']) {
+                        $mode = $emailResult['mode'] ?? 'unknown';
                         
-                        // Determine appropriate success message based on environment and email result
-                        if ($emailResult['success']) {
-                            $mode = $emailResult['mode'] ?? 'unknown';
-                            
-                            if ($mode === 'development') {
-                                // Development mode: Credentials shown on screen
-                                $_SESSION['success_message'] = "✅ Staff member successfully created! (Development Mode: Email logged, credentials displayed below)";
-                                error_log("DEVELOPMENT: Welcome email logged for: " . $staffData['email']);
-                            } elseif (isset($emailResult['sent']) && $emailResult['sent'] === true) {
-                                // Production mode: Email sent successfully
-                                $_SESSION['success_message'] = "✅ Staff member successfully created! Login credentials have been sent to " . $staffData['email'];
-                                error_log("PRODUCTION: Welcome email sent successfully to: " . $staffData['email']);
-                            } else {
-                                // Production mode: Email logged but not sent (mail server issue)
-                                $_SESSION['success_message'] = "✅ Staff member successfully created! Note: Email credentials are displayed below (mail server may need configuration)";
-                                error_log("PRODUCTION: Welcome email logged but not sent to: " . $staffData['email']);
-                            }
+                        if ($mode === 'development') {
+                            // Development mode: Credentials shown on screen
+                            $_SESSION['success_message'] = "✅ Staff member successfully created! (Development Mode: Email logged, credentials displayed below)";
+                            error_log("DEVELOPMENT: Welcome email logged for: " . $staffData['email']);
+                        } elseif (isset($emailResult['sent']) && $emailResult['sent'] === true) {
+                            // Production mode: Email sent successfully
+                            $_SESSION['success_message'] = "✅ Staff member successfully created! Login credentials have been sent to " . $staffData['email'];
+                            error_log("PRODUCTION: Welcome email sent successfully to: " . $staffData['email']);
                         } else {
-                            // Fallback: Staff created but email had issues
-                            $_SESSION['success_message'] = "✅ Staff member successfully created! Login credentials are displayed below.";
-                            error_log("Email notification skipped: " . ($emailResult['message'] ?? 'Unknown reason'));
+                            // Production mode: Email logged but not sent (mail server issue)
+                            $_SESSION['success_message'] = "✅ Staff member successfully created! Note: Email credentials are displayed below (mail server may need configuration)";
+                            error_log("PRODUCTION: Welcome email logged but not sent to: " . $staffData['email']);
                         }
-                    } catch (Exception $emailError) {
-                        // Exception caught: Staff still created successfully
+                    } else {
+                        // Fallback: Staff created but email had issues
                         $_SESSION['success_message'] = "✅ Staff member successfully created! Login credentials are displayed below.";
-                        error_log("Email exception (non-critical): " . $emailError->getMessage());
+                        error_log("Email notification skipped: " . ($emailResult['message'] ?? 'Unknown reason'));
                     }
-                    
-                    // Store temporary credentials in session for display
-                    $_SESSION['temp_password'] = $tempPassword;
-                    $_SESSION['username'] = $username;
-                    $_SESSION['staff_name'] = trim($_POST['fname']) . ' ' . trim($_POST['lname']);
-                    $_SESSION['staff_email'] = trim($_POST['email']);
+                } catch (Exception $emailError) {
+                    // Exception caught: Staff still created successfully
+                    $_SESSION['success_message'] = "✅ Staff member successfully created! Login credentials are displayed below.";
+                    error_log("Email exception (non-critical): " . $emailError->getMessage());
+                }
+                
+                // Store temporary credentials in session for display
+                $_SESSION['temp_password'] = $tempPassword;
+                $_SESSION['username'] = $username;
+                $_SESSION['staff_name'] = trim($_POST['fname']) . ' ' . trim($_POST['lname']);
+                $_SESSION['staff_email'] = trim($_POST['email']);
                     $_SESSION['created_staff_id'] = $staffId; // Store staff ID for view profile button
                     
                     // Log the activity
@@ -308,9 +350,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     header('Location: ' . $_SERVER['PHP_SELF'] . '?success=1');
                     exit;
                     
-                } else {
-                    throw new Exception("Database execution error: " . $stmt->error);
-                }
             }
         }
         

@@ -11,6 +11,7 @@ class ARMISAdvancedSearch {
         this.searchResults = [];
         this.viewMode = 'table';
         this.searchEndpoint = '/Armis2/admin_branch/ajax_search.php';
+        this.activeCategory = null; // 'officers' | 'ncos' | 'ce' | null
         
         this.init();
     }
@@ -80,7 +81,7 @@ class ARMISAdvancedSearch {
         document.querySelectorAll('[data-format]').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
-                this.exportResults(e.target.dataset.format);
+                this.exportResults(e.currentTarget.dataset.format);
             });
         });
         
@@ -140,28 +141,39 @@ class ARMISAdvancedSearch {
         document.querySelectorAll('[data-filter]').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
-                this.applyQuickFilter(e.target.dataset.filter);
-                e.target.classList.toggle('active');
+                this.applyQuickFilter(e.target.dataset.filter, e.target);
             });
         });
     }
     
-    applyQuickFilter(filterType) {
-        const form = document.getElementById('searchForm');
-        
+    applyQuickFilter(filterType, btnEl) {
+        const categoryFilters = ['officers', 'ncos', 'ce'];
+
         switch (filterType) {
             case 'officers':
-                document.getElementById('filterRank').value = '';
-                // Add logic to filter officer ranks
-                break;
             case 'ncos':
+            case 'ce':
+                // FIX: these three buttons previously cleared the rank
+                // dropdown and did nothing else — "Add logic to filter
+                // ..." was left as a TODO comment, so clicking them had
+                // no visible effect at all. They're mutually exclusive
+                // (a staff member is exactly one category), so clicking
+                // one deactivates the other two rather than toggling
+                // independently.
                 document.getElementById('filterRank').value = '';
-                // Add logic to filter NCO ranks
-                break;
-            case 'enlisted':
-                document.getElementById('filterRank').value = '';
-                // Add logic to filter enlisted ranks
-                break;
+                if (this.activeCategory === filterType) {
+                    // Clicking the already-active one clears the filter
+                    this.activeCategory = null;
+                } else {
+                    this.activeCategory = filterType;
+                }
+                document.querySelectorAll('[data-filter]').forEach(b => {
+                    if (categoryFilters.includes(b.dataset.filter)) {
+                        b.classList.toggle('active', b.dataset.filter === this.activeCategory);
+                    }
+                });
+                this.performSearch(1);
+                return; // performSearch already re-triggers; skip the generic toggle below
             case 'recent':
                 const threeMonthsAgo = new Date();
                 threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
@@ -173,6 +185,7 @@ class ARMISAdvancedSearch {
                 document.getElementById('birthTo').value = retirementAge.toISOString().split('T')[0];
                 break;
         }
+        if (btnEl) btnEl.classList.toggle('active');
         
         this.performSearch();
     }
@@ -210,7 +223,27 @@ class ARMISAdvancedSearch {
         this.currentPage = page;
         this.showLoading();
         
-        const formData = new FormData(document.getElementById('searchForm'));
+        const formEl = document.getElementById('searchForm');
+        const formData = new FormData(formEl);
+
+        // FIX: ajax_search.php reads filters as a nested 'filters'
+        // structure (filters['rankId'], filters['category'], etc.),
+        // but a plain `new FormData(form)` submits each dropdown as a
+        // flat top-level field (rankId=..., unitId=...). That mismatch
+        // meant $_POST['filters'] was always empty server-side and
+        // every one of these dropdowns silently did nothing, no matter
+        // what the user picked. Sending 'filters' explicitly as JSON
+        // instead, matching what the backend actually reads.
+        const filters = {
+            rankId: formEl.querySelector('#filterRank')?.value || '',
+            unitId: formEl.querySelector('#filterUnit')?.value || '',
+            corps: formEl.querySelector('#filterCorps')?.value || '',
+            status: formEl.querySelector('#filterStatus')?.value || '',
+            gender: formEl.querySelector('#filterGender')?.value || '',
+            marital: formEl.querySelector('#filterMarital')?.value || '',
+            category: this.activeCategory || '',
+        };
+        formData.set('filters', JSON.stringify(filters));
         formData.append('action', 'search');
         formData.append('page', page);
         formData.append('page_size', this.pageSize);
@@ -264,20 +297,21 @@ class ARMISAdvancedSearch {
         tbody.innerHTML = '';
         
         results.forEach(staff => {
+            const staffId = String(staff.id || staff.svcNo || '');
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td>
                     <input type="checkbox" class="form-check-input staff-checkbox" 
-                           value="${staff.id}" ${this.selectedIds.has(staff.id) ? 'checked' : ''}>
+                           value="${this.escapeHtml(staffId)}" ${this.selectedIds.has(staffId) ? 'checked' : ''}>
                 </td>
                 <td>
-                    <img src="${this.getPhotoUrl(staff.id)}" alt="Photo" 
+                    <img src="${this.getPhotoUrl(staffId)}" alt="Photo" 
                          class="rounded-circle" width="40" height="40" 
                          onerror="this.src='/Armis2/shared/images/default-avatar.png'">
                 </td>
                 <td>
                     <div>
-                        <strong>${this.escapeHtml(staff.fname)} ${this.escapeHtml(staff.lname)}</strong>
+                        <strong>${this.escapeHtml(staff.fname || staff.fName || '')} ${this.escapeHtml(staff.lname || staff.lName || '')}</strong>
                         <br><small class="text-muted">${this.escapeHtml(staff.email || '')}</small>
                     </div>
                 </td>
@@ -295,15 +329,15 @@ class ARMISAdvancedSearch {
                 </td>
                 <td>
                     <div class="btn-group btn-group-sm">
-                        <button class="btn btn-outline-primary" onclick="viewStaff(${staff.id})" 
+                        <button class="btn btn-outline-primary" onclick="viewStaff('${this.escapeJsString(staffId)}')" 
                                 title="View Details">
                             <i class="fas fa-eye"></i>
                         </button>
-                        <button class="btn btn-outline-secondary" onclick="editStaff(${staff.id})" 
+                        <button class="btn btn-outline-secondary" onclick="editStaff('${this.escapeJsString(staffId)}')" 
                                 title="Edit">
                             <i class="fas fa-edit"></i>
                         </button>
-                        <button class="btn btn-outline-info" onclick="viewDocuments(${staff.id})" 
+                        <button class="btn btn-outline-info" onclick="viewDocuments('${this.escapeJsString(staffId)}')" 
                                 title="Documents">
                             <i class="fas fa-paperclip"></i>
                         </button>
@@ -323,6 +357,7 @@ class ARMISAdvancedSearch {
         grid.innerHTML = '';
         
         results.forEach(staff => {
+            const staffId = String(staff.id || staff.svcNo || '');
             const card = document.createElement('div');
             card.className = 'col-md-6 col-lg-4 col-xl-3 mb-3';
             card.innerHTML = `
@@ -330,12 +365,12 @@ class ARMISAdvancedSearch {
                     <div class="card-body text-center">
                         <div class="position-relative">
                             <input type="checkbox" class="form-check-input staff-checkbox position-absolute top-0 start-0" 
-                                   value="${staff.id}" ${this.selectedIds.has(staff.id) ? 'checked' : ''}>
-                            <img src="${this.getPhotoUrl(staff.id)}" alt="Photo" 
+                                   value="${this.escapeHtml(staffId)}" ${this.selectedIds.has(staffId) ? 'checked' : ''}>
+                            <img src="${this.getPhotoUrl(staffId)}" alt="Photo" 
                                  class="rounded-circle mb-3" width="80" height="80"
                                  onerror="this.src='/Armis2/shared/images/default-avatar.png'">
                         </div>
-                        <h6 class="card-title">${this.escapeHtml(staff.fname)} ${this.escapeHtml(staff.lname)}</h6>
+                        <h6 class="card-title">${this.escapeHtml(staff.fname || staff.fName || '')} ${this.escapeHtml(staff.lname || staff.lName || '')}</h6>
                         <p class="card-text">
                             <small class="text-muted">${this.escapeHtml(staff.svcNo || 'N/A')}</small><br>
                             <span class="badge bg-${this.getRankBadgeColor(staff.rankCategory)} mb-1">
@@ -344,10 +379,10 @@ class ARMISAdvancedSearch {
                             <small>${this.escapeHtml(staff.unitName || 'N/A')}</small>
                         </p>
                         <div class="btn-group btn-group-sm">
-                            <button class="btn btn-outline-primary" onclick="viewStaff(${staff.id})">
+                            <button class="btn btn-outline-primary" onclick="viewStaff('${this.escapeJsString(staffId)}')">
                                 <i class="fas fa-eye"></i>
                             </button>
-                            <button class="btn btn-outline-secondary" onclick="editStaff(${staff.id})">
+                            <button class="btn btn-outline-secondary" onclick="editStaff('${this.escapeJsString(staffId)}')">
                                 <i class="fas fa-edit"></i>
                             </button>
                         </div>
@@ -365,7 +400,7 @@ class ARMISAdvancedSearch {
     updateCheckboxListeners() {
         document.querySelectorAll('.staff-checkbox').forEach(checkbox => {
             checkbox.addEventListener('change', (e) => {
-                const staffId = parseInt(e.target.value);
+                const staffId = String(e.target.value);
                 if (e.target.checked) {
                     this.selectedIds.add(staffId);
                 } else {
@@ -380,7 +415,7 @@ class ARMISAdvancedSearch {
     selectAll(checked) {
         document.querySelectorAll('.staff-checkbox').forEach(checkbox => {
             checkbox.checked = checked;
-            const staffId = parseInt(checkbox.value);
+            const staffId = String(checkbox.value);
             if (checked) {
                 this.selectedIds.add(staffId);
             } else {
@@ -492,6 +527,17 @@ class ARMISAdvancedSearch {
     
     async exportResults(format) {
         const formData = new FormData(document.getElementById('searchForm'));
+        const formEl = document.getElementById('searchForm');
+        const filters = {
+            rankId: formEl.querySelector('#filterRank')?.value || '',
+            unitId: formEl.querySelector('#filterUnit')?.value || '',
+            corps: formEl.querySelector('#filterCorps')?.value || '',
+            status: formEl.querySelector('#filterStatus')?.value || '',
+            gender: formEl.querySelector('#filterGender')?.value || '',
+            marital: formEl.querySelector('#filterMarital')?.value || '',
+            category: this.activeCategory || '',
+        };
+        formData.set('filters', JSON.stringify(filters));
         formData.append('action', 'export');
         formData.append('format', format);
         formData.append('selected_ids', JSON.stringify([...this.selectedIds]));
@@ -523,6 +569,10 @@ class ARMISAdvancedSearch {
     
     clearForm() {
         document.getElementById('searchForm').reset();
+        this.activeCategory = null;
+        document.querySelectorAll('[data-filter]').forEach(btn => {
+            btn.classList.remove('active');
+        });
         this.selectedIds.clear();
         this.hideResultsContainer();
         this.hideNoResults();
@@ -579,14 +629,23 @@ class ARMISAdvancedSearch {
     }
     
     getPhotoUrl(staffId) {
-        return `/Armis2/uploads/staff_photos/${staffId}.jpg`;
+        return `/Armis2/uploads/staff_photos/${encodeURIComponent(staffId)}.jpg`;
+    }
+
+    escapeJsString(text) {
+        return String(text)
+            .replace(/\\/g, '\\\\')
+            .replace(/'/g, "\\'")
+            .replace(/\"/g, '\\"');
     }
     
     getRankBadgeColor(category) {
         const colors = {
             'Officer': 'primary',
+            'Officer Cadet': 'primary',
             'NCO': 'success',
-            'Enlisted': 'info'
+            'Recruit': 'success',
+            'CE': 'info'
         };
         return colors[category] || 'secondary';
     }
@@ -612,16 +671,16 @@ class ARMISAdvancedSearch {
 }
 
 // Global functions for button actions
-function viewStaff(id) {
-    window.open(`/Armis2/admin_branch/view_staff.php?id=${id}`, '_blank');
+function viewStaff(svcNo) {
+    window.open(`/Armis2/admin_branch/view_staff.php?svcNo=${encodeURIComponent(svcNo)}`, '_blank');
 }
 
-function editStaff(id) {
-    window.location.href = `/Armis2/admin_branch/edit_staff.php?id=${id}`;
+function editStaff(svcNo) {
+    window.location.href = `/Armis2/admin_branch/edit_staff.php?svcNo=${encodeURIComponent(svcNo)}`;
 }
 
-function viewDocuments(id) {
-    window.open(`/Armis2/admin_branch/staff_documents.php?id=${id}`, '_blank');
+function viewDocuments(svcNo) {
+    window.open(`/Armis2/admin_branch/staff_documents.php?svcNo=${encodeURIComponent(svcNo)}`, '_blank');
 }
 
 // Initialize when DOM is loaded

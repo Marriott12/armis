@@ -8,15 +8,23 @@ define('ARMIS_ADMIN_BRANCH', true);
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/config.php';
 
+// This page previously had NO authentication check at all — auth.php
+// only defines requireAuth(), it doesn't call it on include. Anyone
+// with the URL could search staff records unauthenticated.
+requireAuth();
+require_once dirname(__DIR__) . '/shared/rbac.php';
+requireModuleAccess('admin_branch');
+
 $pageTitle = 'Advanced Staff Search - ARMIS';
 $currentPage = 'search';
 
 // Include the shared header
 require_once dirname(__DIR__) . '/shared/header.php';
+require_once __DIR__ . '/includes/sidebar_nav.php';
 require_once dirname(__DIR__) . '/shared/sidebar.php';
 ?>
 
-<div class="main-content">
+<div class="content-wrapper with-sidebar">
     <div class="container-fluid">
         <!-- Page Header -->
         <div class="d-flex justify-content-between align-items-center mb-4">
@@ -222,7 +230,7 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                         <button type="button" class="btn btn-outline-primary btn-sm me-2" 
                                                 data-filter="ncos">NCOs Only</button>
                                         <button type="button" class="btn btn-outline-primary btn-sm me-2" 
-                                                data-filter="enlisted">Enlisted Only</button>
+                                                data-filter="ce">Civilian Employees Only</button>
                                         <button type="button" class="btn btn-outline-secondary btn-sm me-2" 
                                                 data-filter="recent">Recent Enlistments</button>
                                         <button type="button" class="btn btn-outline-secondary btn-sm me-2" 

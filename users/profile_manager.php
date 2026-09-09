@@ -7,8 +7,149 @@
 require_once dirname(__DIR__) . '/shared/database_connection.php';
 
 class UserProfileManager {
+
+    private $pdo;
+    private $userId;    // The logged-in person's svcNo (see loadUserInfo note below)
+    private $userSvcNo;
+
+    public function __construct($userId) {
+        $this->pdo = getDbConnection();
+        $this->userId = $userId;
+        $this->loadUserInfo();
+    }
+
     /**
-     * Get all appointments for the user (with appointment type and unit details)
+     * Load basic user information.
+     *
+     * NOTE: `staff`'s primary key is `svcNo` - there is no `id` column on
+     * staff anywhere in the schema. The users module stores the person's
+     * svcNo directly in $_SESSION['user_id'] (see profile.php), so $userId
+     * passed into the constructor already IS the svcNo.
+     */
+    private function loadUserInfo() {
+        try {
+            $stmt = $this->pdo->prepare("SELECT svcNo FROM staff WHERE svcNo = ? LIMIT 1");
+            $stmt->execute([$this->userId]);
+            $user = $stmt->fetch(PDO::FETCH_OBJ);
+            if ($user && !empty($user->svcNo)) {
+                $this->userSvcNo = $user->svcNo;
+            } else {
+                $this->userSvcNo = 'USER_' . $this->userId;
+                error_log("No staff record found for svcNo '{$this->userId}', using fallback: {$this->userSvcNo}");
+            }
+        } catch (PDOException $e) {
+            error_log("Error loading user info: " . $e->getMessage());
+            $this->userSvcNo = 'USER_' . $this->userId;
+        }
+    }
+
+    /**
+     * Get comprehensive user profile data.
+     * Explicit column list (rather than SELECT *) so the auth columns that
+     * live on this same table - password hash, username, role, etc. - never
+     * end up loaded into a profile object that gets passed around the view.
+     */
+    public function getUserProfile() {
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT
+                    svcNo, prefix, rankId, initials, fName, mName, lName, gender, NRC,
+                    attestDate, DOB, unitId, corps, bloodGp, telNo, tel2, emailPvt,
+                    officialEmail, marital, province, district, village, height,
+                    combatSize, bootSize, sSize, hDress, trade, titles, religion,
+                    profession, nok, nokNrc, nokRelat, nokTel, altNok, altNokTel,
+                    altNokRelat, address, profilePhoto, svcStatus, subWef, tempWef,
+                    lastProfileUpdate, dateCreated
+                FROM staff
+                WHERE svcNo = ?
+            ");
+            $stmt->execute([$this->userId]);
+            $profile = $stmt->fetch(PDO::FETCH_OBJ);
+
+            if (!$profile) {
+                error_log("No staff record found for svcNo: " . $this->userId);
+                return null;
+            }
+
+            // Rank: `rank` has no separate name/abbreviation column - rankId
+            // IS the display value (same convention used across this app).
+            try {
+                if (!empty($profile->rankId)) {
+                    $rankStmt = $this->pdo->prepare("SELECT rankId, rankIndex, rankType FROM `rank` WHERE rankId = ?");
+                    $rankStmt->execute([$profile->rankId]);
+                    $rank = $rankStmt->fetch(PDO::FETCH_OBJ);
+                    if ($rank) {
+                        $profile->rankName = $rank->rankId;
+                        $profile->rankAbbr = $rank->rankId;
+                    }
+                }
+            } catch (PDOException $e) {
+                error_log("Rank lookup failed: " . $e->getMessage());
+            }
+
+            // Unit: `unit` only has unitId / unitLoc - no code/level columns.
+            try {
+                if (!empty($profile->unitId)) {
+                    $unitStmt = $this->pdo->prepare("SELECT unitId, unitLoc FROM unit WHERE unitId = ?");
+                    $unitStmt->execute([$profile->unitId]);
+                    $unit = $unitStmt->fetch(PDO::FETCH_OBJ);
+                    if ($unit) {
+                        $profile->unitName = $unit->unitId . ($unit->unitLoc ? ' - ' . $unit->unitLoc : '');
+                        $profile->unitCode = $unit->unitId;
+                    }
+                }
+            } catch (PDOException $e) {
+                error_log("Unit lookup failed: " . $e->getMessage());
+            }
+
+            // Corps: plain text column directly on staff - there is no
+            // separate corps lookup table anywhere in the schema.
+            $profile->corps_name = $profile->corps ?: null;
+
+            // Calculated fields
+            $profile->age = $this->calculateAge($profile->DOB ?? null);
+            $profile->serviceYears = $this->calculateServiceYears($profile->attestDate ?? null);
+            $profile->fullName = trim(($profile->fName ?? '') . ' ' . ($profile->mName ?? '') . ' ' . ($profile->lName ?? ''));
+            $profile->displayRank = $profile->rankName ?? $profile->rankAbbr ?? 'N/A';
+
+            // Legacy/compatibility field aliases used elsewhere in this app.
+            // NOTE: svcNo itself is deliberately left untouched (see
+            // displaySvcNo below) - it's the real primary key value and
+            // callers rely on it round-tripping cleanly into lookups/forms.
+            $profile->fname = $profile->fName ?? '';
+            $profile->lname = $profile->lName ?? '';
+            $profile->email = $profile->officialEmail ?: ($profile->emailPvt ?: null);
+            $profile->tel = $profile->telNo ?: ($profile->tel2 ?: null);
+            $profile->displaySvcNo = (!empty($profile->prefix) ? $profile->prefix . ' ' : '') . ($profile->svcNo ?? '');
+            $profile->rankID = $profile->rankId ?? null;
+            $profile->unitID = $profile->unitId ?? null;
+            $profile->unitName = $profile->unitName ?? 'No Unit Assigned';
+
+            // Sizing field aliases: several pages/forms use the short
+            // lowercase names (bsize/ssize/hdress) that were never actually
+            // real columns - the real columns are bootSize/sSize/hDress.
+            // Aliasing here means every page that reads $userData->bsize
+            // etc. now actually gets the stored value instead of always
+            // showing blank.
+            $profile->bsize = $profile->bootSize ?? '';
+            $profile->ssize = $profile->sSize ?? '';
+            $profile->hdress = $profile->hDress ?? '';
+
+            return $profile;
+
+        } catch (PDOException $e) {
+            error_log("Error fetching user profile: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get all appointments/postings for the user.
+     * Real staff_appointment columns: id, apptId, svcNo, apptType, unitId,
+     * apptWef, powers, endDate, durationMonths, authorityId, remarks.
+     * Aliased to the names used by service.php's display template
+     * (appointment/appointment_date/appointment_type_name/unit_name/location),
+     * since none of those were ever real column names on this table.
      */
     public function getAppointments() {
         try {
@@ -16,17 +157,19 @@ class UserProfileManager {
                 return [];
             }
             $stmt = $this->pdo->prepare("
-          SELECT sa.id, sa.svcNo, sa.appointment_id, sa.appointment_type, at.name as appointment_type_name, at.is_temporary,
-              sa.rankId, r.rankId as rank_abbr, r.rankId as rank_name,
-                       sa.unitId, u.name as unit_name, sa.location,
-                       sa.svcNo, sa.appointment_date, sa.startDate, sa.endDate, sa.durationMonths,
-                       sa.posting_order_reference, sa.comment, sa.remarks, sa.createdBy, sa.createdAt, sa.updatedAt
+                SELECT
+                    sa.id, sa.apptId AS appointment, sa.apptType,
+                    sa.apptWef AS appointment_date, sa.apptWef AS startDate,
+                    sa.endDate, sa.durationMonths, sa.powers, sa.remarks,
+                    sa.unitId, u.unitId AS unit_name, u.unitLoc AS location,
+                    at.type_name AS appointment_type_name,
+                    auth.description AS authorityDescription
                 FROM staff_appointment sa
-                LEFT JOIN appointment_types at ON sa.appointment_type = at.id
                 LEFT JOIN unit u ON sa.unitId = u.unitId
-                LEFT JOIN `rank` r ON sa.rankId = r.rankId
+                LEFT JOIN appointment_type at ON sa.apptType = at.id
+                LEFT JOIN authority auth ON sa.authorityId = auth.authID
                 WHERE sa.svcNo = ?
-                ORDER BY sa.appointment_date DESC, sa.createdAt DESC
+                ORDER BY sa.apptWef DESC
             ");
             $stmt->execute([$this->userId]);
             return $stmt->fetchAll(PDO::FETCH_OBJ);
@@ -35,380 +178,188 @@ class UserProfileManager {
             return [];
         }
     }
-    private $pdo;
-    private $userId;
-    private $userSvcNo;
-    
-    public function __construct($userId) {
-        $this->pdo = getDbConnection();
-        $this->userId = $userId;
-        $this->loadUserInfo();
-    }
-    
+
     /**
-     * Load basic user information
-     */
-    private function loadUserInfo() {
-        try {
-            // Try different possible column names for service number
-            $possibleColumns = ['svcNo', 'svcNo', 'serviceNo', 'service_no', 'svc_no', 'svc_number', 'staff_number', 'emp_no', 'employee_number'];
-            
-            foreach ($possibleColumns as $column) {
-                try {
-                    $stmt = $this->pdo->prepare("SELECT $column FROM staff WHERE id = ? LIMIT 1");
-                    $stmt->execute([$this->userId]);
-                    $user = $stmt->fetch(PDO::FETCH_OBJ);
-                    if ($user && isset($user->$column)) {
-                        $this->userSvcNo = $user->$column;
-                        return; // Found it, exit
-                    }
-                } catch (PDOException $e) {
-                    // Column doesn't exist, try next one
-                    continue;
-                }
-            }
-            
-            // Fallback - use user ID if no service number column found
-            $this->userSvcNo = 'USER_' . $this->userId;
-            error_log("No service number column found for user $this->userId, using fallback: $this->userSvcNo");
-            
-        } catch (PDOException $e) {
-            error_log("Error loading user info: " . $e->getMessage());
-            $this->userSvcNo = 'USER_' . $this->userId;
-        }
-    }
-    
-    /**
-     * Get comprehensive user profile data
-     */
-    public function getUserProfile() {
-        try {
-            // First get basic staff data
-            $stmt = $this->pdo->prepare("SELECT * FROM staff WHERE id = ?");
-            $stmt->execute([$this->userId]);
-            $profile = $stmt->fetch(PDO::FETCH_OBJ);
-            
-            if (!$profile) {
-                error_log("No staff record found for user ID: " . $this->userId);
-                return null;
-            }
-            
-            // Try to get rank information
-            try {
-                if (!empty($profile->rankId)) {
-                    $rankStmt = $this->pdo->prepare("SELECT rankName as rankName, abbreviation as rankAbbr FROM rank WHERE rankId = ?");
-                    $rankStmt->execute([$profile->rankId]);
-                    $rank = $rankStmt->fetch(PDO::FETCH_OBJ);
-                    if ($rank) {
-                        $profile->rankName = $rank->rankName;
-                        $profile->rankAbbr = $rank->rankAbbr;
-                    }
-                }
-            } catch (PDOException $e) {
-                error_log("Rank lookup failed: " . $e->getMessage());
-            }
-            
-            // Try to get unit information
-            try {
-                if (!empty($profile->unitId)) {
-                    $unitStmt = $this->pdo->prepare("SELECT code as unitName, code as unitCode, level as unitType FROM unit WHERE unitId = ?");
-                    $unitStmt->execute([$profile->unitId]);
-                    $unit = $unitStmt->fetch(PDO::FETCH_OBJ);
-                    if ($unit) {
-                        $profile->unitName = $unit->unitName;
-                        $profile->unitCode = $unit->unitCode;
-                        $profile->unitType = $unit->unitType;
-                    }
-                }
-            } catch (PDOException $e) {
-                error_log("Unit lookup failed: " . $e->getMessage());
-            }
-            
-            // Try to get corps information
-            try {
-                if (!empty($profile->corps)) {
-                    $corpsStmt = $this->pdo->prepare("SELECT name as corps_name FROM corps WHERE abbreviation = ?");
-                    $corpsStmt->execute([$profile->corps]);
-                    $corps = $corpsStmt->fetch(PDO::FETCH_OBJ);
-                    if ($corps) {
-                        $profile->corps_name = $corps->corps_name;
-                    }
-                }
-            } catch (PDOException $e) {
-                error_log("Corps lookup failed: " . $e->getMessage());
-            }
-            
-            // Add calculated fields with proper error handling
-            $profile->age = $this->calculateAge($profile->DOB ?? null);
-            $profile->serviceYears = $this->calculateServiceYears($profile->attestDate ?? $profile->date_of_enlistment ?? null);
-            $profile->fullName = trim(($profile->fName ?? '') . ' ' . ($profile->lName ?? '')); // No prefix in name
-            $profile->displayRank = $profile->rankName ?? $profile->rankAbbr ?? 'N/A';
-            
-            // Add legacy field mappings for compatibility
-            $profile->fname = $profile->fName ?? '';
-            $profile->lname = $profile->lName ?? '';
-            // Combine prefix with service number for display
-            $profile->svcNo = (!empty($profile->prefix) ? $profile->prefix : '') . ($profile->svcNo ?? $profile->svcNo ?? '');
-            $profile->rankID = $profile->rankId ?? null;
-            $profile->unitID = $profile->unitId ?? null;
-            
-            // Ensure combat size has proper mapping
-            if (empty($profile->combatSize) && !empty($profile->combat_size)) {
-                $profile->combatSize = $profile->combat_size;
-            } elseif (empty($profile->combat_size) && !empty($profile->combatSize)) {
-                $profile->combat_size = $profile->combatSize;
-            }
-            
-            return $profile;
-            
-        } catch (PDOException $e) {
-            error_log("Error fetching user profile: " . $e->getMessage());
-            return null;
-        }
-    }
-    
-    /**
-     * Get user's education records
+     * Get user's education records (self-reported - see staff_education,
+     * a separate table from the admin-entered staff_course).
      */
     public function getEducationRecords() {
         try {
-            $stmt = $this->pdo->prepare("
-                SELECT * FROM staff_education 
-                WHERE svcNo = ? 
-                ORDER BY year_completed DESC, level DESC
-            ");
+            // Admin-entered qualifications are stored in staff_course in the
+            // live schema. Keep the users module's display shape stable.
+                $stmt = $this->pdo->prepare("SELECT
+                        id, svcNo, instId AS institution, cseId AS course_id,
+                        qualification, cseStart AS year_started, cseEnd AS year_completed,
+                        grade, result, isHighest AS is_highest_qualification, authID
+                    FROM staff_course
+                    WHERE svcNo = ?
+                    ORDER BY cseEnd DESC, cseStart DESC, id DESC");
             $stmt->execute([$this->userId]);
             $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
-            // Ensure each record has all required properties to prevent JS errors
+
             foreach ($records as &$record) {
-                // Convert to ensure boolean values are properly set
                 $record['is_highest_qualification'] = !empty($record['is_highest_qualification']);
+                $record['year_started'] = !empty($record['year_started']) ? substr((string)$record['year_started'], 0, 4) : null;
+                $record['year_completed'] = !empty($record['year_completed']) ? substr((string)$record['year_completed'], 0, 4) : null;
+                $record['start_year'] = $record['year_started'];
+                $record['end_year'] = $record['year_completed'];
+                $record['level'] = $record['qualification'] ?? '';
+                $record['grade_obtained'] = $record['grade'] ?? '';
+                $record['status'] = 'Completed';
             }
-            
+
             return $records;
         } catch (PDOException $e) {
             error_log("Error fetching education records: " . $e->getMessage());
             return [];
         }
     }
-    
+
     /**
-     * Update education records with change detection
+     * Update education records in the live staff_course table.
      */
     public function updateEducationRecords($educationData) {
         try {
             $this->pdo->beginTransaction();
-            
-            // Get existing education records
-            $existingRecords = $this->getEducationRecords();
-            $existingById = [];
-            foreach ($existingRecords as $record) {
-                $existingById[$record->id] = $record;
-            }
-            
+            $existing = $this->getEducationRecords();
+            $existingIds = array_map('intval', array_column($existing, 'id'));
+            $submittedIds = [];
             $updatedCount = 0;
             $insertedCount = 0;
-            $deletedCount = 0;
-            
-            // Process submitted education data
-            $submittedIds = [];
-            
-            foreach ($educationData as $education) {
-                // Skip empty records
-                if (empty($education['institution']) && empty($education['qualification'])) {
-                    continue;
-                }
-                
-                $educationId = !empty($education['id']) ? (int)$education['id'] : null;
-                $submittedIds[] = $educationId;
-                
-                $data = [
-                    'svcNo' => $this->userId,
-                    'institution' => trim($education['institution'] ?? ''),
-                    'qualification' => trim($education['qualification'] ?? ''),
-                    'level' => $education['level'] ?? null,
-                    'field_of_study' => trim($education['field_of_study'] ?? ''),
-                    'year_started' => !empty($education['year_started']) ? (int)$education['year_started'] : null,
-                    'year_completed' => !empty($education['year_completed']) ? (int)$education['year_completed'] : null,
-                    'grade_obtained' => trim($education['grade_obtained'] ?? ''),
-                    'status' => $education['status'] ?? 'Completed'
+
+            foreach ((array)$educationData as $education) {
+                $institution = trim((string)($education['institution'] ?? ''));
+                $qualification = trim((string)($education['qualification'] ?? ''));
+                if ($institution === '' && $qualification === '') continue;
+
+                $id = !empty($education['id']) ? (int)$education['id'] : null;
+                $submittedIds[] = $id;
+                $startYear = trim((string)($education['year_started'] ?? ''));
+                $endYear = trim((string)($education['year_completed'] ?? ''));
+                $startDate = preg_match('/^\d{4}$/', $startYear) ? $startYear . '-01-01' : ($startYear ?: null);
+                $endDate = preg_match('/^\d{4}$/', $endYear) ? $endYear . '-12-31' : ($endYear ?: null);
+                $values = [
+                    $institution,
+                    trim((string)($education['course_id'] ?? '')),
+                    $qualification,
+                    $startDate,
+                    $endDate,
+                    trim((string)($education['grade_obtained'] ?? '')),
+                    trim((string)($education['result'] ?? '')),
+                    !empty($education['is_highest']) ? 1 : 0,
+                    trim((string)($education['authID'] ?? ''))
                 ];
-                
-                if ($educationId && isset($existingById[$educationId])) {
-                    // Update existing record only if changed
-                    $existing = $existingById[$educationId];
-                    $hasChanges = false;
-                    
-                    // Check for changes
-                    foreach ($data as $key => $value) {
-                        if ($key !== 'svcNo' && $existing->$key != $value) {
-                            $hasChanges = true;
-                            break;
-                        }
-                    }
-                    
-                    if ($hasChanges) {
-                        $updateFields = [];
-                        $updateValues = [];
-                        
-                        foreach ($data as $key => $value) {
-                            if ($key !== 'svcNo') {
-                                $updateFields[] = "$key = ?";
-                                $updateValues[] = $value;
-                            }
-                        }
-                        
-                        $updateValues[] = $educationId;
-                        
-                        $updateSQL = "UPDATE staff_education SET " . implode(', ', $updateFields) . ", updatedAt = NOW() WHERE id = ?";
-                        $stmt = $this->pdo->prepare($updateSQL);
-                        $stmt->execute($updateValues);
-                        $updatedCount++;
-                    }
+
+                if ($id && in_array($id, $existingIds, true)) {
+                    $stmt = $this->pdo->prepare('UPDATE staff_course SET instId = ?, cseId = ?, qualification = ?, cseStart = ?, cseEnd = ?, grade = ?, result = ?, isHighest = ?, authID = ? WHERE id = ? AND svcNo = ?');
+                    $stmt->execute(array_merge($values, [$id, $this->userId]));
+                    $updatedCount += $stmt->rowCount() > 0 ? 1 : 0;
                 } else {
-                    // Insert new record
-                    $insertSQL = "INSERT INTO staff_education (svcNo, institution, qualification, level, field_of_study, year_started, year_completed, grade_obtained, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-                    $stmt = $this->pdo->prepare($insertSQL);
-                    $stmt->execute(array_values($data));
+                    $stmt = $this->pdo->prepare('INSERT INTO staff_course (svcNo, instId, cseId, qualification, cseStart, cseEnd, grade, result, isHighest, authID) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $stmt->execute(array_merge([$this->userId], $values));
                     $insertedCount++;
                 }
             }
-            
-            // Delete records that were not submitted (removed by user)
-            foreach ($existingById as $id => $record) {
-                if (!in_array($id, $submittedIds)) {
-                    $deleteStmt = $this->pdo->prepare("DELETE FROM staff_education WHERE id = ?");
-                    $deleteStmt->execute([$id]);
-                    $deletedCount++;
+
+            $deletedCount = 0;
+            foreach ($existingIds as $id) {
+                if (!in_array($id, $submittedIds, true)) {
+                    $stmt = $this->pdo->prepare('DELETE FROM staff_course WHERE id = ? AND svcNo = ?');
+                    $stmt->execute([$id, $this->userId]);
+                    $deletedCount += $stmt->rowCount();
                 }
             }
-            
             $this->pdo->commit();
-            
-            return [
-                'success' => true,
-                'updated' => $updatedCount,
-                'inserted' => $insertedCount,
-                'deleted' => $deletedCount,
-                'message' => "Education records updated successfully. Updated: $updatedCount, Added: $insertedCount, Removed: $deletedCount"
-            ];
-            
+            return ['success' => true, 'updated' => $updatedCount, 'inserted' => $insertedCount, 'deleted' => $deletedCount, 'message' => "Education records updated successfully. Updated: $updatedCount, Added: $insertedCount, Removed: $deletedCount"];
         } catch (PDOException $e) {
-            $this->pdo->rollback();
+            if ($this->pdo->inTransaction()) $this->pdo->rollBack();
             error_log("Error updating education records: " . $e->getMessage());
-            return [
-                'success' => false,
-                'message' => 'Error updating education records: ' . $e->getMessage()
-            ];
+            return ['success' => false, 'message' => 'Error updating education records: ' . $e->getMessage()];
         }
     }
-    
+
     /**
-     * Update personal information with change detection
+     * Update personal information with change detection.
      */
     public function updatePersonalInfo($personalData) {
         try {
-            // Get current profile data
             $currentProfile = $this->getUserProfile();
             if (!$currentProfile) {
                 return ['success' => false, 'message' => 'Profile not found'];
             }
-            
-            // Define field mappings between form fields and database columns
+
             $fieldMappings = [
                 'fName' => 'fName',
                 'lName' => 'lName',
-                'middle_name' => 'middle_name',
-                'nrc' => 'nrc',
+                'mName' => 'mName',
+                'nrc' => 'NRC',
                 'DOB' => 'DOB',
                 'gender' => 'gender',
-                'nationality' => 'nationality',
                 'religion' => 'religion',
-                'marital_status' => 'marital_status',
+                'marital_status' => 'marital',
                 'address' => 'address',
-                'tel' => 'tel',
-                'email' => 'email',
+                'tel' => 'telNo',
+                'email' => 'officialEmail',
                 'height' => 'height',
-                'weight' => 'weight',
-                'combatSize' => 'combatSize', // Use the existing column first
-                'bsize' => 'bsize',
-                'ssize' => 'ssize',
-                'hdress' => 'hdress',
+                'combatSize' => 'combatSize',
+                'bsize' => 'bootSize',
+                'ssize' => 'sSize',
+                'hdress' => 'hDress',
                 'blood_group' => 'bloodGp',
                 'province' => 'province',
                 'district' => 'district'
             ];
-            
-            // Add combat_size mapping to ensure both columns are updated
-            $extraFieldMappings = [
-                'combatSize' => 'combat_size' // Ensure combat_size is also updated
-            ];
-            
-            // Check for changes
+
             $changedFields = [];
             $updateValues = [];
-            
+
             foreach ($fieldMappings as $formField => $dbField) {
                 if (isset($personalData[$formField])) {
                     $newValue = trim($personalData[$formField]);
                     $currentValue = $currentProfile->$dbField ?? '';
-                    
-                    // Only include if there's a change
+
                     if ($newValue !== $currentValue) {
                         $changedFields[] = "$dbField = ?";
                         $updateValues[] = $newValue;
                     }
                 }
             }
-            
-            // Handle extra field mappings for synchronization
-            foreach ($extraFieldMappings as $formField => $dbField) {
-                if (isset($personalData[$formField])) {
-                    $newValue = trim($personalData[$formField]);
-                    // Add the extra field to ensure both columns are updated
-                    $changedFields[] = "$dbField = ?";
-                    $updateValues[] = $newValue;
-                }
-            }
-            
-            // If no changes, return success without updating
+
             if (empty($changedFields)) {
                 return ['success' => true, 'message' => 'No changes detected', 'updated' => 0];
             }
-            
-            // Add user ID for WHERE clause
+
             $updateValues[] = $this->userId;
-            
-            // Perform update
-            $updateSQL = "UPDATE staff SET " . implode(', ', $changedFields) . ", updatedAt = NOW() WHERE id = ?";
+
+            $updateSQL = "UPDATE staff SET " . implode(', ', $changedFields) . ", updatedAt = NOW() WHERE svcNo = ?";
             $stmt = $this->pdo->prepare($updateSQL);
             $result = $stmt->execute($updateValues);
-            
+
             if ($result) {
+                $this->logActivity('profile_update', 'Personal information updated');
                 return [
-                    'success' => true, 
-                    'message' => 'Personal information updated successfully', 
+                    'success' => true,
+                    'message' => 'Personal information updated successfully',
                     'updated' => count($changedFields)
                 ];
             } else {
                 return ['success' => false, 'message' => 'Failed to update personal information'];
             }
-            
+
         } catch (PDOException $e) {
             error_log("Error updating personal info: " . $e->getMessage());
             return ['success' => false, 'message' => 'Database error: ' . $e->getMessage()];
         }
     }
-    
+
     /**
      * Get contact information
      */
     public function getContactInfo() {
         try {
             $stmt = $this->pdo->prepare("
-                SELECT * FROM staff_contact_info 
-                WHERE svcNo = ? 
+                SELECT * FROM staff_contact_info
+                WHERE svcNo = ?
                 ORDER BY is_primary DESC, contact_type, id
             ");
             $stmt->execute([$this->userId]);
@@ -418,7 +369,7 @@ class UserProfileManager {
             return [];
         }
     }
-    
+
     /**
      * Update contact information with change detection
      */
@@ -435,7 +386,6 @@ class UserProfileManager {
             $deletedCount = 0;
             $submittedIds = [];
             foreach ($contactData as $contact) {
-                // Skip empty records
                 if (empty($contact['contact_value']) || empty($contact['contact_type'])) {
                     continue;
                 }
@@ -445,6 +395,8 @@ class UserProfileManager {
                     'svcNo' => $this->userId,
                     'contact_type' => $contact['contact_type'],
                     'contact_value' => trim($contact['contact_value']),
+                    'contact_name' => trim($contact['contact_name'] ?? ''),
+                    'relationship' => trim($contact['relationship'] ?? ''),
                     'is_primary' => !empty($contact['is_primary']) ? 1 : 0,
                     'is_verified' => !empty($contact['is_verified']) ? 1 : 0,
                     'notes' => trim($contact['notes'] ?? '')
@@ -468,13 +420,14 @@ class UserProfileManager {
                             }
                         }
                         $updateValues[] = $contactId;
-                        $updateSQL = "UPDATE staff_contact_info SET " . implode(', ', $updateFields) . ", updatedAt = NOW() WHERE id = ?";
+                        $updateValues[] = $this->userId;
+                        $updateSQL = "UPDATE staff_contact_info SET " . implode(', ', $updateFields) . ", updatedAt = NOW() WHERE id = ? AND svcNo = ?";
                         $stmt = $this->pdo->prepare($updateSQL);
                         $stmt->execute($updateValues);
                         $updatedCount++;
                     }
                 } else {
-                    $insertSQL = "INSERT INTO staff_contact_info (svcNo, contact_type, contact_value, is_primary, is_verified, notes, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())";
+                    $insertSQL = "INSERT INTO staff_contact_info (svcNo, contact_type, contact_value, contact_name, relationship, is_primary, is_verified, notes, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
                     $stmt = $this->pdo->prepare($insertSQL);
                     $stmt->execute(array_values($data));
                     $insertedCount++;
@@ -482,8 +435,8 @@ class UserProfileManager {
             }
             foreach ($existingById as $id => $record) {
                 if (!in_array($id, $submittedIds)) {
-                    $deleteStmt = $this->pdo->prepare("DELETE FROM staff_contact_info WHERE id = ?");
-                    $deleteStmt->execute([$id]);
+                    $deleteStmt = $this->pdo->prepare("DELETE FROM staff_contact_info WHERE id = ? AND svcNo = ?");
+                    $deleteStmt->execute([$id, $this->userId]);
                     $deletedCount++;
                 }
             }
@@ -504,131 +457,116 @@ class UserProfileManager {
             ];
         }
     }
-    
+
     public function uploadProfilePhoto($file) {
         try {
-            // Validate file
             if (!isset($file['tmp_name']) || empty($file['tmp_name'])) {
                 return ['success' => false, 'message' => 'No file uploaded'];
             }
-            
-            // Check file type
+
             $allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
             if (!in_array($file['type'], $allowedTypes)) {
                 return ['success' => false, 'message' => 'Only JPEG and PNG files are allowed'];
             }
-            
-            // Check file size (max 5MB)
+
             if ($file['size'] > 5 * 1024 * 1024) {
                 return ['success' => false, 'message' => 'File size must be less than 5MB'];
             }
-            
-            // Get user's service number for filename
+
             if (empty($this->userSvcNo)) {
-                $this->loadUserInfo(); // Refresh user info
+                $this->loadUserInfo();
             }
-            
+
             if (empty($this->userSvcNo)) {
                 return ['success' => false, 'message' => 'User service number not available'];
             }
-            
-            // Create upload directory if it doesn't exist
+
             $uploadDir = dirname(__DIR__) . '/uploads/profile_photos/';
             if (!is_dir($uploadDir)) {
                 mkdir($uploadDir, 0755, true);
             }
-            
-            // Generate filename using service number
+
             $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
             $filename = $this->userSvcNo . '.' . $extension;
             $filepath = $uploadDir . $filename;
-            
-            // Remove any existing profile photos for this user
+
             $existingFiles = glob($uploadDir . $this->userSvcNo . '.*');
             foreach ($existingFiles as $existingFile) {
                 if (is_file($existingFile)) {
                     unlink($existingFile);
                 }
             }
-            
-            // Move uploaded file
+
             if (move_uploaded_file($file['tmp_name'], $filepath)) {
-                // Try to update database - handle missing column gracefully
                 try {
-                    $stmt = $this->pdo->prepare("UPDATE staff SET profilePhoto = ? WHERE id = ?");
+                    $stmt = $this->pdo->prepare("UPDATE staff SET profilePhoto = ? WHERE svcNo = ?");
                     $stmt->execute([$filename, $this->userId]);
                 } catch (PDOException $e) {
-                    // Column might not exist - that's OK, we'll use file-based system
-                    error_log("Profile photo column not found, using file-based system: " . $e->getMessage());
+                    error_log("Could not update profilePhoto column, continuing with file-based lookup: " . $e->getMessage());
                 }
-                
+
+                $this->logActivity('photo_update', 'Profile photo updated');
+
                 return ['success' => true, 'message' => 'Profile photo updated successfully', 'filename' => $filename];
             } else {
                 return ['success' => false, 'message' => 'Failed to upload file'];
             }
-            
+
         } catch (Exception $e) {
             error_log("Error uploading profile photo: " . $e->getMessage());
             return ['success' => false, 'message' => 'Upload failed: ' . $e->getMessage()];
         }
     }
-    
+
     /**
      * Upload and process CV file
      */
     public function uploadCV($file) {
         try {
-            // Validate file
             if (!isset($file['tmp_name']) || empty($file['tmp_name'])) {
                 return ['success' => false, 'message' => 'No CV file uploaded'];
             }
-            
-            // Check file type
+
             $allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
             if (!in_array($file['type'], $allowedTypes)) {
                 return ['success' => false, 'message' => 'Only PDF and Word documents are allowed'];
             }
-            
-            // Check file size (max 10MB)
+
             if ($file['size'] > 10 * 1024 * 1024) {
                 return ['success' => false, 'message' => 'CV file size must be less than 10MB'];
             }
-            
-            // Create upload directory if it doesn't exist
+
             $uploadDir = dirname(__DIR__) . '/uploads/cvs/';
             if (!is_dir($uploadDir)) {
                 mkdir($uploadDir, 0755, true);
             }
-            
-            // Generate unique filename
+
             $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
             $filename = 'cv_' . $this->userId . '_' . time() . '.' . $extension;
             $filepath = $uploadDir . $filename;
-            
-            // Move uploaded file
+
             if (move_uploaded_file($file['tmp_name'], $filepath)) {
-                // Extract CV data
                 $extractedData = $this->extractCVData($filepath, $file['type']);
-                
-                // Store CV record
+
                 $stmt = $this->pdo->prepare("
-                    INSERT INTO staff_cvs (svcNo, filename, original_name, file_type, file_size, extracted_data, upload_date) 
+                    INSERT INTO staff_cvs (svcNo, filename, original_name, file_type, file_size, extracted_data, upload_date)
                     VALUES (?, ?, ?, ?, ?, ?, NOW())
                 ");
                 $stmt->execute([
-                    $this->userId, 
-                    $filename, 
-                    $file['name'], 
-                    $file['type'], 
-                    $file['size'], 
+                    $this->userId,
+                    $filename,
+                    $file['name'],
+                    $file['type'],
+                    $file['size'],
                     json_encode($extractedData)
                 ]);
-                
+
                 $cvId = $this->pdo->lastInsertId();
-                
+                $this->logActivity('cv_upload', "CV uploaded: {$file['name']}");
+
                 return [
-                    'success' => true, 
-                    'message' => 'CV uploaded successfully', 
+                    'success' => true,
+                    'message' => 'CV uploaded successfully',
                     'id' => $cvId,
                     'filename' => $filename,
                     'extracted_data' => $extractedData
@@ -636,16 +574,13 @@ class UserProfileManager {
             } else {
                 return ['success' => false, 'message' => 'Failed to upload CV file'];
             }
-            
+
         } catch (Exception $e) {
             error_log("Error uploading CV: " . $e->getMessage());
             return ['success' => false, 'message' => 'CV upload failed: ' . $e->getMessage()];
         }
     }
-    
-    /**
-     * Extract data from CV file
-     */
+
     private function extractCVData($filepath, $fileType) {
         $extractedData = [
             'education' => [],
@@ -654,63 +589,59 @@ class UserProfileManager {
             'contact' => [],
             'certifications' => []
         ];
-        
+
         try {
             $text = '';
-            
-            // Extract text based on file type
+
             if ($fileType === 'application/pdf') {
                 $text = $this->extractTextFromPDF($filepath);
             } elseif (in_array($fileType, ['application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'])) {
                 $text = $this->extractTextFromWord($filepath);
             }
-            
+
             if (!empty($text)) {
                 $extractedData = $this->parseCV($text);
             }
-            
+
         } catch (Exception $e) {
             error_log("Error extracting CV data: " . $e->getMessage());
         }
-        
+
         return $extractedData;
     }
-    
+
     /**
-     * Extract text from PDF (basic implementation)
+     * Extract text from PDF.
+     * NOTE: shells out to the system `pdftotext` binary. $filepath is always
+     * a filename this class generated itself, never a raw user-supplied
+     * path, which limits (but doesn't eliminate) the risk of this
+     * shell_exec call - a dedicated PDF-parsing library would be safer
+     * than shelling out at all.
      */
     private function extractTextFromPDF($filepath) {
-        // This is a basic implementation - in production you might use a library like pdf-parser
         $text = '';
-        
-        // Try using pdftotext if available
+
         if (function_exists('shell_exec')) {
-            $output = shell_exec("pdftotext '$filepath' -");
+            $output = shell_exec('pdftotext ' . escapeshellarg($filepath) . ' -');
             if ($output) {
                 $text = $output;
             }
         }
-        
+
         return $text;
     }
-    
-    /**
-     * Extract text from Word document (basic implementation)
-     */
+
     private function extractTextFromWord($filepath) {
         $text = '';
-        
-        // Basic text extraction - in production you might use PHPWord or similar
+
         if (pathinfo($filepath, PATHINFO_EXTENSION) === 'docx') {
-            // Try to extract from docx using zip
             try {
                 $zip = new ZipArchive();
                 if ($zip->open($filepath)) {
                     $xmlString = $zip->getFromName('word/document.xml');
                     $zip->close();
-                    
+
                     if ($xmlString) {
-                        // Remove XML tags and get text
                         $text = strip_tags($xmlString);
                         $text = preg_replace('/\s+/', ' ', $text);
                     }
@@ -719,13 +650,10 @@ class UserProfileManager {
                 error_log("Error extracting Word text: " . $e->getMessage());
             }
         }
-        
+
         return $text;
     }
-    
-    /**
-     * Parse CV text to extract structured data
-     */
+
     private function parseCV($text) {
         $data = [
             'personal' => [],
@@ -735,24 +663,21 @@ class UserProfileManager {
             'skills' => [],
             'certifications' => []
         ];
-        
-        // Extract email addresses
+
         if (preg_match_all('/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/', $text, $emails)) {
             foreach ($emails[0] as $email) {
                 $data['contact']['email'] = $email;
-                break; // Take the first email found
+                break;
             }
         }
-        
-        // Extract phone numbers (basic pattern)
+
         if (preg_match_all('/(?:\+\d{1,3}\s?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/', $text, $phones)) {
             foreach ($phones[0] as $phone) {
                 $data['contact']['phone'] = trim($phone);
-                break; // Take the first phone found
+                break;
             }
         }
-        
-        // Extract name (look for patterns at the beginning of the document)
+
         $lines = explode("\n", $text);
         $firstLines = array_slice($lines, 0, 10);
         foreach ($firstLines as $line) {
@@ -762,13 +687,12 @@ class UserProfileManager {
                 break;
             }
         }
-        
-        // Extract education (look for degree keywords)
+
         $educationPatterns = [
             '/\b(?:Bachelor|Master|PhD|Doctorate|Diploma|Certificate).*?(?:\d{4}|\d{2}\/\d{2}\/\d{4})/i',
             '/\b(?:BSc|MSc|MBA|PhD|BA|MA).*?(?:\d{4}|\d{2}\/\d{2}\/\d{4})/i'
         ];
-        
+
         foreach ($educationPatterns as $pattern) {
             if (preg_match_all($pattern, $text, $matches)) {
                 foreach ($matches[0] as $match) {
@@ -781,8 +705,7 @@ class UserProfileManager {
                 }
             }
         }
-        
-        // Extract skills (look for common skill section keywords)
+
         if (preg_match('/(?:Skills|Competencies|Technical Skills):?\s*(.+?)(?:\n\n|\n[A-Z]|$)/is', $text, $skillsMatch)) {
             $skillsText = $skillsMatch[1];
             $skills = preg_split('/[,;•\n]/', $skillsText);
@@ -793,8 +716,7 @@ class UserProfileManager {
                 }
             }
         }
-        
-        // Extract work experience (basic pattern)
+
         if (preg_match_all('/(?:Experience|Employment|Work History):?\s*(.+?)(?:\n\n|\n[A-Z]|$)/is', $text, $expMatches)) {
             foreach ($expMatches[1] as $expText) {
                 $lines = explode("\n", trim($expText));
@@ -807,23 +729,24 @@ class UserProfileManager {
                             'duration' => '',
                             'description' => $line
                         ];
-                        break; // Just take the first meaningful line for now
+                        break;
                     }
                 }
             }
         }
-        
+
         return $data;
     }
-    
+
     /**
-     * Get user's training records
+     * Get user's training records (self-reported - distinct from the
+     * admin-entered staff_skills table).
      */
     public function getTrainingRecords() {
         try {
             $stmt = $this->pdo->prepare("
-                SELECT * FROM training_records 
-                WHERE svcNo = ? 
+                SELECT * FROM training_records
+                WHERE svcNo = ?
                 ORDER BY startDate DESC
             ");
             $stmt->execute([$this->userId]);
@@ -833,33 +756,97 @@ class UserProfileManager {
             return [];
         }
     }
-    
+
     /**
      * Get user's family members
      */
     public function getFamilyMembers() {
         try {
+            $profileStmt = $this->pdo->prepare('SELECT gender FROM staff WHERE svcNo = ? LIMIT 1');
+            $profileStmt->execute([$this->userId]);
+            $personnelGender = $profileStmt->fetchColumn() ?: '';
             $stmt = $this->pdo->prepare("
-                SELECT * FROM staff_family_members 
-                WHERE svcNo = ? 
+                SELECT * FROM staff_family_members
+                WHERE svcNo = ?
                 ORDER BY is_emergency_contact DESC, relationship ASC
             ");
             $stmt->execute([$this->userId]);
-            return $stmt->fetchAll(PDO::FETCH_OBJ);
+            $members = $stmt->fetchAll(PDO::FETCH_OBJ);
+
+            if (!empty($members)) {
+                foreach ($members as $member) {
+                    $member->relationshipLabel = $this->formatSpouseRelationship($member->relationship ?? '', $personnelGender);
+                }
+                return $members;
+            }
+
+            // Fallback to legacy staff table NOK/alternate NOK fields if no family member
+            // records exist in staff_family_members.
+            $fallbackStmt = $this->pdo->prepare("SELECT nok, nokRelat, nokTel, altNok, altNokTel, altNokRelat FROM staff WHERE svcNo = ? LIMIT 1");
+            $fallbackStmt->execute([$this->userId]);
+            $legacyNok = $fallbackStmt->fetch(PDO::FETCH_OBJ);
+            if (!$legacyNok) {
+                return [];
+            }
+
+            $legacyMembers = [];
+            if (!empty($legacyNok->nok)) {
+                $member = new stdClass();
+                $member->id = 0;
+                $member->name = $legacyNok->nok;
+                $member->relationship = $legacyNok->nokRelat ?? 'Next of Kin';
+                $member->relationshipLabel = $this->formatSpouseRelationship($member->relationship, $personnelGender);
+                $member->phone = $legacyNok->nokTel ?? null;
+                $member->email = null;
+                $member->address = null;
+                $member->occupation = null;
+                $member->is_emergency_contact = 1;
+                $member->is_dependent = 0;
+                $member->is_next_of_kin = 1;
+                $member->nok_type = 'Primary';
+                $member->notes = 'Legacy NOK record from staff table';
+                $legacyMembers[] = $member;
+            }
+            if (!empty($legacyNok->altNok)) {
+                $member = new stdClass();
+                $member->id = 0;
+                $member->name = $legacyNok->altNok;
+                $member->relationship = $legacyNok->altNokRelat ?? 'Alternate Next of Kin';
+                $member->relationshipLabel = $this->formatSpouseRelationship($member->relationship, $personnelGender);
+                $member->phone = $legacyNok->altNokTel ?? null;
+                $member->email = null;
+                $member->address = null;
+                $member->occupation = null;
+                $member->is_emergency_contact = 1;
+                $member->is_dependent = 0;
+                $member->is_next_of_kin = 1;
+                $member->nok_type = 'Secondary';
+                $member->notes = 'Legacy alternate NOK record from staff table';
+                $legacyMembers[] = $member;
+            }
+
+            return $legacyMembers;
         } catch (PDOException $e) {
             error_log("Error fetching family members: " . $e->getMessage());
             return [];
         }
     }
-    
+
+    private function formatSpouseRelationship($relationship, $personnelGender) {
+        if (strcasecmp(trim((string)$relationship), 'spouse') !== 0) {
+            return $relationship;
+        }
+        return strcasecmp((string)$personnelGender, 'Male') === 0 ? 'Wife' : 'Husband';
+    }
+
     /**
      * Get user's addresses
      */
     public function getAddresses() {
         try {
             $stmt = $this->pdo->prepare("
-                SELECT * FROM staff_addresses 
-                WHERE svcNo = ? 
+                SELECT * FROM staff_addresses
+                WHERE svcNo = ?
                 ORDER BY is_primary DESC, address_type ASC
             ");
             $stmt->execute([$this->userId]);
@@ -869,16 +856,30 @@ class UserProfileManager {
             return [];
         }
     }
-    
+
     /**
-     * Get user's skills and competencies
+     * Get user's skills and competencies.
+     * Real staff_skills columns are course_name/course_type/
+     * certification_status/certificateNumber - aliased to the
+     * skillName/skillCategory/proficiency_level/certification names
+     * training.php's template actually reads. years_experience has no
+     * backing column anywhere, so it's aliased to NULL rather than left
+     * undefined (training.php accesses it without ?? / isset(), which
+     * would otherwise throw an "Undefined property" warning).
      */
     public function getSkills() {
         try {
             $stmt = $this->pdo->prepare("
-                SELECT * FROM staff_skills 
-                WHERE svcNo = ? 
-                ORDER BY skillCategory ASC, proficiency_level DESC
+                SELECT
+                    *,
+                    course_type AS skillCategory,
+                    course_name AS skillName,
+                    certification_status AS proficiency_level,
+                    certificateNumber AS certification,
+                    NULL AS years_experience
+                FROM staff_skills
+                WHERE svcNo = ?
+                ORDER BY course_type ASC, grade_obtained DESC
             ");
             $stmt->execute([$this->userId]);
             return $stmt->fetchAll(PDO::FETCH_OBJ);
@@ -887,16 +888,16 @@ class UserProfileManager {
             return [];
         }
     }
-    
+
     /**
-     * Get user's awards and decorations
+     * Get user's awards and decorations.
      */
     public function getAwards() {
         try {
             $stmt = $this->pdo->prepare("
-                SELECT * FROM staff_awards 
-                WHERE svcNo = ? 
-                ORDER BY date_awarded DESC
+                SELECT * FROM staff_awards
+                WHERE svcNo = ?
+                ORDER BY award_date DESC
             ");
             $stmt->execute([$this->userId]);
             return $stmt->fetchAll(PDO::FETCH_OBJ);
@@ -905,15 +906,15 @@ class UserProfileManager {
             return [];
         }
     }
-    
+
     /**
-     * Get user's deployment history
+     * Get user's deployment history (already matched the real schema).
      */
     public function getDeployments() {
         try {
             $stmt = $this->pdo->prepare("
-                SELECT * FROM staff_deployments 
-                WHERE svcNo = ? 
+                SELECT * FROM staff_deployments
+                WHERE svcNo = ?
                 ORDER BY startDate DESC
             ");
             $stmt->execute([$this->userId]);
@@ -923,22 +924,28 @@ class UserProfileManager {
             return [];
         }
     }
-    
+
     /**
-     * Get user's medals with medal details
+     * Get user's medals.
+     * Real table is `staff_awards` (joined to `honors` for the citation
+     * authority text) - the same table getAwards() above uses. There is
+     * no separate staff_medals/medals table anywhere in the schema;
+     * narrowed by award_type = 'Medal' so this and getAwards() return
+     * distinct, non-overlapping results instead of duplicating each other.
      */
     public function getMedals() {
         try {
             $stmt = $this->pdo->prepare("
-                SELECT 
-                    sm.*,
-                    m.name as medal_name,
-                    m.description as medal_description,
-                    m.imagePath
-                FROM staff_medals sm
-                INNER JOIN medals m ON sm.medal_id = m.id
-                WHERE sm.svcNo = ? 
-                ORDER BY sm.award_date DESC
+                SELECT
+                    sa.*,
+                    sa.award_name as medal_name,
+                    sa.citation as medal_description,
+                    h.honorDesc,
+                    h.honorAuth
+                FROM staff_awards sa
+                LEFT JOIN honors h ON sa.honorId = h.honorId
+                WHERE sa.svcNo = ? AND sa.award_type = 'Medal'
+                ORDER BY sa.award_date DESC
             ");
             $stmt->execute([$this->userId]);
             return $stmt->fetchAll(PDO::FETCH_OBJ);
@@ -947,24 +954,24 @@ class UserProfileManager {
             return [];
         }
     }
-    
+
     /**
-     * Get user's promotion history with rank details
+     * Get user's promotion history with rank details.
      */
     public function getPromotionHistory() {
         try {
             $stmt = $this->pdo->prepare("
-                SELECT 
+                SELECT
                     sp.*,
-                    r1.abbreviation as current_rank_abbr,
-                    r1.level as current_rank_level,
-                    r2.abbreviation as new_rank_abbr,
-                    r2.level as new_rank_level
-                FROM staff_promotions sp
-                LEFT JOIN ranks r1 ON sp.currentRank = r1.id
-                LEFT JOIN ranks r2 ON sp.newRank = r2.id
-                WHERE sp.svcNo = ? 
-                ORDER BY sp.dateFrom DESC
+                    r1.rankId as current_rank_abbr,
+                    r1.rankIndex as current_rank_level,
+                    r2.rankId as new_rank_abbr,
+                    r2.rankIndex as new_rank_level
+                FROM staff_promotion sp
+                LEFT JOIN `rank` r1 ON sp.currentRank = r1.rankId
+                LEFT JOIN `rank` r2 ON sp.newRank = r2.rankId
+                WHERE sp.svcNo = ?
+                ORDER BY sp.wefDate DESC
             ");
             $stmt->execute([$this->userId]);
             return $stmt->fetchAll(PDO::FETCH_OBJ);
@@ -973,59 +980,47 @@ class UserProfileManager {
             return [];
         }
     }
-    
+
     /**
-     * Get user's service history and promotions
+     * Get user's service history (enlistment + promotions/reversions).
      */
     public function getServiceHistory() {
         try {
-            // Get promotion history from audit log or dedicated table
             $stmt = $this->pdo->prepare("
-                SELECT 
-                    'Promotion' as record_type,
-                    CONCAT('Promoted to ', new_value) as description,
-                    createdAt as record_date,
-                    new_value as rank_name
-                FROM audit_log 
-                WHERE svcNo = ? AND field_name = 'rankID' AND action = 'update'
-                
+                SELECT
+                    CASE WHEN type = 'demotion' THEN 'Reversion' ELSE 'Promotion' END as record_type,
+                    CONCAT(CASE WHEN type = 'demotion' THEN 'Reverted to ' ELSE 'Promoted to ' END, newRank) as description,
+                    wefDate as record_date,
+                    newRank as rank_name
+                FROM staff_promotion
+                WHERE svcNo = ?
+
                 UNION ALL
-                
-                SELECT 
+
+                SELECT
                     'Enlistment' as record_type,
                     'Initial Enlistment' as description,
                     attestDate as record_date,
                     'Recruit' as rank_name
-                FROM staff 
-                WHERE id = ? AND attestDate IS NOT NULL
-                
+                FROM staff
+                WHERE svcNo = ? AND attestDate IS NOT NULL
+
                 ORDER BY record_date ASC
             ");
             $stmt->execute([$this->userId, $this->userId]);
             return $stmt->fetchAll(PDO::FETCH_OBJ);
         } catch (PDOException $e) {
-            // Fallback to basic service info if audit log doesn't exist
-            try {
-                $stmt = $this->pdo->prepare("
-                    SELECT 
-                        'Enlistment' as record_type,
-                        'Service Record' as description,
-                        attestDate as record_date,
-                        'Active Service' as rank_name
-                    FROM staff 
-                    WHERE id = ? AND attestDate IS NOT NULL
-                ");
-                $stmt->execute([$this->userId]);
-                return $stmt->fetchAll(PDO::FETCH_OBJ);
-            } catch (PDOException $e2) {
-                error_log("Error fetching service history: " . $e2->getMessage());
-                return [];
-            }
+            error_log("Error fetching service history: " . $e->getMessage());
+            return [];
         }
     }
-    
+
     /**
-     * Get user's medical information (if authorized)
+     * Get user's medical information (if authorized).
+     * NOTE: medical data warrants its own access-control review beyond
+     * what this class enforces - callers should confirm the requester is
+     * viewing their own record (or has an explicit medical-access role)
+     * before calling this with $includeDetails = true.
      */
     public function getMedicalInfo($includeDetails = false) {
         try {
@@ -1033,9 +1028,9 @@ class UserProfileManager {
             if ($includeDetails) {
                 $fields .= ", blood_group, height, weight, bmi, allergies";
             }
-            
+
             $stmt = $this->pdo->prepare("
-                SELECT {$fields} FROM staff_medical_records 
+                SELECT {$fields} FROM staff_medical_records
                 WHERE svcNo = ?
             ");
             $stmt->execute([$this->userId]);
@@ -1045,25 +1040,25 @@ class UserProfileManager {
             return null;
         }
     }
-    
+
     /**
      * Get recent activity summary
      */
     public function getRecentActivity($limit = 10) {
         $activities = [];
-        
+        $limit = (int)$limit;
+
         try {
-            // Recent training completions
             $stmt = $this->pdo->prepare("
-                SELECT 'Training Completed' as activity_type, course_name as details, 
+                SELECT 'Training Completed' as activity_type, course_name as details,
                        endDate as activity_date, status
-                FROM training_records 
+                FROM training_records
                 WHERE svcNo = ? AND status = 'completed' AND endDate IS NOT NULL
-                ORDER BY endDate DESC LIMIT ?
+                ORDER BY endDate DESC LIMIT $limit
             ");
-            $stmt->execute([$this->userId, $limit]);
+            $stmt->execute([$this->userId]);
             $training = $stmt->fetchAll(PDO::FETCH_OBJ);
-            
+
             foreach ($training as $t) {
                 $activities[] = [
                     'date' => $t->activity_date,
@@ -1074,22 +1069,23 @@ class UserProfileManager {
                     'color' => 'success'
                 ];
             }
-            
-            // Recent profile updates (from audit log if available)
+
             $stmt = $this->pdo->prepare("
-                SELECT action, createdAt, 
-                       CASE 
+                SELECT action, createdAt,
+                       CASE
                            WHEN action = 'profile_update' THEN 'Profile Updated'
                            WHEN action = 'contact_update' THEN 'Contact Info Updated'
+                           WHEN action = 'photo_update' THEN 'Photo Updated'
+                           WHEN action = 'cv_upload' THEN 'CV Uploaded'
                            ELSE CONCAT(UPPER(SUBSTRING(action, 1, 1)), SUBSTRING(action, 2))
                        END as activity_type
-                FROM audit_log 
-                WHERE svcNo = ? AND table_name = 'staff'
-                ORDER BY createdAt DESC LIMIT ?
+                FROM audit_log
+                WHERE svcNo = ?
+                ORDER BY createdAt DESC LIMIT $limit
             ");
-            $stmt->execute([$this->userId, $limit]);
+            $stmt->execute([$this->userId]);
             $updates = $stmt->fetchAll(PDO::FETCH_OBJ);
-            
+
             foreach ($updates as $u) {
                 $activities[] = [
                     'date' => $u->createdAt,
@@ -1100,188 +1096,154 @@ class UserProfileManager {
                     'color' => 'info'
                 ];
             }
-            
-            // Sort by date and limit
+
             usort($activities, function($a, $b) {
                 return strtotime($b['date']) - strtotime($a['date']);
             });
-            
+
             return array_slice($activities, 0, $limit);
-            
+
         } catch (PDOException $e) {
             error_log("Error fetching recent activity: " . $e->getMessage());
             return [];
         }
     }
-    
+
     /**
-     * Update basic profile information
+     * Update basic profile information.
      */
     public function updateBasicInfo($data) {
         try {
-            $allowedFields = ['email', 'tel', 'height', 'bloodGp', 'marital', 'religion'];
+            $fieldMap = [
+                'email' => 'officialEmail',
+                'tel' => 'telNo',
+                'height' => 'height',
+                'bloodGp' => 'bloodGp',
+                'marital' => 'marital',
+                'religion' => 'religion'
+            ];
             $updateFields = [];
             $updateValues = [];
-            
-            foreach ($allowedFields as $field) {
-                if (isset($data[$field]) && $data[$field] !== '') {
-                    $updateFields[] = "{$field} = ?";
-                    $updateValues[] = $data[$field];
+
+            foreach ($fieldMap as $inputKey => $dbColumn) {
+                if (isset($data[$inputKey]) && $data[$inputKey] !== '') {
+                    $updateFields[] = "$dbColumn = ?";
+                    $updateValues[] = $data[$inputKey];
                 }
             }
-            
+
             if (empty($updateFields)) {
                 return ['success' => false, 'message' => 'No valid fields to update'];
             }
-            
+
             $updateValues[] = $this->userId;
-            $sql = "UPDATE staff SET " . implode(', ', $updateFields) . ", updatedAt = NOW() WHERE id = ?";
-            
+            $sql = "UPDATE staff SET " . implode(', ', $updateFields) . ", updatedAt = NOW() WHERE svcNo = ?";
+
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($updateValues);
-            
-            // Log the update
-            $this->logActivity('profile_update', 'Basic profile information updated');
-            
+
             return ['success' => true, 'message' => 'Profile updated successfully'];
-            
+
         } catch (PDOException $e) {
             error_log("Error updating profile: " . $e->getMessage());
             return ['success' => false, 'message' => 'Error updating profile'];
         }
     }
-    
-    /**
-     * Update contact information (simple version)
-     * This is a simpler version that replaces all contact records
-     */
-    public function updateContactInfoSimple($contactData) {
-        try {
-            $this->pdo->beginTransaction();
-            
-            // Clear existing contact info
-            $stmt = $this->pdo->prepare("DELETE FROM staff_contact_info WHERE svcNo = ?");
-            $stmt->execute([$this->userId]);
-            
-            // Insert new contact info
-            $stmt = $this->pdo->prepare("
-                INSERT INTO staff_contact_info (svcNo, contact_type, contact_value, contact_name, relationship, is_primary, createdAt) 
-                VALUES (?, ?, ?, ?, ?, ?, NOW())
-            ");
-            
-            foreach ($contactData as $contact) {
-                if (!empty($contact['value'])) {
-                    $stmt->execute([
-                        $this->userId,
-                        $contact['type'],
-                        $contact['value'],
-                        $contact['contact_name'] ?? null,
-                        $contact['relationship'] ?? null,
-                        $contact['is_primary'] ?? false
-                    ]);
-                }
-            }
-            
-            $this->pdo->commit();
-            $this->logActivity('contact_update', 'Contact information updated');
-            
-            return ['success' => true, 'message' => 'Contact information updated successfully'];
-            
-        } catch (PDOException $e) {
-            $this->pdo->rollBack();
-            error_log("Error updating contact info: " . $e->getMessage());
-            return ['success' => false, 'message' => 'Error updating contact information'];
-        }
-    }
-    
+
     /**
      * Calculate age from date of birth
      */
     public function calculateAge($dob) {
         if (!$dob) return 'N/A';
-        
+
         $dobDate = new DateTime($dob);
         $now = new DateTime();
         $age = $now->diff($dobDate)->y;
-        
+
         return $age;
     }
-    
+
     /**
      * Validate Next of Kin (NOK) rules
-     * - Must have exactly 2 NOK: 1 Primary, 1 Secondary
-     * - Cannot have duplicate NOK types
      */
     public function validateNOKRules($familyData, $excludeMemberId = null) {
         try {
-            // Get current NOK designations
             $query = "SELECT id, is_next_of_kin, nok_type FROM staff_family_members WHERE svcNo = ? AND is_next_of_kin = 1";
             $params = [$this->userId];
-            
+
             if ($excludeMemberId) {
                 $query .= " AND id != ?";
                 $params[] = $excludeMemberId;
             }
-            
+
             $stmt = $this->pdo->prepare($query);
             $stmt->execute($params);
             $currentNOKs = $stmt->fetchAll(PDO::FETCH_OBJ);
-            
-            // Check if trying to add/update as NOK
+
             if (isset($familyData['is_next_of_kin']) && $familyData['is_next_of_kin']) {
                 $requestedNOKType = $familyData['nok_type'] ?? '';
-                
-                // Validate NOK type is provided
+
                 if (empty($requestedNOKType) || !in_array($requestedNOKType, ['Primary', 'Secondary'])) {
                     return ['valid' => false, 'message' => 'NOK type must be either Primary or Secondary.'];
                 }
-                
-                // Check for duplicate NOK type
+
                 foreach ($currentNOKs as $nok) {
                     if ($nok->nok_type === $requestedNOKType) {
                         return ['valid' => false, 'message' => "A {$requestedNOKType} Next of Kin is already designated."];
                     }
                 }
-                
-                // Check if adding would exceed 2 NOKs
+
                 if (count($currentNOKs) >= 2) {
                     return ['valid' => false, 'message' => 'Maximum of 2 Next of Kin allowed (1 Primary, 1 Secondary).'];
                 }
             }
-            
-            // If removing NOK designation, check if it would leave less than 2
+
             if (isset($familyData['is_next_of_kin']) && !$familyData['is_next_of_kin'] && count($currentNOKs) <= 1) {
                 return ['valid' => false, 'message' => 'At least 1 Next of Kin must be maintained.'];
             }
-            
+
             return ['valid' => true];
-            
+
         } catch (PDOException $e) {
             error_log("Error validating NOK rules: " . $e->getMessage());
             return ['valid' => false, 'message' => 'Error validating Next of Kin rules.'];
         }
     }
-    
+
     /**
      * Get current NOK status summary
      */
     public function getNOKStatus() {
         try {
-            // Get NOK counts and names
             $stmt = $this->pdo->prepare("
-                SELECT name, nok_type 
-                FROM staff_family_members 
-                WHERE svcNo = ? AND is_next_of_kin = 1 
+                SELECT name, nok_type
+                FROM staff_family_members
+                WHERE svcNo = ? AND is_next_of_kin = 1
                 ORDER BY nok_type
             ");
             $stmt->execute([$this->userId]);
             $noks = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
+
+            if (empty($noks)) {
+                $legacyStmt = $this->pdo->prepare("SELECT nok, nokRelat, nokTel, altNok, altNokTel, altNokRelat FROM staff WHERE svcNo = ? LIMIT 1");
+                $legacyStmt->execute([$this->userId]);
+                $legacyNok = $legacyStmt->fetch(PDO::FETCH_OBJ);
+
+                if (!empty($legacyNok)) {
+                    if (!empty($legacyNok->nok)) {
+                        $noks[] = ['name' => $legacyNok->nok, 'nok_type' => 'Primary'];
+                    }
+                    if (!empty($legacyNok->altNok)) {
+                        $noks[] = ['name' => $legacyNok->altNok, 'nok_type' => 'Secondary'];
+                    }
+                }
+            }
+
             $primary = null;
             $secondary = null;
             $primaryCount = 0;
             $secondaryCount = 0;
-            
+
             foreach ($noks as $nok) {
                 if ($nok['nok_type'] === 'Primary') {
                     $primary = $nok['name'];
@@ -1291,10 +1253,10 @@ class UserProfileManager {
                     $secondaryCount++;
                 }
             }
-            
+
             $totalCount = $primaryCount + $secondaryCount;
             $availableSlots = 2 - $totalCount;
-            
+
             return [
                 'primary' => $primary,
                 'secondary' => $secondary,
@@ -1323,19 +1285,20 @@ class UserProfileManager {
     }
 
     /**
-     * Add new family member
+     * Add new family member.
+     * Now persists email/address/is_dependent/notes (previously silently
+     * dropped despite the add-member form collecting them) and accepts
+     * 'occupation' consistently with updateFamilyMember() below.
      */
     public function addFamilyMember($familyData) {
         try {
-            // Validate NOK rules if this member is designated as NOK
             if (isset($familyData['is_next_of_kin']) && $familyData['is_next_of_kin']) {
                 $nokValidation = $this->validateNOKRules($familyData);
                 if (!$nokValidation['valid']) {
                     return ['success' => false, 'message' => $nokValidation['message']];
                 }
             }
-            
-            // Check for duplicate family member (by name and relationship for this user)
+
             $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM staff_family_members WHERE svcNo = ? AND name = ? AND relationship = ?");
             $stmt->execute([
                 $this->userId,
@@ -1345,22 +1308,27 @@ class UserProfileManager {
             if ($stmt->fetchColumn() > 0) {
                 return ['success' => false, 'message' => 'This family member already exists.'];
             }
-            
+
             $stmt = $this->pdo->prepare(
-                "INSERT INTO staff_family_members 
-                (svcNo, name, relationship, date_of_birth, phone, occupation, is_next_of_kin, nok_type, is_emergency_contact, createdAt, updatedAt) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())"
+                "INSERT INTO staff_family_members
+                (svcNo, name, relationship, date_of_birth, phone, email, address, occupation,
+                 is_next_of_kin, nok_type, is_emergency_contact, is_dependent, notes, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())"
             );
             $stmt->execute([
                 $this->userId,
                 $familyData['name'],
                 $familyData['relationship'],
                 $familyData['date_of_birth'] ?: null,
-                $familyData['phone'],
+                $familyData['phone'] ?? null,
+                $familyData['email'] ?? null,
+                $familyData['address'] ?? null,
                 $familyData['occupation'] ?? '',
                 isset($familyData['is_next_of_kin']) ? (int)$familyData['is_next_of_kin'] : 0,
                 (isset($familyData['is_next_of_kin']) && $familyData['is_next_of_kin']) ? ($familyData['nok_type'] ?? null) : null,
-                $familyData['is_emergency_contact']
+                $familyData['is_emergency_contact'] ?? 0,
+                $familyData['is_dependent'] ?? 0,
+                $familyData['notes'] ?? null
             ]);
             $this->logActivity('family_add', 'Added family member: ' . $familyData['name']);
             return ['success' => true, 'message' => 'Family member added successfully'];
@@ -1369,116 +1337,118 @@ class UserProfileManager {
             return ['success' => false, 'message' => 'Error adding family member'];
         }
     }
-    
+
     /**
-     * Update family member
+     * Update family member.
+     * Now includes 'occupation' in the UPDATE (was collected in the edit
+     * form but discarded before - see the matching family.php fix).
      */
     public function updateFamilyMember($memberId, $familyData) {
         try {
-            // Verify the family member belongs to this user
             $stmt = $this->pdo->prepare("SELECT id FROM staff_family_members WHERE id = ? AND svcNo = ?");
             $stmt->execute([$memberId, $this->userId]);
-            
+
             if (!$stmt->fetch()) {
                 return ['success' => false, 'message' => 'Family member not found or unauthorized'];
             }
-            
-            // Validate NOK rules if this member is being designated as NOK
+
             if (isset($familyData['is_next_of_kin']) && $familyData['is_next_of_kin']) {
                 $nokValidation = $this->validateNOKRules($familyData, $memberId);
                 if (!$nokValidation['valid']) {
                     return ['success' => false, 'message' => $nokValidation['message']];
                 }
             }
-            
+
             $stmt = $this->pdo->prepare("
-                UPDATE staff_family_members 
-                SET name = ?, relationship = ?, date_of_birth = ?, phone = ?, email = ?, 
-                    address = ?, is_emergency_contact = ?, is_dependent = ?, notes = ?, 
+                UPDATE staff_family_members
+                SET name = ?, relationship = ?, date_of_birth = ?, phone = ?, email = ?,
+                    address = ?, occupation = ?, is_emergency_contact = ?, is_dependent = ?, notes = ?,
                     is_next_of_kin = ?, nok_type = ?, updatedAt = NOW()
                 WHERE id = ? AND svcNo = ?
             ");
-            
+
             $stmt->execute([
                 $familyData['name'],
                 $familyData['relationship'],
                 $familyData['date_of_birth'] ?: null,
-                $familyData['phone'],
-                $familyData['email'],
-                $familyData['address'],
-                $familyData['is_emergency_contact'],
-                $familyData['is_dependent'],
-                $familyData['notes'],
+                $familyData['phone'] ?? null,
+                $familyData['email'] ?? null,
+                $familyData['address'] ?? null,
+                $familyData['occupation'] ?? '',
+                $familyData['is_emergency_contact'] ?? 0,
+                $familyData['is_dependent'] ?? 0,
+                $familyData['notes'] ?? null,
                 isset($familyData['is_next_of_kin']) ? (int)$familyData['is_next_of_kin'] : 0,
                 (isset($familyData['is_next_of_kin']) && $familyData['is_next_of_kin']) ? ($familyData['nok_type'] ?? null) : null,
                 $memberId,
                 $this->userId
             ]);
-            
+
             $this->logActivity('family_update', 'Updated family member: ' . $familyData['name']);
-            
+
             return ['success' => true, 'message' => 'Family member updated successfully'];
-            
+
         } catch (PDOException $e) {
             error_log("Error updating family member: " . $e->getMessage());
             return ['success' => false, 'message' => 'Error updating family member'];
         }
     }
-    
+
     /**
      * Delete family member
      */
     public function deleteFamilyMember($memberId) {
         try {
-            // Get family member name for logging
             $stmt = $this->pdo->prepare("SELECT name FROM staff_family_members WHERE id = ? AND svcNo = ?");
             $stmt->execute([$memberId, $this->userId]);
             $member = $stmt->fetch(PDO::FETCH_OBJ);
-            
+
             if (!$member) {
                 return ['success' => false, 'message' => 'Family member not found or unauthorized'];
             }
-            
+
             $stmt = $this->pdo->prepare("DELETE FROM staff_family_members WHERE id = ? AND svcNo = ?");
             $stmt->execute([$memberId, $this->userId]);
-            
+
             $this->logActivity('family_delete', 'Deleted family member: ' . $member->name);
-            
+
             return ['success' => true, 'message' => 'Family member deleted successfully'];
-            
+
         } catch (PDOException $e) {
             error_log("Error deleting family member: " . $e->getMessage());
             return ['success' => false, 'message' => 'Error deleting family member'];
         }
     }
-    
+
     /**
      * Calculate years of service
      */
     private function calculateServiceYears($enlistmentDate) {
         if (!$enlistmentDate) return 'N/A';
-        
+
         $enlistmentDateTime = new DateTime($enlistmentDate);
         $now = new DateTime();
         $service = $now->diff($enlistmentDateTime);
-        
+
         $years = $service->y;
         $months = $service->m;
-        
+
         if ($years > 0) {
             return $years . ' years' . ($months > 0 ? ", {$months} months" : '');
         } else {
             return $months . ' months';
         }
     }
-    
+
     /**
-     * Log user activity
+     * Log user activity. Writes to `audit_log`, a table dedicated to this
+     * module - deliberately NOT the existing `activity_log` table, whose
+     * user_id column is a strict int and can't safely hold a svcNo string.
      */
     private function logActivity($action, $description) {
         try {
             $stmt = $this->pdo->prepare("
-                INSERT INTO audit_log (svcNo, action, table_name, record_id, new_values, createdAt) 
+                INSERT INTO audit_log (svcNo, action, table_name, record_id, new_values, createdAt)
                 VALUES (?, ?, 'staff', ?, ?, NOW())
             ");
             $stmt->execute([
@@ -1491,40 +1461,42 @@ class UserProfileManager {
             error_log("Error logging activity: " . $e->getMessage());
         }
     }
-    
+
     /**
-     * Get profile completion percentage
+     * Get profile completion percentage. This is the single source of
+     * truth for "how complete is this profile" - pages should call this
+     * rather than computing their own ad-hoc completeness estimate, so
+     * the number shown is always consistent and reflects real data.
      */
     public function getProfileCompleteness() {
         $profile = $this->getUserProfile();
         if (!$profile) return 0;
-        
+
         $requiredFields = [
-            'fname', 'lname', 'DOB', 'gender', 'email', 'tel', 
-            'rankID', 'unitID', 'NRC', 'bloodGp', 'marital'
+            'fName', 'lName', 'DOB', 'gender', 'officialEmail', 'telNo',
+            'rankId', 'unitId', 'NRC', 'bloodGp', 'marital', 'address',
+            'province', 'district', 'combatSize', 'bootSize', 'sSize', 'hDress'
         ];
-        
+
         $completedFields = 0;
         foreach ($requiredFields as $field) {
             if (!empty($profile->$field)) {
                 $completedFields++;
             }
         }
-        
-        // Bonus points for additional data
+
         $bonusPoints = 0;
-        if ($this->getEducationRecords()) $bonusPoints += 10;
-        if ($this->getTrainingRecords()) $bonusPoints += 10;
-        if ($this->getFamilyMembers()) $bonusPoints += 10;
-        if ($this->getContactInfo()) $bonusPoints += 5;
-        if ($this->getAddresses()) $bonusPoints += 5;
-        
+        if ($this->getEducationRecords()) $bonusPoints += 8;
+        if ($this->getTrainingRecords()) $bonusPoints += 4;
+        if ($this->getFamilyMembers()) $bonusPoints += 4;
+        if ($this->getContactInfo()) $bonusPoints += 4;
+
         $basePercentage = ($completedFields / count($requiredFields)) * 80;
         $totalPercentage = min(100, $basePercentage + $bonusPoints);
-        
+
         return round($totalPercentage);
     }
-    
+
     /**
      * Get user's uploaded CVs
      */
@@ -1532,8 +1504,8 @@ class UserProfileManager {
         try {
             $stmt = $this->pdo->prepare("
                 SELECT id, filename, original_name, file_type, file_size, extracted_data, upload_date, is_verified
-                FROM staff_cvs 
-                WHERE svcNo = ? 
+                FROM staff_cvs
+                WHERE svcNo = ?
                 ORDER BY upload_date DESC
             ");
             $stmt->execute([$this->userId]);
@@ -1543,90 +1515,85 @@ class UserProfileManager {
             return [];
         }
     }
-    
-    /**
-     * Get CV extracted data for verification
-     */
+
     public function getCVData($cvId) {
         try {
             $stmt = $this->pdo->prepare("
                 SELECT extracted_data, filename, original_name
-                FROM staff_cvs 
+                FROM staff_cvs
                 WHERE id = ? AND svcNo = ?
             ");
             $stmt->execute([$cvId, $this->userId]);
             $result = $stmt->fetch(PDO::FETCH_OBJ);
-            
+
             if ($result) {
                 $result->extracted_data = json_decode($result->extracted_data, true);
                 return $result;
             }
-            
+
             return null;
         } catch (PDOException $e) {
             error_log("Error fetching CV data: " . $e->getMessage());
             return null;
         }
     }
-    
-    /**
-     * Apply verified CV data to profile
-     */
+
     public function applyCVData($cvId, $verifiedData) {
         try {
             $this->pdo->beginTransaction();
-            
-            // Apply contact information
+
             if (isset($verifiedData['contact']) && !empty($verifiedData['contact'])) {
                 foreach ($verifiedData['contact'] as $contact) {
                     if (!empty($contact['value'])) {
                         $stmt = $this->pdo->prepare("
-                            INSERT INTO staff_contact_info (svcNo, contact_type, contact_value, is_primary) 
+                            INSERT INTO staff_contact_info (svcNo, contact_type, contact_value, is_primary)
                             VALUES (?, ?, ?, 0)
                         ");
                         $stmt->execute([$this->userId, $contact['type'], $contact['value']]);
                     }
                 }
             }
-            
-            // Apply education information
+
             if (isset($verifiedData['education']) && !empty($verifiedData['education'])) {
                 foreach ($verifiedData['education'] as $education) {
                     if (!empty($education['qualification'])) {
                         $stmt = $this->pdo->prepare("
-                            INSERT INTO staff_education (svcNo, qualification, institution, level, year_completed) 
-                            VALUES (?, ?, ?, ?, ?)
+                            INSERT INTO staff_course (svcNo, instId, cseId, qualification, cseStart, cseEnd, grade, result, isHighest, authID)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ");
                         $stmt->execute([
                             $this->userId,
-                            $education['qualification'],
                             $education['institution'] ?? 'Not specified',
-                            $education['level'] ?? 'Other',
-                            $education['year'] ?? date('Y')
+                            $education['course_id'] ?? '',
+                            $education['qualification'],
+                            null,
+                            !empty($education['year']) ? $education['year'] . '-12-31' : null,
+                            $education['grade'] ?? '',
+                            $education['result'] ?? '',
+                            0,
+                            'CV Import'
                         ]);
                     }
                 }
             }
-            
-            // Apply skills information
+
             if (isset($verifiedData['skills']) && !empty($verifiedData['skills'])) {
                 foreach ($verifiedData['skills'] as $skill) {
                     if (!empty($skill['skill'])) {
                         $stmt = $this->pdo->prepare("
-                            INSERT INTO staff_skills (svcNo, skillName, skillLevel) 
-                            VALUES (?, ?, 'Intermediate')
+                            INSERT INTO staff_skills (svcNo, course_name, course_type, grade_obtained)
+                            VALUES (?, ?, 'CV Import', ?)
                         ");
-                        $stmt->execute([$this->userId, $skill['skill']]);
+                        $stmt->execute([$this->userId, $skill['skill'], $skill['level'] ?? 'Intermediate']);
                     }
                 }
             }
-            
-            // Apply certifications
+
             if (isset($verifiedData['certifications']) && !empty($verifiedData['certifications'])) {
                 foreach ($verifiedData['certifications'] as $cert) {
                     if (!empty($cert['certification'])) {
                         $stmt = $this->pdo->prepare("
-                            INSERT INTO staff_certifications (svcNo, certification_name, issuer, issue_date, expiry_date) 
+                            INSERT INTO staff_certifications (svcNo, certification_name, issuer, issue_date, expiry_date)
                             VALUES (?, ?, ?, ?, ?)
                         ");
                         $stmt->execute([
@@ -1639,201 +1606,170 @@ class UserProfileManager {
                     }
                 }
             }
-            
-            // Mark CV as verified and applied
+
             $stmt = $this->pdo->prepare("UPDATE staff_cvs SET is_verified = 1, applied_date = NOW() WHERE id = ? AND svcNo = ?");
             $stmt->execute([$cvId, $this->userId]);
-            
+
             $this->pdo->commit();
-            
+
             return ['success' => true, 'message' => 'CV data applied to profile successfully'];
-            
+
         } catch (PDOException $e) {
             $this->pdo->rollBack();
             error_log("Error applying CV data: " . $e->getMessage());
             return ['success' => false, 'message' => 'Failed to apply CV data: ' . $e->getMessage()];
         }
     }
-    
-    /**
-     * Get profile photo URL
-     */
+
     public function getProfilePhotoURL() {
         try {
-            // Ensure we have user service number
             if (empty($this->userSvcNo)) {
                 $this->loadUserInfo();
             }
-            
+
             if ($this->userSvcNo) {
-                // Look for profile photo by service number
                 $uploadDir = dirname(__DIR__) . '/uploads/profile_photos/';
                 $extensions = ['jpg', 'jpeg', 'png', 'gif'];
-                
+
                 foreach ($extensions as $ext) {
                     $filename = $this->userSvcNo . '.' . $ext;
                     $filepath = $uploadDir . $filename;
-                    
+
                     if (file_exists($filepath)) {
                         return '/Armis2/uploads/profile_photos/' . $filename;
                     }
                 }
             }
-            
-            // Fallback: try database column (for backward compatibility)
+
             try {
-                $stmt = $this->pdo->prepare("SELECT profilePhoto FROM staff WHERE id = ?");
+                $stmt = $this->pdo->prepare("SELECT profilePhoto FROM staff WHERE svcNo = ?");
                 $stmt->execute([$this->userId]);
                 $result = $stmt->fetch(PDO::FETCH_OBJ);
-                
+
                 if ($result && $result->profilePhoto) {
-                    $photoPath = '/Armis2/uploads/profiles/' . $result->profilePhoto;
+                    $photoPath = '/Armis2/uploads/profile_photos/' . $result->profilePhoto;
                     if (file_exists(dirname(__DIR__) . $photoPath)) {
                         return $photoPath;
                     }
                 }
             } catch (PDOException $e) {
-                // Column doesn't exist, that's OK
-                error_log("Profile photo column not found (using service number): " . $e->getMessage());
+                error_log("Profile photo lookup failed: " . $e->getMessage());
             }
-            
-            // Return default avatar with user's service number for initials
+
             if ($this->userSvcNo) {
                 return '/Armis2/shared/default_avatar.php?name=' . urlencode($this->userSvcNo);
             }
-            
+
             return '/Armis2/shared/default_avatar.php';
-            
+
         } catch (PDOException $e) {
             error_log("Error getting profile photo: " . $e->getMessage());
             return '/Armis2/shared/default_avatar.php';
         }
     }
-    
-    /**
-     * Delete a CV record and its file
-     */
+
     public function deleteCVRecord($cvId) {
         try {
             $this->pdo->beginTransaction();
-            
-            // Get CV details first
+
             $stmt = $this->pdo->prepare("
-                SELECT filename FROM staff_cvs 
+                SELECT filename FROM staff_cvs
                 WHERE id = ? AND svcNo = ?
             ");
             $stmt->execute([$cvId, $this->userId]);
             $cv = $stmt->fetch(PDO::FETCH_OBJ);
-            
+
             if (!$cv) {
                 return ['success' => false, 'message' => 'CV not found or access denied'];
             }
-            
-            // Delete from database
+
             $stmt = $this->pdo->prepare("DELETE FROM staff_cvs WHERE id = ? AND svcNo = ?");
             $stmt->execute([$cvId, $this->userId]);
-            
-            // Delete physical file
+
             $uploadDir = dirname(__DIR__) . '/uploads/cvs/';
             $filepath = $uploadDir . $cv->filename;
             if (file_exists($filepath)) {
                 unlink($filepath);
             }
-            
+
             $this->pdo->commit();
-            
-            // Log activity
+
             $this->logActivity('cv_delete', "CV deleted: {$cv->filename}");
-            
+
             return ['success' => true, 'message' => 'CV deleted successfully'];
-            
+
         } catch (Exception $e) {
             $this->pdo->rollback();
             error_log("Error deleting CV: " . $e->getMessage());
             return ['success' => false, 'message' => 'Failed to delete CV: ' . $e->getMessage()];
         }
     }
-    
-    /**
-     * Re-extract data from an existing CV
-     */
+
     public function reExtractCVData($cvId) {
         try {
-            // Get CV details
             $stmt = $this->pdo->prepare("
-                SELECT filename, file_type FROM staff_cvs 
+                SELECT filename, file_type FROM staff_cvs
                 WHERE id = ? AND svcNo = ?
             ");
             $stmt->execute([$cvId, $this->userId]);
             $cv = $stmt->fetch(PDO::FETCH_OBJ);
-            
+
             if (!$cv) {
                 return ['success' => false, 'message' => 'CV not found or access denied'];
             }
-            
-            // Check if file still exists
+
             $uploadDir = dirname(__DIR__) . '/uploads/cvs/';
             $filepath = $uploadDir . $cv->filename;
             if (!file_exists($filepath)) {
                 return ['success' => false, 'message' => 'CV file no longer exists'];
             }
-            
-            // Re-extract data
+
             $extractedData = $this->extractCVData($filepath, $cv->file_type);
-            
-            // Update database with new extracted data
+
             $stmt = $this->pdo->prepare("
-                UPDATE staff_cvs 
-                SET extracted_data = ?, is_verified = 0 
+                UPDATE staff_cvs
+                SET extracted_data = ?, is_verified = 0
                 WHERE id = ? AND svcNo = ?
             ");
             $stmt->execute([json_encode($extractedData), $cvId, $this->userId]);
-            
-            // Log activity
+
             $this->logActivity('cv_re_extract', "CV data re-extracted: {$cv->filename}");
-            
+
             return ['success' => true, 'message' => 'CV data re-extracted successfully', 'data' => $extractedData];
-            
+
         } catch (Exception $e) {
             error_log("Error re-extracting CV data: " . $e->getMessage());
             return ['success' => false, 'message' => 'Failed to re-extract CV data: ' . $e->getMessage()];
         }
     }
-    
-    /**
-     * Mark a CV as verified
-     */
+
     public function markCVAsVerified($cvId) {
         try {
             $stmt = $this->pdo->prepare("
-                UPDATE staff_cvs 
-                SET is_verified = 1 
+                UPDATE staff_cvs
+                SET is_verified = 1
                 WHERE id = ? AND svcNo = ?
             ");
-            $result = $stmt->execute([$cvId, $this->userId]);
-            
+            $stmt->execute([$cvId, $this->userId]);
+
             if ($stmt->rowCount() > 0) {
-                // Log activity
                 $this->logActivity('cv_verify', "CV marked as verified");
                 return ['success' => true, 'message' => 'CV marked as verified'];
             } else {
                 return ['success' => false, 'message' => 'CV not found or already verified'];
             }
-            
+
         } catch (Exception $e) {
             error_log("Error marking CV as verified: " . $e->getMessage());
             return ['success' => false, 'message' => 'Failed to update CV status: ' . $e->getMessage()];
         }
     }
-    
-    /**
-     * Get language records for user
-     */
+
     public function getLanguageRecords() {
         try {
             $stmt = $this->pdo->prepare("
-                SELECT * FROM staff_languages 
-                WHERE svcNo = ? 
+                SELECT * FROM staff_languages
+                WHERE svcNo = ?
                 ORDER BY language_name ASC
             ");
             $stmt->execute([$this->userId]);
@@ -1843,10 +1779,7 @@ class UserProfileManager {
             return [];
         }
     }
-    
-    /**
-     * Update language records with change detection
-     */
+
     public function updateLanguageRecords($languageData) {
         try {
             $this->pdo->beginTransaction();
@@ -1891,7 +1824,8 @@ class UserProfileManager {
                                 $languageRecord['can_speak'],
                                 $languageRecord['can_understand'],
                                 $now,
-                                $langId
+                                $langId,
+                                $this->userId
                             ]);
                             $changesMade = true;
                         }

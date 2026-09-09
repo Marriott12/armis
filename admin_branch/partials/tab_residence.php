@@ -1,4 +1,4 @@
-<div class="tab-pane fade p-3 border rounded <?=isset($tabErrors['residence']) ? 'show active' : ''?>" id="residence" role="tabpanel">
+<div class="tab-pane fade p-3 border rounded <?=$activeTabKey === 'residence' ? 'show active' : ''?>" id="residence" role="tabpanel">
     <h5 class="mb-3 text-success">Residential Details</h5>
     <div class="row mb-3">
         <div class="col-md-3 mb-2">

@@ -43,11 +43,11 @@ $serviceYears = 'N/A';
 
 if (isset($personalInfo->rankId) && $personalInfo->rankId) {
     try {
-        $stmt = $pdo->prepare("SELECT rankName, rankId as abbreviation FROM rank WHERE rankId = ?");
+        $stmt = $pdo->prepare("SELECT rankId, rankIndex FROM `rank` WHERE rankId = ?");
         $stmt->execute([$personalInfo->rankId]);
         $rankData = $stmt->fetch(PDO::FETCH_OBJ);
         if ($rankData) {
-            $rankName = $rankData->rank ?? $rankData->abbreviation ?? 'N/A';
+            $rankName = $rankData->rankId ?? 'N/A';
         }
     } catch (Exception $e) {
         error_log("Rank query error: " . $e->getMessage());
@@ -56,11 +56,11 @@ if (isset($personalInfo->rankId) && $personalInfo->rankId) {
 
 if (isset($personalInfo->unitId) && $personalInfo->unitId) {
     try {
-        $stmt = $pdo->prepare("SELECT code, code FROM unit WHERE unitId = ?");
+        $stmt = $pdo->prepare("SELECT unitId, unitLoc FROM unit WHERE unitId = ?");
         $stmt->execute([$personalInfo->unitId]);
         $unitData = $stmt->fetch(PDO::FETCH_OBJ);
         if ($unitData) {
-            $unitName = $unitData->name ?? $unitData->code ?? 'N/A';
+            $unitName = $unitData->unitId . ($unitData->unitLoc ? ' - ' . $unitData->unitLoc : '');
         }
     } catch (Exception $e) {
         error_log("Unit query error: " . $e->getMessage());
@@ -82,24 +82,31 @@ function getUserStats($pdo, $userId) {
     ];
     
     try {
-        // Profile completion percentage
+        // Profile completion percentage.
+        // FIX: this raw SQL query used PHP-level property alias names
+        // (id/phone/email/bsize/ssize/hdress) as if they were real staff
+        // columns - those aliases only exist on the object returned by
+        // UserProfileManager::getUserProfile() (see profile_manager.php),
+        // not in the database itself. The real columns are
+        // svcNo/telNo/officialEmail/bootSize/sSize/hDress, and staff's
+        // primary key is svcNo, not id.
         $stmt = $pdo->prepare("
             SELECT 
                 (CASE WHEN fName IS NOT NULL AND fName != '' THEN 10 ELSE 0 END +
                  CASE WHEN lName IS NOT NULL AND lName != '' THEN 10 ELSE 0 END +
-                 CASE WHEN dob IS NOT NULL THEN 10 ELSE 0 END +
+                 CASE WHEN DOB IS NOT NULL THEN 10 ELSE 0 END +
                  CASE WHEN gender IS NOT NULL AND gender != '' THEN 10 ELSE 0 END +
-                 CASE WHEN phone IS NOT NULL AND phone != '' THEN 10 ELSE 0 END +
-                 CASE WHEN email IS NOT NULL AND email != '' THEN 10 ELSE 0 END +
+                 CASE WHEN telNo IS NOT NULL AND telNo != '' THEN 10 ELSE 0 END +
+                 CASE WHEN officialEmail IS NOT NULL AND officialEmail != '' THEN 10 ELSE 0 END +
                  CASE WHEN combatSize IS NOT NULL AND combatSize != '' THEN 5 ELSE 0 END +
-                 CASE WHEN bsize IS NOT NULL AND bsize != '' THEN 5 ELSE 0 END +
-                 CASE WHEN ssize IS NOT NULL AND ssize != '' THEN 5 ELSE 0 END +
-                 CASE WHEN hdress IS NOT NULL AND hdress != '' THEN 5 ELSE 0 END +
+                 CASE WHEN bootSize IS NOT NULL AND bootSize != '' THEN 5 ELSE 0 END +
+                 CASE WHEN sSize IS NOT NULL AND sSize != '' THEN 5 ELSE 0 END +
+                 CASE WHEN hDress IS NOT NULL AND hDress != '' THEN 5 ELSE 0 END +
                  CASE WHEN EXISTS(SELECT 1 FROM staff_addresses WHERE svcNo = ?) THEN 15 ELSE 0 END +
                  CASE WHEN EXISTS(SELECT 1 FROM staff_contact_info WHERE svcNo = ?) THEN 10 ELSE 0 END +
-                 CASE WHEN EXISTS(SELECT 1 FROM staff_family_members WHERE svcNo = ?) THEN 5 ELSE 0 END
+                CASE WHEN (nok IS NOT NULL AND nok != '') OR (altNok IS NOT NULL AND altNok != '') THEN 5 ELSE 0 END
                 ) as completion_percentage
-            FROM staff WHERE id = ?
+            FROM staff WHERE svcNo = ?
         ");
         $stmt->execute([$userId, $userId, $userId, $userId]);
         $result = $stmt->fetch(PDO::FETCH_OBJ);
@@ -107,6 +114,18 @@ function getUserStats($pdo, $userId) {
         
         // Recent activity count (if activity log exists)
         try {
+            // FIX: `staff_activity_log` doesn't exist anywhere in the
+            // schema dump - created defensively here (matching the
+            // pattern used for staff_password_resets/staff_documents/
+            // file_access_log elsewhere in this app) so this stops
+            // silently reporting 'N/A' once something actually logs to it.
+            $pdo->exec("CREATE TABLE IF NOT EXISTS staff_activity_log (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                svcNo VARCHAR(10) NOT NULL,
+                action VARCHAR(100) NOT NULL,
+                createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                KEY idx_svcNo (svcNo)
+            )");
             $stmt = $pdo->prepare("SELECT COUNT(*) as activity_count FROM staff_activity_log WHERE svcNo = ? AND createdAt >= DATE_SUB(NOW(), INTERVAL 30 DAY)");
             $stmt->execute([$userId]);
             $result = $stmt->fetch(PDO::FETCH_OBJ);
@@ -115,9 +134,9 @@ function getUserStats($pdo, $userId) {
             $stats['recent_activities'] = 'N/A';
         }
         
-        // Training records count (if training table exists)
+        // Courses and qualifications are stored in staff_course.
         try {
-            $stmt = $pdo->prepare("SELECT COUNT(*) as training_count FROM staff_training WHERE svcNo = ?");
+            $stmt = $pdo->prepare("SELECT COUNT(*) as training_count FROM staff_course WHERE svcNo = ?");
             $stmt->execute([$userId]);
             $result = $stmt->fetch(PDO::FETCH_OBJ);
             $stats['training_records'] = $result ? $result->training_count : 0;
@@ -684,19 +703,22 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                                 <tbody>
                                                     <?php foreach ($educationRecords as $edu): ?>
                                                         <tr>
-                                                            <td><?php echo htmlspecialchars($edu->institution ?? 'N/A'); ?></td>
-                                                            <td><?php echo htmlspecialchars($edu->qualification ?? 'N/A'); ?></td>
-                                                            <td><?php echo htmlspecialchars($edu->field_of_study ?? 'N/A'); ?></td>
+                                                            <td><?php echo htmlspecialchars($edu['institution'] ?? 'N/A'); ?></td>
+                                                            <td><?php echo htmlspecialchars($edu['qualification'] ?? 'N/A'); ?></td>
+                                                            <td><?php echo htmlspecialchars($edu['field_of_study'] ?? 'N/A'); ?></td>
                                                             <td>
                                                                 <?php 
-                                                                if (isset($edu->startDate) && isset($edu->endDate)) {
-                                                                    echo date('Y', strtotime($edu->startDate)) . ' - ' . date('Y', strtotime($edu->endDate));
+                                                                if (!empty($edu['start_year']) || !empty($edu['end_year'])) {
+                                                                    echo htmlspecialchars($edu['start_year'] ?? 'N/A');
+                                                                    if (!empty($edu['end_year'])) {
+                                                                        echo ' - ' . htmlspecialchars($edu['end_year']);
+                                                                    }
                                                                 } else {
                                                                     echo 'N/A';
                                                                 }
                                                                 ?>
                                                             </td>
-                                                            <td><?php echo htmlspecialchars($edu->grade ?? 'N/A'); ?></td>
+                                                            <td><?php echo htmlspecialchars($edu['grade'] ?? 'N/A'); ?></td>
                                                         </tr>
                                                     <?php endforeach; ?>
                                                 </tbody>
@@ -1089,45 +1111,55 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                     <div class="col-md-6">
                                         <h5 class="section-title">Next of Kin Information</h5>
                                         <?php 
-                                        // Try to get NOK from familyMembers if nokInfo is empty
-                                        $nokData = null;
+                                        // Collect all NOK family members from familyMembers
+                                        $nokData = [];
                                         if (!empty($familyMembers)) {
                                             foreach ($familyMembers as $member) {
-                                                if (isset($member->is_next_of_kin) && $member->is_next_of_kin) {
-                                                    $nokData = $member;
-                                                    break;
+                                                if (!empty($member->is_next_of_kin)) {
+                                                    $nokData[] = $member;
                                                 }
                                             }
                                         }
                                         
-                                        if ($nokData): ?>
+                                        if (!empty($nokData)): ?>
                                             <table class="table table-borderless">
+                                                <?php foreach ($nokData as $index => $member): ?>
                                                 <tr>
                                                     <td><strong>Name:</strong></td>
-                                                    <td><?php echo htmlspecialchars(($nokData->fName ?? '') . ' ' . ($nokData->lName ?? '')); ?></td>
+                                                    <td><?php echo htmlspecialchars(($member->fName ?? '') . ' ' . ($member->lName ?? '')); ?></td>
                                                 </tr>
                                                 <tr>
                                                     <td><strong>Relationship:</strong></td>
-                                                    <td><?php echo htmlspecialchars($nokData->relationship ?? 'N/A'); ?></td>
+                                                    <td><?php echo htmlspecialchars($member->relationship ?? 'N/A'); ?>
+                                                        <?php if (!empty($member->nok_type)): ?>
+                                                            (<?php echo htmlspecialchars($member->nok_type); ?>)
+                                                        <?php endif; ?>
+                                                    </td>
                                                 </tr>
-                                                <?php if (isset($nokData->phone)): ?>
+                                                <?php if (!empty($member->phone)): ?>
                                                     <tr>
                                                         <td><strong>Phone:</strong></td>
-                                                        <td><?php echo htmlspecialchars($nokData->phone); ?></td>
+                                                        <td><?php echo htmlspecialchars($member->phone); ?></td>
                                                     </tr>
                                                 <?php endif; ?>
-                                                <?php if (isset($nokData->email)): ?>
+                                                <?php if (!empty($member->email)): ?>
                                                     <tr>
                                                         <td><strong>Email:</strong></td>
-                                                        <td><?php echo htmlspecialchars($nokData->email); ?></td>
+                                                        <td><?php echo htmlspecialchars($member->email); ?></td>
                                                     </tr>
                                                 <?php endif; ?>
-                                                <?php if (isset($nokData->address)): ?>
+                                                <?php if (!empty($member->address)): ?>
                                                     <tr>
                                                         <td><strong>Address:</strong></td>
-                                                        <td><?php echo htmlspecialchars($nokData->address); ?></td>
+                                                        <td><?php echo htmlspecialchars($member->address); ?></td>
                                                     </tr>
                                                 <?php endif; ?>
+                                                <?php if ($index < count($nokData) - 1): ?>
+                                                    <tr>
+                                                        <td colspan="2"><hr class="my-2"></td>
+                                                    </tr>
+                                                <?php endif; ?>
+                                                <?php endforeach; ?>
                                             </table>
                                         <?php else: ?>
                                             <p class="text-muted">No next of kin information recorded</p>
@@ -1240,7 +1272,7 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                                 </tr>
                                                 <tr>
                                                     <td><strong>Marital Status:</strong></td>
-                                                    <td><?php echo htmlspecialchars($personalInfo->marital ?? 'Not specified'); ?></td>
+                                                    <td><?php echo htmlspecialchars($personalInfo->marital_status ?? 'Not specified'); ?></td>
                                                 </tr>
                                             </table>
                                         </div>
@@ -1253,11 +1285,11 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                                 </tr>
                                                 <tr>
                                                     <td><strong>Phone:</strong></td>
-                                                    <td><?php echo htmlspecialchars($personalInfo->tel ?? 'Not specified'); ?></td>
+                                                    <td><?php echo htmlspecialchars($personalInfo->phone ?? 'Not specified'); ?></td>
                                                 </tr>
                                                 <tr>
                                                     <td><strong>Employment Date:</strong></td>
-                                                    <td><?php echo isset($personalInfo->attestDate) && $personalInfo->attestDate ? date('d M Y', strtotime($personalInfo->employment_date)) : 'Not specified'; ?></td>
+                                                    <td><?php echo isset($personalInfo->employment_date) && $personalInfo->employment_date ? date('d M Y', strtotime($personalInfo->employment_date)) : 'Not specified'; ?></td>
                                                 </tr>
                                             </table>
                                         </div>

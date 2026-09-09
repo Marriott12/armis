@@ -1,0 +1,23 @@
+# ARMIS root .htaccess — defense in depth. Does not add any URL
+# rewriting (the app is requested by direct file path), only blocks
+# direct access to files that should never be served raw.
+#
+# NOTE: Apache 2.4+ only syntax (Require ...). The legacy Apache 2.2
+# "Order deny,allow" / "Deny from all" directives were removed here -
+# mixing them with "Require" caused Apache to fail to parse this file
+# at all on servers without mod_access_compat enabled (the WAMP
+# default), which is what produced the site-wide 500 Internal Server
+# Error. Require-only syntax needs no extra module.
+
+# Never serve dotfiles (.env, .git, .htaccess itself, etc.)
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+# Never serve database dumps/migrations, docs, or composer metadata
+# if they end up at the root by mistake.
+<FilesMatch "\.(sql|md|lock)$">
+    Require all denied
+</FilesMatch>
+
+Options -Indexes

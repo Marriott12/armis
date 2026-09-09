@@ -22,29 +22,6 @@ require_once dirname(__DIR__) . '/shared/rank_levels.php';
 requireAuth();
 
 // Set JSON header
-
-/**
- * Staff Search AJAX Endpoint
- * 
- * Provides staff search functionality for dropdowns and forms
- */
-
-// Enable error reporting for debugging
-error_reporting(E_ALL);
-ini_set('display_errors', 0);
-ini_set('log_errors', 1);
-
-// Start session and check authentication
-session_start();
-
-// Include required files
-require_once __DIR__ . '/includes/auth.php';
-require_once dirname(__DIR__) . '/shared/database_connection.php';
-
-// Verify user is logged in
-requireAuth();
-
-// Set JSON header
 header('Content-Type: application/json');
 
 try {
@@ -73,16 +50,16 @@ try {
                         ELSE ''
                     END
                 ) as text,
-                s.id,
+                s.svcNo as id,
                 s.fName,
                 s.lName,
                 s.rankId,
                 r.rankId as rank_name,
-                r.level as rank_level,
+                r.rankIndex as rank_level,
                 r.rankId as rank_abbr,
                 " . getRankCategoryCaseSQL('r') . " as rank_category,
-                u.code as unit_name,
-                s.corpsId as corps,
+                u.unitId as unit_name,
+                s.corps as corps,
                 s.svcStatus,
                 s.attestDate,
                 s.subWef,
@@ -97,7 +74,7 @@ try {
     
     // Add medal exclusion filter if specified
     if (!empty($_GET['exclude_medal_id'])) {
-        $sql .= " AND s.id NOT IN (
+        $sql .= " AND s.svcNo NOT IN (
             SELECT svcNo FROM staff_medals WHERE medal_id = :medal_id
         )";
         $params[':medal_id'] = $_GET['exclude_medal_id'];
@@ -107,6 +84,16 @@ try {
     if (!empty($rankId)) {
         $sql .= " AND s.rankId = :rankId";
         $params[':rankId'] = $rankId;
+    }
+
+    // Category filter (Officer/NCO/Civilian Employee) — same
+    // categorization reports_seniority.php uses. Previously this
+    // endpoint computed rank_category in its SELECT but had no way to
+    // actually filter by it.
+    $categoryMap = ['officers' => 'Officer', 'ncos' => 'NCO', 'ce' => 'Civilian Employee'];
+    $categoryFilter = $categoryMap[$_GET['category'] ?? ''] ?? null;
+    if ($categoryFilter !== null) {
+        $sql .= " AND " . getRankCategorySQL($categoryFilter, 'r');
     }
     
     // Add search filter if not "all"
@@ -123,7 +110,7 @@ try {
     
     // Add military seniority ordering (same as reports_seniority.php)
     $sql .= " ORDER BY 
-        r.level ASC,
+        r.rankIndex ASC,
         s.subWef ASC,
         s.tempWef ASC,
         s.attestDate ASC,

@@ -2,6 +2,7 @@
 define('ARMIS_ADMIN_BRANCH', true);
 require_once __DIR__ . '/includes/auth.php';
 require_once dirname(__DIR__) . '/shared/database_connection.php';
+require_once __DIR__ . '/includes/db_helpers.php';
 requireAuth();
 
 $pageTitle = "Retired Staff Report as at " . date('d-M-Y');
@@ -9,45 +10,19 @@ $currentPage = "reports";
 $moduleName = "Admin Branch";
 $moduleIcon = "users-cog";
 
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'],
-    ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create'],
-    ['title' => 'Promotions', 'url' => '/Armis2/admin_branch/promote_staff.php', 'icon' => 'arrow-up', 'page' => 'promotions'],
-    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medal.php', 'icon' => 'medal', 'page' => 'medals'],
-    [
-        'title' => 'Reports',
-        'icon' => 'chart-bar',
-        'page' => 'reports',
-        'children' => [
-            ['title' => 'Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php'],
-            ['title' => 'Unit List', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
-            ['title' => 'Contracts', 'url' => '/Armis2/admin_branch/reports_contract.php'],
-            ['title' => 'Courses', 'url' => '/Armis2/admin_branch/reports_courses.php'],
-            ['title' => 'Deceased', 'url' => '/Armis2/admin_branch/reports_deceased.php'],
-            ['title' => 'Gender', 'url' => '/Armis2/admin_branch/reports_gender.php'],
-            ['title' => 'Marital', 'url' => '/Armis2/admin_branch/reports_marital.php'],
-            ['title' => 'Rank', 'url' => '/Armis2/admin_branch/reports_rank.php'],
-            ['title' => 'Retired', 'url' => '/Armis2/admin_branch/reports_retired.php'],
-            ['title' => 'Trade', 'url' => '/Armis2/admin_branch/reports_trade.php'],
-            ['title' => 'Corps', 'url' => '/Armis2/admin_branch/reports_corps.php'],
-            ['title' => 'Units', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Medals', 'url' => '/Armis2/admin_branch/reports_medals.php'],
-        ]
-    ],
-];
+$sidebarLinks = []; // set by shared nav include below
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 $pdo = getDbConnection();
 
 function getRetiredOptions($pdo, $unit, $rank, $cat) {
-    $apptSql = "SELECT DISTINCT appt FROM staff WHERE appt IS NOT NULL AND appt <> '' AND svcStatus = 'Retired'";
-    $unitSql = "SELECT DISTINCT u.unitId, u.name FROM unit u JOIN staff s ON s.unitId = u.unitId WHERE s.svcStatus = 'Retired'";
+    $apptSql = "SELECT DISTINCT apptId FROM staff WHERE apptId IS NOT NULL AND apptId <> '' AND svcStatus = 'Retired'";
+    $unitSql = "SELECT DISTINCT u.unitId, u.unitId AS name FROM unit u JOIN staff s ON s.unitId = u.unitId WHERE s.svcStatus = 'Retired'";
     $rankSql = "SELECT DISTINCT r.rankId as id, COALESCE(r.rankId, r.rankId) as name FROM `rank` r JOIN staff s ON s.rankId = r.rankId WHERE s.svcStatus = 'Retired'";
     $catSql  = "SELECT DISTINCT s.category FROM staff s WHERE s.category IS NOT NULL AND s.category <> '' AND s.svcStatus = 'Retired'";
     return [
         $pdo->query($apptSql)->fetchAll(PDO::FETCH_COLUMN),
-        fetchAll($unitSql . " ORDER BY u.name ASC"),
+        fetchAll($unitSql . " ORDER BY u.unitId ASC"),
         fetchAll($rankSql . " ORDER BY r.rankId ASC"),
         fetchAll($catSql . " ORDER BY s.category ASC")
     ];
@@ -61,23 +36,23 @@ $search = trim($_GET['search'] ?? '');
 list($appts, $units, $ranks, $categories) = getRetiredOptions($pdo, $filter_unit, $filter_rank, $filter_category);
 
 $params = [];
-$sql = "SELECT s.*, r.rankId as rankName, u.name as unitName FROM staff s
+$sql = "SELECT s.*, r.rankId as rankName, u.unitId as unitName FROM staff s
     LEFT JOIN `rank` r ON s.rankId = r.rankId
         LEFT JOIN unit u ON s.unitId = u.unitId
         WHERE s.svcStatus = 'Retired'";
-if ($filter_appt !== '')      { $sql .= " AND s.appt = ?"; $params[] = $filter_appt; }
+if ($filter_appt !== '')      { $sql .= " AND s.apptId = ?"; $params[] = $filter_appt; }
 if ($filter_unit !== '')      { $sql .= " AND s.unitId = ?"; $params[] = $filter_unit; }
 if ($filter_rank !== '')      { $sql .= " AND s.rankId = ?"; $params[] = $filter_rank; }
 if ($filter_category !== '')  { $sql .= " AND s.category = ?"; $params[] = $filter_category; }
 if ($search !== '') {
-    $sql .= " AND (s.appt LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR r.rankId LIKE ? OR u.name LIKE ? OR s.category LIKE ?)";
+    $sql .= " AND (s.apptId LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR r.rankId LIKE ? OR u.unitId LIKE ? OR s.category LIKE ?)";
     for ($i = 0; $i < 7; $i++) $params[] = "%$search%";
 }
 // Default seniority sorting: rank level, then subWef, then tempWef, then attestDate, then service number
 // Personnel without ranks (NULL rankId) are listed last
 $sql .= " ORDER BY 
     CASE WHEN s.rankId IS NULL THEN 1 ELSE 0 END,
-    r.level ASC,
+    r.rankIndex ASC,
     s.subWef ASC,
     s.tempWef ASC,
     s.attestDate ASC,
@@ -94,13 +69,13 @@ $count_sql = "SELECT COUNT(*) FROM staff s
     LEFT JOIN `rank` r ON s.rankId = r.rankId
     LEFT JOIN unit u ON s.unitId = u.unitId
     WHERE s.svcStatus = 'Retired'";
-if ($filter_appt !== '')      { $count_sql .= " AND s.appt = '" . addslashes($filter_appt) . "'"; }
+if ($filter_appt !== '')      { $count_sql .= " AND s.apptId = '" . addslashes($filter_appt) . "'"; }
 if ($filter_unit !== '')      { $count_sql .= " AND s.unitId = '" . addslashes($filter_unit) . "'"; }
 if ($filter_rank !== '')      { $count_sql .= " AND s.rankId = '" . addslashes($filter_rank) . "'"; }
 if ($filter_category !== '')  { $count_sql .= " AND s.category = '" . addslashes($filter_category) . "'"; }
 if ($search !== '') {
     $search_esc = addslashes($search);
-    $count_sql .= " AND (s.appt LIKE '%$search_esc%' OR s.svcNo LIKE '%$search_esc%' OR s.lName LIKE '%$search_esc%' OR s.fName LIKE '%$search_esc%' OR r.rankId LIKE '%$search_esc%' OR u.name LIKE '%$search_esc%' OR s.category LIKE '%$search_esc%')";
+    $count_sql .= " AND (s.apptId LIKE '%$search_esc%' OR s.svcNo LIKE '%$search_esc%' OR s.lName LIKE '%$search_esc%' OR s.fName LIKE '%$search_esc%' OR r.rankId LIKE '%$search_esc%' OR u.unitId LIKE '%$search_esc%' OR s.category LIKE '%$search_esc%')";
 }
 $total_staff = $pdo->query($count_sql)->fetchColumn();
 $total_pages = ceil($total_staff / $per_page);

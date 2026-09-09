@@ -23,7 +23,7 @@ class OperationsManager {
         $query = "SELECT m.*, 
                     l.location_name, 
                     COUNT(DISTINCT r.resource_id) as resource_count, 
-                    COUNT(DISTINCT p.personnel_id) as personnel_count
+                    COUNT(DISTINCT p.svcNo) as personnel_count
                  FROM operations_missions m
                  LEFT JOIN operations_locations l ON m.location_id = l.location_id
                  LEFT JOIN operations_mission_resources r ON m.mission_id = r.mission_id
@@ -48,7 +48,7 @@ class OperationsManager {
                     u.username as created_by_name
                  FROM operations_missions m
                  LEFT JOIN operations_locations l ON m.location_id = l.location_id
-                     LEFT JOIN staff u ON m.createdBy = u.id
+                     LEFT JOIN staff u ON m.createdBy = u.svcNo
                  WHERE m.mission_id = :mission_id";
         
         $stmt = $this->db->prepare($query);
@@ -66,7 +66,7 @@ class OperationsManager {
                     u.username as assigned_by_name
                  FROM operations_mission_resources r
                  LEFT JOIN operations_resource_types rt ON r.resource_type_id = rt.resource_type_id
-                     LEFT JOIN staff u ON r.assigned_by = u.id
+                     LEFT JOIN staff u ON r.assigned_by = u.svcNo
                  WHERE r.mission_id = :mission_id";
         
         $stmt = $this->db->prepare($query);
@@ -80,10 +80,10 @@ class OperationsManager {
      * Get mission personnel
      */
     public function getMissionPersonnel($missionId) {
-        $query = "SELECT p.*, s.fName, s.lName, s.rank, s.svcNo,
+        $query = "SELECT p.*, s.fName, s.mName, s.lName, s.rankId, s.svcNo,
                     r.role_name
                  FROM operations_mission_personnel p
-                 LEFT JOIN staff s ON p.svcNo = s.id
+                 LEFT JOIN staff s ON p.svcNo = s.svcNo
                      LEFT JOIN operations_personnel_roles r ON p.role_id = r.role_id
                  WHERE p.mission_id = :mission_id";
         
@@ -207,7 +207,7 @@ class OperationsManager {
     public function getActiveDeployments($limit = 5) {
         $query = "SELECT d.*, 
                     l.location_name, l.country,
-                    COUNT(DISTINCT p.personnel_id) as personnel_count
+                    COUNT(DISTINCT p.svcNo) as personnel_count
                  FROM operations_deployments d
                  LEFT JOIN operations_locations l ON d.location_id = l.location_id
                  LEFT JOIN operations_deployment_personnel p ON d.deployment_id = p.deployment_id
@@ -233,8 +233,8 @@ class OperationsManager {
                     SUM(CASE WHEN r.status = 'available' THEN 1 ELSE 0 END) as available,
                     SUM(CASE WHEN r.status = 'maintenance' THEN 1 ELSE 0 END) as maintenance
                  FROM operations_resources r
-                 JOIN operations_resource_types rt ON r.resource_type_id = rt.resource_type_id
-                 GROUP BY rt.resource_type_id
+                 LEFT JOIN operations_resource_types rt ON r.resource_type_id = rt.resource_type_id
+                 GROUP BY r.resource_type_id, rt.resource_type_name
                  ORDER BY total_resources DESC";
         
         $stmt = $this->db->prepare($query);
@@ -251,7 +251,7 @@ class OperationsManager {
                     u.username as submitted_by_name
                  FROM operations_status_reports r
                  LEFT JOIN operations_missions m ON r.mission_id = m.mission_id
-                     LEFT JOIN staff u ON r.submitted_by = u.id
+                     LEFT JOIN staff u ON r.submitted_by = u.svcNo
                  ORDER BY r.report_date DESC
                  LIMIT :limit";
         
@@ -386,7 +386,7 @@ class OperationsManager {
      */
     public function getAvailableStaff($excludeMissionId = null) {
         $query = "SELECT s.* FROM staff s
-            WHERE s.id NOT IN (
+            WHERE s.svcNo NOT IN (
                 SELECT svcNo FROM operations_mission_personnel
                 WHERE status IN ('assigned','active')
                 " . ($excludeMissionId ? "AND mission_id != :excludeMissionId" : "") . "
@@ -408,7 +408,7 @@ class OperationsManager {
                   WHERE svcNo = :staffId AND status IN ('assigned','active')
                   AND ((startDate <= :endDate AND endDate >= :startDate) OR (startDate IS NULL OR endDate IS NULL))";
         $stmt = $this->db->prepare($query);
-        $stmt->bindValue(':staffId', $staffId, PDO::PARAM_INT);
+        $stmt->bindValue(':staffId', $staffId, PDO::PARAM_STR);
         $stmt->bindValue(':startDate', $startDate, PDO::PARAM_STR);
         $stmt->bindValue(':endDate', $endDate, PDO::PARAM_STR);
         $stmt->execute();
@@ -421,8 +421,8 @@ class OperationsManager {
                   VALUES (:missionId, :staffId, :roleId, :startDate, :endDate, 'assigned')";
         $stmt = $this->db->prepare($query);
         $stmt->bindValue(':missionId', $missionId, PDO::PARAM_INT);
-        $stmt->bindValue(':staffId', $staffId, PDO::PARAM_INT);
-        $stmt->bindValue(':roleId', $roleId, PDO::PARAM_INT);
+        $stmt->bindValue(':staffId', $staffId, PDO::PARAM_STR);
+        $stmt->bindValue(':roleId', $roleId, PDO::PARAM_STR);
         $stmt->bindValue(':startDate', $startDate, PDO::PARAM_STR);
         $stmt->bindValue(':endDate', $endDate, PDO::PARAM_STR);
         $stmt->execute();
@@ -442,10 +442,10 @@ class OperationsManager {
      * Get all current mission personnel assignments
      */
     public function getCurrentAssignments() {
-        $query = "SELECT p.*, m.name AS mission_name, s.full_name AS staff_name
+        $query = "SELECT p.*, m.mission_name, CONCAT_WS(' ', s.fName, s.mName, s.lName) AS staff_name
                   FROM operations_mission_personnel p
-                  JOIN operations_missions m ON p.mission_id = m.id
-                  JOIN staff s ON p.svcNo = s.id
+              JOIN operations_missions m ON p.mission_id = m.mission_id
+              JOIN staff s ON p.svcNo = s.svcNo
                   ORDER BY p.startDate DESC";
         $stmt = $this->db->prepare($query);
         $stmt->execute();
@@ -460,6 +460,12 @@ class OperationsManager {
         $stmt = $this->db->prepare($query);
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function getResourceDetails($resourceId) {
+        $stmt = $this->db->prepare("SELECT resource_id, name AS resource_name, type AS resource_type, quantity, status, description FROM operations_resources WHERE resource_id = :resource_id");
+        $stmt->execute(['resource_id' => $resourceId]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
     /**
@@ -479,7 +485,7 @@ class OperationsManager {
      * Update resource
      */
     public function updateResource($id, $name, $type, $quantity, $status) {
-        $query = "UPDATE operations_resources SET name = :name, type = :type, quantity = :quantity, status = :status WHERE id = :id";
+        $query = "UPDATE operations_resources SET name = :name, type = :type, quantity = :quantity, status = :status WHERE resource_id = :id";
         $stmt = $this->db->prepare($query);
         $stmt->bindValue(':id', $id, PDO::PARAM_INT);
         $stmt->bindValue(':name', $name, PDO::PARAM_STR);
@@ -493,7 +499,7 @@ class OperationsManager {
      * Delete resource
      */
     public function deleteResource($id) {
-        $query = "DELETE FROM operations_resources WHERE id = :id";
+        $query = "DELETE FROM operations_resources WHERE resource_id = :id";
         $stmt = $this->db->prepare($query);
         $stmt->bindValue(':id', $id, PDO::PARAM_INT);
         $stmt->execute();
@@ -523,24 +529,45 @@ class OperationsManager {
     }
 
     /**
-     * Get all notifications for a user
+     * Get all notifications for a user.
+     *
+     * FIX: this used to query `operations_notifications`, a table that
+     * was never actually created in any migration — every call here
+     * silently returned nothing forever. Delegates to the shared,
+     * real notifications system instead (see
+     * shared/notifications_helper.php and
+     * database/migrations/2026_08_27_add_notifications_table.sql),
+     * consistent with how admin_branch's events (staff created,
+     * deleted, medal assigned) now notify through the same table.
+     *
+     * $userId is accepted as-is for backward compatibility with
+     * existing callers, but note it's actually svcNo (a string) in
+     * practice — see notifications_helper.php's own doc comment for
+     * why (staff has no numeric id column).
      */
     public function getUserNotifications($userId) {
-        $query = "SELECT * FROM operations_notifications WHERE user_id = :userId ORDER BY createdAt DESC";
-        $stmt = $this->db->prepare($query);
-        $stmt->bindValue(':userId', $userId, PDO::PARAM_INT);
-        $stmt->execute();
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        require_once dirname(__DIR__) . '/shared/notifications_helper.php';
+        return getUserNotifications((string) $userId);
     }
 
     /**
-     * Mark notification as read
+     * Mark notification as read.
+     *
+     * FIX: same phantom-table issue as getUserNotifications() above.
+     * Note the new shared markNotificationRead() also requires the
+     * owning user's id, to scope the update to their own notifications
+     * — callers of this legacy wrapper that don't have that in scope
+     * should call the shared function directly instead.
      */
-    public function markNotificationRead($notificationId) {
-        $query = "UPDATE operations_notifications SET status = 'read' WHERE id = :notificationId";
-        $stmt = $this->db->prepare($query);
-        $stmt->bindValue(':notificationId', $notificationId, PDO::PARAM_INT);
-        $stmt->execute();
+    public function markNotificationRead($notificationId, $userId = null) {
+        require_once dirname(__DIR__) . '/shared/notifications_helper.php';
+        if ($userId === null) {
+            $userId = $_SESSION['user_id'] ?? null;
+        }
+        if ($userId === null) {
+            return false;
+        }
+        return markNotificationRead((int) $notificationId, (string) $userId);
     }
 
     /**
@@ -651,10 +678,28 @@ class OperationsManager {
      * Get all field operations
      */
     public function getAllFieldOperations() {
-        $query = "SELECT * FROM operations_field ORDER BY startDate DESC";
+        $query = "SELECT id AS field_id, name AS field_name, '' AS field_type, status, location, startDate, endDate, description FROM operations_field ORDER BY startDate DESC";
         $stmt = $this->db->prepare($query);
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function getFieldDetails($fieldId) {
+        $stmt = $this->db->prepare("SELECT id AS field_id, name AS field_name, '' AS field_type, status, location, startDate, endDate, description FROM operations_field WHERE id = :field_id");
+        $stmt->execute(['field_id' => $fieldId]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    public function addField(array $data) {
+        return $this->createFieldOperation($data['field_name'], $data['status'], $data['location'], $data['startDate'] ?? null, $data['endDate'] ?? null);
+    }
+
+    public function updateField(array $data) {
+        return $this->updateFieldOperation($data['field_id'], $data['field_name'], $data['status'], $data['location'], $data['startDate'] ?? null, $data['endDate'] ?? null);
+    }
+
+    public function deleteField($fieldId) {
+        return $this->deleteFieldOperation($fieldId);
     }
 
     /**

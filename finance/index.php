@@ -1,36 +1,10 @@
 <?php
-// Start session if not already started
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-// Include RBAC system
-require_once dirname(__DIR__) . '/shared/rbac.php';
-
-// Check if user is logged in
-if (!isset($_SESSION['user_id'])) {
-    header('Location: ' . dirname($_SERVER['PHP_SELF']) . '/../login.php');
-    exit();
-}
-
-// Check if user has access to finance module
-requireModuleAccess('finance');
-
-// Log access
-logAccess('finance', 'dashboard_view', true);$pageTitle = "Finance Module";
-$moduleName = "Finance";
-$moduleIcon = "calculator";
-$currentPage = "dashboard";
-
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/finance/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Budget Planning', 'url' => '/Armis2/finance/budget.php', 'icon' => 'chart-line', 'page' => 'budget'],
-    ['title' => 'Expenditures', 'url' => '/Armis2/finance/expenditures.php', 'icon' => 'money-bill-wave', 'page' => 'expenditures'],
-    ['title' => 'Procurement', 'url' => '/Armis2/finance/procurement.php', 'icon' => 'shopping-cart', 'page' => 'procurement'],
-    ['title' => 'Reports', 'url' => '/Armis2/finance/reports.php', 'icon' => 'chart-bar', 'page' => 'reports'],
-    ['title' => 'Audit', 'url' => '/Armis2/finance/audit.php', 'icon' => 'search-dollar', 'page' => 'audit']
-];
-
+require_once dirname(__DIR__) . '/shared/module_auth.php';
+require_once 'finance_manager.php';
+bootModule(['module' => 'finance', 'page' => 'dashboard', 'pageTitle' => 'Finance Dashboard - ARMIS', 'moduleName' => 'Finance', 'moduleIcon' => 'calculator']);
+$finance = new FinanceManager((string) $_SESSION['user_id']);
+$summary = $finance->getDashboardSummary();
+$activity = $finance->getRecentActivity();
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';
 ?>
@@ -45,9 +19,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <h1 class="section-title">
                             <i class="fas fa-calculator"></i> Finance Module Dashboard
                         </h1>
-                        <div>
-                            <span class="badge bg-success">Active</span>
-                        </div>
+                        <span class="badge status-badge">FY <?= $summary['year'] ?></span>
                     </div>
                 </div>
             </div>
@@ -61,8 +33,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <i class="fas fa-dollar-sign text-success fa-3x"></i>
                             </div>
                             <h5 class="card-title mt-3">Total Budget</h5>
-                            <h3 class="text-success">$2.5M</h3>
-                            <p class="text-muted">Current fiscal year</p>
+                            <h3 class="text-success">$<?= number_format($summary['total_budget'], 2) ?></h3>
+                            <p class="text-muted">FY <?= $summary['year'] ?> allocation</p>
                         </div>
                     </div>
                 </div>
@@ -74,8 +46,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <i class="fas fa-chart-line text-primary fa-3x"></i>
                             </div>
                             <h5 class="card-title mt-3">Expenditures</h5>
-                            <h3 class="text-primary">$1.8M</h3>
-                            <p class="text-muted">72% of budget used</p>
+                            <h3 class="text-primary">$<?= number_format($summary['spent'], 2) ?></h3>
+                            <p class="text-muted"><?= $summary['utilization'] ?>% of budget used</p>
                         </div>
                     </div>
                 </div>
@@ -87,8 +59,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <i class="fas fa-shopping-cart text-warning fa-3x"></i>
                             </div>
                             <h5 class="card-title mt-3">Procurement</h5>
-                            <h3 class="text-warning">25</h3>
-                            <p class="text-muted">Active orders</p>
+                            <h3 class="text-warning"><?= number_format($summary['active_procurements']) ?></h3>
+                            <p class="text-muted">Open procurement records</p>
                         </div>
                     </div>
                 </div>
@@ -100,8 +72,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 <i class="fas fa-search-dollar text-info fa-3x"></i>
                             </div>
                             <h5 class="card-title mt-3">Audits</h5>
-                            <h3 class="text-info">3</h3>
-                            <p class="text-muted">Pending reviews</p>
+                            <h3 class="text-info"><?= number_format($summary['pending_expenditures']) ?></h3>
+                            <p class="text-muted">Pending expenditure reviews</p>
                         </div>
                     </div>
                 </div>
@@ -166,27 +138,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <tr>
-                                            <td><?php echo date('Y-m-d'); ?></td>
-                                            <td>Equipment Purchase Order</td>
-                                            <td>$45,000</td>
-                                            <td>Procurement</td>
-                                            <td><span class="badge bg-warning">Pending</span></td>
-                                        </tr>
-                                        <tr>
-                                            <td><?php echo date('Y-m-d', strtotime('-1 day')); ?></td>
-                                            <td>Training Budget Allocation</td>
-                                            <td>$12,500</td>
-                                            <td>Training</td>
-                                            <td><span class="badge bg-success">Approved</span></td>
-                                        </tr>
-                                        <tr>
-                                            <td><?php echo date('Y-m-d', strtotime('-2 days')); ?></td>
-                                            <td>Operations Funding</td>
-                                            <td>$75,000</td>
-                                            <td>Operations</td>
-                                            <td><span class="badge bg-success">Completed</span></td>
-                                        </tr>
+                                        <?php foreach ($activity as $item): ?><tr><td><?= htmlspecialchars($item['activity_date'] ?? 'Not scheduled') ?></td><td><?= htmlspecialchars($item['description']) ?></td><td>$<?= number_format((float) $item['amount'], 2) ?></td><td><?= htmlspecialchars($item['category']) ?></td><td><span class="badge text-bg-secondary"><?= htmlspecialchars(ucfirst($item['status'])) ?></span></td></tr><?php endforeach; ?>
+                                        <?php if (!$activity): ?><tr><td colspan="5" class="text-center text-muted py-4">No financial activity recorded yet.</td></tr><?php endif; ?>
                                     </tbody>
                                 </table>
                             </div>

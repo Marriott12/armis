@@ -1,0 +1,9 @@
+# Deny all direct web access to this directory. Its contents are
+# either internal (config, migrations, dev scripts) or sensitive
+# generated output (logs, reports) and should never be fetched
+# directly by URL — only read from PHP via require/file paths.
+Require all denied
+<IfModule mod_access_compat.c>
+    Order deny,allow
+    Deny from all
+</IfModule>

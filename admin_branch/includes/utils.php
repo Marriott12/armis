@@ -38,10 +38,10 @@ class AdminBranchUtils {
     }
     
     /**
-     * Get all corps for dropdowns
+     * Get all corps for dropdowns - fetched from staff table
      */
     public static function getCorps() {
-        $sql = "SELECT corpsID, corpsName, corpsCode FROM corps ORDER BY corpsName ASC";
+        $sql = "SELECT DISTINCT corps as corpsID, corps as corpsName, corps as corpsCode FROM staff WHERE corps IS NOT NULL AND corps != '' ORDER BY corps ASC";
         return fetchAll($sql);
     }
     
@@ -65,11 +65,10 @@ class AdminBranchUtils {
      * Get staff member by service number
      */
     public static function getStaffByServiceNumber($svcNo) {
-    $sql = "SELECT s.*, r.rankId as rankName, r.rankId as rankAbbr, r.level as rankIndex, u.name as unitName, c.corpsName as corpsName, a.name as appointmentName
+    $sql = "SELECT s.*, r.rankId as rankName, r.rankId as rankAbbr, r.level as rankIndex, u.name as unitName, s.corps as corpsName, a.name as appointmentName
         FROM staff s
         LEFT JOIN `rank` r ON s.rankId = r.rankId
         LEFT JOIN units u ON s.unitId = u.id
-        LEFT JOIN corps c ON s.corpsId = c.corpsId
         LEFT JOIN appointments a ON s.appointment_id = a.id
         WHERE s.svcNo = ?";
         return fetchOne($sql, [$svcNo]);
@@ -116,11 +115,10 @@ class AdminBranchUtils {
         
         $whereClause = !empty($where) ? 'WHERE ' . implode(' AND ', $where) : '';
         
-    $sql = "SELECT s.*, r.rankId as rankName, r.rankId as rankAbbr, r.level as rankIndex, u.code as unitName, c.corpsName as corpsName
+    $sql = "SELECT s.*, r.rankId as rankName, r.rankId as rankAbbr, r.level as rankIndex, u.unitId as unitName, s.corps as corpsName
         FROM staff s
         LEFT JOIN `rank` r ON s.rankId = r.rankId
         LEFT JOIN unit u ON s.unitId = u.unitId
-        LEFT JOIN corps c ON s.corpsId = c.corpsId
         $whereClause
         ORDER BY r.level ASC, s.lName ASC, s.fName ASC
         LIMIT ? OFFSET ?";

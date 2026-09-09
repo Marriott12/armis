@@ -2,10 +2,17 @@
 // File: admin_branch/api_send_password_reset.php
 // Endpoint to trigger password reset email for a user
 
+require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/../shared/email_mailer.php';
-require_once __DIR__ . '/../config/database.php'; // Adjust if you have a DB connection file
+require_once __DIR__ . '/../shared/database_connection.php';
 
 header('Content-Type: application/json');
+
+// FIX: this admin-triggered reset endpoint had no authentication check at
+// all - any anonymous request could trigger a reset email for an arbitrary
+// user. Now requires an authenticated admin, matching how every other
+// admin_branch endpoint protects itself (see create_staff.php etc.).
+requireAdmin();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -23,53 +30,67 @@ if (!$email && !$username) {
     exit;
 }
 
-// Connect to DB
-$conn = new mysqli('localhost', 'root', '', 'armis1');
-if ($conn->connect_error) {
-    echo json_encode(['success' => false, 'message' => 'Database connection failed']);
-    exit;
-}
+try {
+    // FIX: previously connected directly with `new mysqli('localhost',
+    // 'root', '', 'armis1')` - hardcoded root credentials with an empty
+    // password, bypassing the shared, centrally-configured connection
+    // layer every other file in this app uses. Now uses getDbConnection()
+    // like the rest of the codebase, so credentials live in one place.
+    $pdo = getDbConnection();
 
-// Find user by email or username
-if ($email) {
-    $stmt = $conn->prepare('SELECT * FROM staff WHERE email = ? LIMIT 1');
-    $stmt->bind_param('s', $email);
-} else {
-    $stmt = $conn->prepare('SELECT * FROM staff WHERE username = ? LIMIT 1');
-    $stmt->bind_param('s', $username);
-}
-$stmt->execute();
-$result = $stmt->get_result();
-if ($result->num_rows === 0) {
-    echo json_encode(['success' => false, 'message' => 'User not found']);
-    exit;
-}
-$staffData = $result->fetch_assoc();
+    // Find user by email or username.
+    // FIX: `staff` has no `email` column - the real columns are
+    // `officialEmail` and `emailPvt`.
+    if ($email) {
+        $stmt = $pdo->prepare('SELECT * FROM staff WHERE (officialEmail = ? OR emailPvt = ?) LIMIT 1');
+        $stmt->execute([$email, $email]);
+    } else {
+        $stmt = $pdo->prepare('SELECT * FROM staff WHERE username = ? LIMIT 1');
+        $stmt->execute([$username]);
+    }
+    $staffData = $stmt->fetch(PDO::FETCH_ASSOC);
 
-// Generate reset token
-$resetToken = ARMISMailer::generateActivationToken();
-$expires = date('Y-m-d H:i:s', strtotime('+1 hour'));
+    if (!$staffData) {
+        // FIX: previously returned a distinct "User not found" message,
+        // which lets a caller enumerate valid emails/usernames by
+        // observing the response. This admin tool still needs SOME
+        // feedback for a genuine typo, but a generic message avoids
+        // confirming existence outright.
+        echo json_encode(['success' => false, 'message' => 'No matching account found, or the account cannot receive reset emails right now.']);
+        exit;
+    }
 
-// Store token in DB (create table staff_password_resets if not exists)
-$conn->query('CREATE TABLE IF NOT EXISTS staff_password_resets (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    svcNo INT NOT NULL,
-    reset_token VARCHAR(128) NOT NULL,
-    expires_at DATETIME NOT NULL,
-    used TINYINT(1) DEFAULT 0,
-    createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
-)');
+    // Generate reset token
+    $resetToken = ARMISMailer::generateActivationToken();
+    $expires = date('Y-m-d H:i:s', strtotime('+1 hour'));
 
-$stmt2 = $conn->prepare('INSERT INTO staff_password_resets (svcNo, reset_token, expires_at) VALUES (?, ?, ?)');
-$stmt2->bind_param('iss', $staffData['id'], $resetToken, $expires);
-$stmt2->execute();
+    // Store token in DB (create table staff_password_resets if not exists).
+    // FIX: svcNo is VARCHAR(10) on `staff` (values like '007414' have
+    // meaningful leading zeros) - INT would silently mangle them.
+    $pdo->exec('CREATE TABLE IF NOT EXISTS staff_password_resets (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        svcNo VARCHAR(10) NOT NULL,
+        reset_token VARCHAR(128) NOT NULL,
+        expires_at DATETIME NOT NULL,
+        used TINYINT(1) DEFAULT 0,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    )');
 
-// Send email
-$mailer = new ARMISMailer();
-$emailResult = $mailer->sendPasswordResetEmail($staffData, $resetToken);
+    // FIX: staff has no `id` column - its primary key is `svcNo`.
+    $stmt2 = $pdo->prepare('INSERT INTO staff_password_resets (svcNo, reset_token, expires_at) VALUES (?, ?, ?)');
+    $stmt2->execute([$staffData['svcNo'], $resetToken, $expires]);
 
-if ($emailResult['success']) {
-    echo json_encode(['success' => true, 'message' => 'Password reset email sent']);
-} else {
-    echo json_encode(['success' => false, 'message' => $emailResult['message']]);
+    // Send email
+    $mailer = new ARMISMailer();
+    $emailResult = $mailer->sendPasswordResetEmail($staffData, $resetToken);
+
+    if ($emailResult['success']) {
+        echo json_encode(['success' => true, 'message' => 'Password reset email sent']);
+    } else {
+        echo json_encode(['success' => false, 'message' => $emailResult['message']]);
+    }
+} catch (Exception $e) {
+    error_log('api_send_password_reset error: ' . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['success' => false, 'message' => 'An error occurred processing this request.']);
 }

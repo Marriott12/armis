@@ -1,0 +1,7 @@
+:root { --training-ink: #37472b; --training-line: #d9e1cc; --training-panel: #f4f7ef; }
+.main-content { max-width: 1440px; margin: 24px auto; padding: clamp(20px, 3vw, 36px); border: 1px solid var(--training-line); box-shadow: 0 10px 28px rgba(55,71,43,.08); }
+.main-content .card { border: 1px solid var(--training-line); border-radius: 6px; box-shadow: none; }
+.main-content .card-header, .main-content .table thead th { background: var(--training-panel); color: var(--training-ink); border-color: var(--training-line); }
+.main-content .table thead th { font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+.main-content .form-control:focus, .main-content .form-select:focus, .main-content .btn:focus-visible { border-color: var(--training-ink); box-shadow: 0 0 0 .2rem rgba(55,71,43,.2); outline: 0; }
+@media (max-width: 767.98px) { .main-content { margin: 12px 0; padding: 16px; border-left: 0; border-right: 0; } }

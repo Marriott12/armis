@@ -4,6 +4,10 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// Session timeout (20 min), matching admin_branch's policy
+require_once dirname(__DIR__) . '/shared/module_auth.php';
+__armis_enforce_session_timeout();
+
 // Include RBAC system
 require_once dirname(__DIR__) . '/shared/rbac.php';
 
@@ -24,13 +28,8 @@ $moduleName = "Training";
 $moduleIcon = "graduation-cap";
 $currentPage = "dashboard";
 
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/training/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Course Catalog', 'url' => '/Armis2/training/courses.php', 'icon' => 'book', 'page' => 'courses'],
-    ['title' => 'Training Records', 'url' => '/Armis2/training/records.php', 'icon' => 'certificate', 'page' => 'records'],
-    ['title' => 'Schedule', 'url' => '/Armis2/training/schedule.php', 'icon' => 'calendar', 'page' => 'schedule'],
-    ['title' => 'Certifications', 'url' => '/Armis2/training/certifications.php', 'icon' => 'award', 'page' => 'certifications']
-];
+require_once dirname(__DIR__) . '/shared/module_menus.php';
+$sidebarLinks = getModuleMenu('training');
 
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';

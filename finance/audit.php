@@ -1,0 +1,7 @@
+<?php
+require_once dirname(__DIR__) . '/shared/module_auth.php'; require_once 'finance_manager.php';
+bootModule(['module' => 'finance', 'page' => 'audit', 'pageTitle' => 'Finance Audit Log - ARMIS', 'moduleName' => 'Finance', 'moduleIcon' => 'calculator']);
+$audit = (new FinanceManager((string) $_SESSION['user_id']))->getAuditLog(); include dirname(__DIR__) . '/shared/header.php'; include dirname(__DIR__) . '/shared/sidebar.php';
+?>
+<div class="content-wrapper with-sidebar"><div class="container-fluid"><div class="main-content"><div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4"><div><h1 class="section-title mb-1"><i class="fas fa-clipboard-list"></i> Finance Audit Log</h1><p class="text-muted mb-0">Recorded Finance workflow events.</p></div></div><div class="card"><div class="table-responsive"><table class="table mb-0"><thead><tr><th>Timestamp</th><th>Action</th><th>Entity</th><th>Record</th><th>Performed By</th></tr></thead><tbody><?php foreach ($audit as $event): ?><tr><td><?= htmlspecialchars($event['created_at']) ?></td><td><?= htmlspecialchars($event['action']) ?></td><td><?= htmlspecialchars($event['entity_type']) ?></td><td><?= htmlspecialchars($event['entity_id'] ?? '') ?></td><td><?= htmlspecialchars($event['user_id'] ?? '') ?></td></tr><?php endforeach; ?><?php if (!$audit): ?><tr><td colspan="5" class="text-center text-muted py-4">No Finance audit events recorded.</td></tr><?php endif; ?></tbody></table></div></div></div></div></div>
+<?php include dirname(__DIR__) . '/shared/footer.php'; ?>

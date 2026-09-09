@@ -15,10 +15,19 @@ define('ARMIS_ADMIN_BRANCH', true);
 // Include required files
 require_once __DIR__ . '/includes/auth.php';
 require_once dirname(__DIR__) . '/shared/database_connection.php';
-require_once dirname(__DIR__) . '/shared/AuditLogger.php';
 
 // Require authentication
 requireAuth();
+
+// Require system-admin-level permission. This was previously missing
+// entirely — any authenticated admin_branch user (including read-only
+// AG/DG roles) could reach this destructive action with only a login,
+// no permission check at all.
+require_once dirname(__DIR__) . '/shared/permissions.php';
+if (!hasPermission(PERM_SYSTEM_SETTINGS)) {
+    http_response_code(403);
+    die('Access denied. Rolling back a promotion requires system-administrator permission.');
+}
 
 // Generate CSRF token
 if (!isset($_SESSION['csrf_token'])) {
@@ -31,12 +40,8 @@ $moduleIcon = "undo";
 $currentPage = "promotions";
 
 // Sidebar navigation
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'],
-    ['title' => 'Promotions', 'url' => '/Armis2/admin_branch/promote_staff.php', 'icon' => 'arrow-up', 'page' => 'promotions'],
-    ['title' => 'Rollback Promotions', 'url' => '/Armis2/admin_branch/rollback_promotions.php', 'icon' => 'undo', 'page' => 'rollback'],
-];
+$sidebarLinks = []; // set by shared nav include below
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 $errors = [];
 $success = false;
@@ -44,7 +49,6 @@ $successMessage = '';
 
 try {
     $pdo = getDbConnection();
-    $auditLogger = new AuditLogger($pdo);
 } catch (Exception $e) {
     die("Database Connection Error: " . htmlspecialchars($e->getMessage()));
 }
@@ -52,7 +56,7 @@ try {
 // Handle rollback request
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rollback_promotion'])) {
     // CSRF Protection
-    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], (string)$_POST['csrf_token'])) {
         $errors[] = "Invalid security token. Please refresh the page and try again.";
     }
     
@@ -72,15 +76,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rollback_promotion'])
             $pdo->beginTransaction();
             
             // Get promotion details
-            $stmt = $pdo->prepare("
-                SELECT sp.*, s.svcNo, s.fName, s.lName, s.rankId,
-                       r_from.name as from_rank_name, r_to.name as to_rank_name
-                FROM staff_promotions sp
-                JOIN staff s ON sp.svcNo = s.id
-                LEFT JOIN ranks r_from ON sp.rank_from = r_from.id
-                LEFT JOIN ranks r_to ON sp.rank_to = r_to.id
-                WHERE sp.id = ? AND sp.can_rollback = 1 AND sp.rolled_back_at IS NULL
-            ");
+                 $stmt = $pdo->prepare("
+                  SELECT sp.*, s.fName, s.lName, s.rankId AS staff_rank_id,
+                      r_from.rankId AS from_rank_name, r_to.rankId AS to_rank_name
+                  FROM staff_promotion sp
+                  JOIN staff s ON sp.svcNo = s.svcNo
+                  LEFT JOIN `rank` r_from ON sp.currentRank = r_from.rankId
+                  LEFT JOIN `rank` r_to ON sp.newRank = r_to.rankId
+                  WHERE sp.id = ?
+                    AND sp.createdAt >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                    AND (sp.remark IS NULL OR sp.remark NOT LIKE '%[ROLLED BACK:%')
+                 ");
             $stmt->execute([$promotionId]);
             $promotion = $stmt->fetch(PDO::FETCH_ASSOC);
             
@@ -88,48 +94,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rollback_promotion'])
                 throw new Exception("Promotion not found or cannot be rolled back.");
             }
             
-            // Check time window (24 hours)
-            $createdAt = strtotime($promotion['createdAt']);
-            $now = time();
-            $hoursSince = ($now - $createdAt) / 3600;
-            
-            if ($hoursSince > 24) {
-                throw new Exception("Rollback window expired. Promotions can only be rolled back within 24 hours.");
+            if ($promotion['staff_rank_id'] !== $promotion['newRank']) {
+                throw new Exception("This promotion is no longer the staff member's current rank and cannot be rolled back safely.");
             }
             
             // Store current state for audit
             $beforeData = [
-                'staff_rank_id' => $promotion['rankId'],
+                'staff_rank_id' => $promotion['staff_rank_id'],
                 'promotion_status' => 'completed'
             ];
             
             // Revert staff rank
-            $updateStmt = $pdo->prepare("
-                UPDATE staff 
-                SET rankId = ? 
-                WHERE id = ?
-            ");
-            $updateStmt->execute([$promotion['rank_from'], $promotion['svcNo']]);
+            $updateStmt = $pdo->prepare("UPDATE staff SET rankId = ? WHERE svcNo = ? AND rankId = ?");
+            $updateStmt->execute([$promotion['currentRank'], $promotion['svcNo'], $promotion['newRank']]);
+            if ($updateStmt->rowCount() !== 1) {
+                throw new Exception('The staff rank changed while this rollback was being processed. No changes were applied.');
+            }
             
             // Mark promotion as rolled back
-            $rollbackStmt = $pdo->prepare("
-                UPDATE staff_promotions 
-                SET rolled_back_by = ?,
-                    rolled_back_at = NOW(),
-                    status = 'cancelled',
-                    remarks = CONCAT(COALESCE(remarks, ''), '\n[ROLLED BACK: ', ?, ']')
-                WHERE id = ?
-            ");
+            $rollbackStmt = $pdo->prepare("UPDATE staff_promotion
+                SET remark = CONCAT(COALESCE(remark, ''), '\n[ROLLED BACK: ', ?, ']')
+                WHERE id = ? AND (remark IS NULL OR remark NOT LIKE '%[ROLLED BACK:%')");
             $rollbackStmt->execute([
-                $_SESSION['user_id'] ?? 0,
                 $reason,
                 $promotionId
             ]);
+            if ($rollbackStmt->rowCount() !== 1) {
+                throw new Exception('This promotion was already rolled back or changed.');
+            }
             
             // Store after data
             $afterData = [
-                'staff_rank_id' => $promotion['rank_from'],
-                'promotion_status' => 'cancelled',
+                'staff_rank_id' => $promotion['currentRank'],
+                'promotion_status' => 'rolled_back',
                 'rollback_reason' => $reason
             ];
             
@@ -145,21 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rollback_promotion'])
                 $reason
             );
             
-            $auditLogger->logRollback(
-                $promotion['svcNo'],
-                $promotionId,
-                $beforeData,
-                $afterData,
-                $description
-            );
-            
-            // Save snapshot
-            $auditLogger->saveSnapshot(
-                $promotionId,
-                $promotion['svcNo'],
-                'rolled_back',
-                $promotion
-            );
+            logActivity('promotion_rollback', $description);
             
             $pdo->commit();
             $success = true;
@@ -173,7 +156,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rollback_promotion'])
             );
             
         } catch (Exception $e) {
-            $pdo->rollBack();
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
             $errors[] = "Rollback failed: " . $e->getMessage();
             error_log("Rollback error: " . $e->getMessage());
         }
@@ -181,7 +166,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rollback_promotion'])
 }
 
 // Get rollbackable promotions
-$rollbackablePromotions = $auditLogger->getRollbackablePromotions(24);
+$rollbackStmt = $pdo->query("SELECT sp.*, s.fName, s.lName, s.rankId AS staff_rank_id,
+                r_from.rankId AS from_rank_name, r_to.rankId AS to_rank_name,
+                TIMESTAMPDIFF(MINUTE, sp.createdAt, NOW()) AS minutes_since_creation
+        FROM staff_promotion sp
+        JOIN staff s ON sp.svcNo = s.svcNo
+        LEFT JOIN `rank` r_from ON sp.currentRank = r_from.rankId
+        LEFT JOIN `rank` r_to ON sp.newRank = r_to.rankId
+        WHERE sp.createdAt >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+            AND (sp.remark IS NULL OR sp.remark NOT LIKE '%[ROLLED BACK:%')
+        ORDER BY sp.createdAt DESC");
+$rollbackablePromotions = $rollbackStmt->fetchAll(PDO::FETCH_ASSOC);
 
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';
@@ -209,6 +204,10 @@ include dirname(__DIR__) . '/shared/sidebar.php';
     transform: translateY(-2px);
 }
 
+.promotion-card .card-body {
+    min-width: 0;
+}
+
 .time-badge {
     font-family: monospace;
     font-weight: bold;
@@ -217,7 +216,6 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 
 <div class="content-wrapper with-sidebar">
     <div class="container-fluid">
-        <div class="main-content">
             <div class="row">
                 <div class="col-12">
                     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -319,7 +317,6 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     </div>
                 </div>
             </div>
-        </div>
     </div>
 </div>
 

@@ -10,12 +10,19 @@ define('ARMIS_VERSION', '1.0.0');
 define('ARMIS_NAME', 'Army Resource Management Information System');
 define('ARMIS_ROOT', __DIR__);
 
-// Database Configuration (Update these for production)
-if (!defined('DB_HOST')) define('DB_HOST', 'localhost');
-if (!defined('DB_NAME')) define('DB_NAME', 'armis1');
-if (!defined('DB_USER')) define('DB_USER', 'root'); // Changed from 'armis_user' to 'root' for local development
-if (!defined('DB_PASS')) define('DB_PASS', ''); // Changed password to empty for local development
-if (!defined('DB_CHARSET')) define('DB_CHARSET', 'utf8mb4');
+// Database Configuration
+// FIX: this used to hardcode DB_HOST/DB_USER/DB_PASS itself (root /
+// empty password) using `if (!defined())` guards. shared/database_connection.php
+// uses the exact same guard pattern to pull these from .env instead —
+// but whichever file runs first wins the define(), and several pages
+// (e.g. change_temp_password.php) required this file before
+// shared/database_connection.php. That meant the .env-based credentials
+// were silently skipped and the hardcoded local-dev fallback was used
+// instead, regardless of what was actually configured in .env.
+// Requiring the real source of truth here, before anything has a
+// chance to define these constants a different way, makes the outcome
+// the same no matter which file loads first.
+require_once __DIR__ . '/shared/database_connection.php';
 
 // Application Settings
 define('ARMIS_TIMEZONE', 'UTC');
@@ -23,7 +30,15 @@ define('ARMIS_LANG', 'en');
 define('ARMIS_THEME', 'military');
 
 // Security Settings
-define('SESSION_TIMEOUT', 3600); // 1 hour
+// FIX: this constant used to say 1 hour but nothing in the codebase
+// actually enforced it — admin_branch had its own separate, unrelated
+// 20-minute timeout hardcoded in includes/auth.php instead. Now that
+// shared/session_guard.php reads this constant as the single source of
+// truth (see admin_branch/includes/auth.php), the value here needs to
+// match what was actually protecting personnel data, not silently
+// extend everyone's session by 3x. Override via SESSION_TIMEOUT_SECONDS
+// in .env if a different value is needed.
+define('SESSION_TIMEOUT', (int) env_get('SESSION_TIMEOUT_SECONDS', '1200')); // 20 minutes
 define('CSRF_TOKEN_EXPIRY', 1800); // 30 minutes
 define('MAX_LOGIN_ATTEMPTS', 5);
 define('LOGIN_LOCKOUT_TIME', 900); // 15 minutes

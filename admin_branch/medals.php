@@ -11,39 +11,13 @@ require_once dirname(__DIR__) . '/shared/database_connection.php';
 requireAuth();
 requireModuleAccess('admin_branch');
 
-$pageTitle = "Medals";
+$pageTitle = "Honors and Awards";
 $moduleName = "Admin Branch";
 $moduleIcon = "users-cog";
 $currentPage = "medals";
 
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create_staff'],
-    ['title' => 'Edit Staff', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'user-edit', 'page' => 'edit_staff'],
-    ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/appointments.php', 'icon' => 'briefcase', 'page' => 'appointments'],
-    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medal.php', 'icon' => 'medal', 'page' => 'medals'],
-    [
-        'title' => 'Reports',
-        'icon' => 'chart-bar',
-        'page' => 'reports',
-        'children' => [
-            ['title' => 'Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php'],
-            ['title' => 'Unit List', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
-            ['title' => 'Contracts', 'url' => '/Armis2/admin_branch/reports_contract.php'],
-            ['title' => 'Courses', 'url' => '/Armis2/admin_branch/reports_courses.php'],
-            ['title' => 'Deceased', 'url' => '/Armis2/admin_branch/reports_deceased.php'],
-            ['title' => 'Gender', 'url' => '/Armis2/admin_branch/reports_gender.php'],
-            ['title' => 'Marital', 'url' => '/Armis2/admin_branch/reports_marital.php'],
-            ['title' => 'Rank', 'url' => '/Armis2/admin_branch/reports_rank.php'],
-            ['title' => 'Retired', 'url' => '/Armis2/admin_branch/reports_retired.php'],
-            ['title' => 'Trade', 'url' => '/Armis2/admin_branch/reports_trade.php'],
-            ['title' => 'Corps', 'url' => '/Armis2/admin_branch/reports_corps.php'],
-            ['title' => 'Units', 'url' => '/Armis2/admin_branch/reports_units.php']
-        ],
-    ['title' => 'System Settings', 'url' => '/Armis2/admin_branch/system_settings.php', 'icon' => 'cogs', 'page' => 'settings']
-    ],
-];
+$sidebarLinks = []; // set by shared nav include below
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 // CSRF Token
 if (!isset($_SESSION)) { session_start(); }
@@ -66,7 +40,12 @@ $pdo = getDbConnection();
 $errors = [];
 $success = false;
 
-// --- Import Medals (CSV) ---
+// honorId is a fixed-width varchar(2) primary key in the `honors` table.
+function isValidHonorId($id) {
+    return is_string($id) && preg_match('/^[A-Za-z0-9]{1,2}$/', $id);
+}
+
+// --- Import Honors (CSV) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_medals']) && Token::check($_POST['csrf'] ?? '')) {
     if (!empty($_FILES['import_file']['tmp_name'])) {
         $file = fopen($_FILES['import_file']['tmp_name'], 'r');
@@ -74,35 +53,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_medals']) && T
         $imported = 0;
         while (($row = fgetcsv($file)) !== false) {
             $data = array_combine($header, $row);
-            if (empty($data['name'])) continue;
+            $honorId = trim($data['honorId'] ?? '');
+            $honorDesc = trim($data['honorDesc'] ?? '');
+            if ($honorDesc === '') continue;
+            if (!isValidHonorId($honorId)) {
+                $errors[] = "Skipped row: honorId must be 1-2 alphanumeric characters (got '".htmlspecialchars($honorId)."').";
+                continue;
+            }
             try {
-                $stmt = $pdo->prepare("INSERT INTO medals (name, description, imagePath, createdAt) VALUES (?, ?, ?, ?)");
+                $stmt = $pdo->prepare("INSERT INTO honors (honorId, honorDesc, honorAuth) VALUES (?, ?, ?)");
                 $stmt->execute([
-                    $data['name'],
-                    $data['description'] ?? '',
-                    $data['imagePath'] ?? '',
-                    $data['createdAt'] ?? date('Y-m-d H:i:s')
+                    $honorId,
+                    $honorDesc,
+                    $data['honorAuth'] ?? ''
                 ]);
                 $imported++;
             } catch (Exception $e) {
-                $errors[] = "Error importing medal: ".htmlspecialchars($e->getMessage());
+                $errors[] = "Error importing honor '".htmlspecialchars($honorId)."': ".htmlspecialchars($e->getMessage());
             }
         }
         fclose($file);
-        $success = "$imported medals imported.";
+        $success = "$imported honors imported.";
     } else {
         $errors[] = "Please upload a CSV file.";
     }
 }
 
-// --- Export Medals (CSV) ---
+// --- Export Honors (CSV) ---
 if (isset($_GET['export_medals']) && Token::check($_GET['csrf'] ?? '')) {
-    $filename = "medals_export_" . date("Ymd_His") . ".csv";
+    $filename = "honors_export_" . date("Ymd_His") . ".csv";
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment; filename="'.$filename.'"');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['id','name','description','imagePath','createdAt']);
-    $stmt = $pdo->query("SELECT id, name, description, imagePath, createdAt FROM medals ORDER BY name ASC");
+    fputcsv($out, ['honorId','honorDesc','honorAuth','createdAt']);
+    $stmt = $pdo->query("SELECT honorId, honorDesc, honorAuth, createdAt FROM honors ORDER BY honorDesc ASC");
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
         fputcsv($out, $row);
     }
@@ -110,36 +94,22 @@ if (isset($_GET['export_medals']) && Token::check($_GET['csrf'] ?? '')) {
     exit;
 }
 
-// --- Inline Medal Edit (AJAX) ---
+// --- Inline Honor Edit (AJAX) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_medal']) && Token::check($_POST['csrf'] ?? '')) {
-    $medalId = intval($_POST['medal_id']);
-    $name = trim($_POST['name'] ?? '');
-    $desc = trim($_POST['description'] ?? '');
-    $imagePath = trim($_POST['imagePath'] ?? '');
+    $honorId = trim($_POST['medal_id'] ?? '');
+    $honorDesc = trim($_POST['name'] ?? '');
+    $honorAuth = trim($_POST['description'] ?? '');
 
-    if ($name === '') $errors[] = "Medal name cannot be empty.";
-    if ($imagePath && !preg_match('/^.+\.(jpg|jpeg|png|gif)$/i', $imagePath)) $errors[] = "Invalid image file path.";
+    if (!isValidHonorId($honorId)) $errors[] = "Invalid honor code.";
+    if ($honorDesc === '') $errors[] = "Honor name cannot be empty.";
 
     if (empty($errors)) {
         try {
-            $stmt = $pdo->prepare("SELECT * FROM medals WHERE id=?");
-            $stmt->execute([$medalId]);
-            $old = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            $stmt = $pdo->prepare("UPDATE medals SET name=?, description=?, imagePath=? WHERE id=?");
-            $stmt->execute([$name, $desc, $imagePath, $medalId]);
-            $success = "Medal updated successfully!";
-
-            // Log audit trail
-            $user = $_SESSION['username'] ?? 'admin';
-            $stmt = $pdo->prepare("INSERT INTO medals_audit (medal_id, action, changed_by, beforeJson, after_json, changed_at) VALUES (?, 'update', ?, ?, ?, NOW())");
-            $stmt->execute([
-                $medalId, $user, json_encode($old), json_encode([
-                    'name'=>$name, 'description'=>$desc, 'imagePath'=>$imagePath
-                ])
-            ]);
+            $stmt = $pdo->prepare("UPDATE honors SET honorDesc=?, honorAuth=? WHERE honorId=?");
+            $stmt->execute([$honorDesc, $honorAuth, $honorId]);
+            $success = "Honor updated successfully!";
         } catch (Exception $e) {
-            $errors[] = "Error updating medal: " . htmlspecialchars($e->getMessage());
+            $errors[] = "Error updating honor: " . htmlspecialchars($e->getMessage());
         }
     }
     if (isset($_POST['ajax'])) {
@@ -152,45 +122,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_medal']) && Toke
 // --- Bulk Delete (AJAX) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_delete']) && Token::check($_POST['csrf'] ?? '')) {
     $ids = $_POST['ids'] ?? [];
-    $ids = array_filter(array_map('intval', $ids));
+    $ids = array_values(array_filter($ids, 'isValidHonorId'));
     $deleted = 0;
     if ($ids) {
         $in = str_repeat('?,', count($ids)-1) . '?';
         try {
-            $pdo->beginTransaction();
-            foreach($ids as $id) {
-                $stmt = $pdo->prepare("SELECT * FROM medals WHERE id=?");
-                $stmt->execute([$id]);
-                $old = $stmt->fetch(PDO::FETCH_ASSOC);
-                if ($old) {
-                    $user = $_SESSION['username'] ?? 'admin';
-                    $stmt2 = $pdo->prepare("INSERT INTO medals_audit (medal_id, action, changed_by, beforeJson, after_json, changed_at) VALUES (?, 'delete', ?, ?, '{}', NOW())");
-                    $stmt2->execute([$id, $user, json_encode($old)]);
-                }
-            }
-            $stmt = $pdo->prepare("DELETE FROM medals WHERE id IN ($in)");
+            $stmt = $pdo->prepare("DELETE FROM honors WHERE honorId IN ($in)");
             $stmt->execute($ids);
             $deleted = $stmt->rowCount();
-            $pdo->commit();
-            $success = "$deleted medals deleted.";
+            $success = "$deleted honors deleted.";
         } catch (Exception $e) {
-            $pdo->rollBack();
-            $errors[] = "Error deleting medals: " . htmlspecialchars($e->getMessage());
+            $errors[] = "Error deleting honors: " . htmlspecialchars($e->getMessage());
         }
     }
     header('Content-Type: application/json');
     echo json_encode(['success' => $success, 'errors' => $errors]);
-    exit;
-}
-
-// --- Audit trail UI (AJAX) ---
-if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['audit_medal_id']) && ctype_digit($_GET['audit_medal_id'])) {
-    $mid = (int)$_GET['audit_medal_id'];
-    $rows = $pdo->prepare("SELECT * FROM medals_audit WHERE medal_id=? ORDER BY changed_at DESC");
-    $rows->execute([$mid]);
-    $trail = $rows->fetchAll(PDO::FETCH_ASSOC);
-    header('Content-Type: application/json');
-    echo json_encode(['trail'=>$trail]);
     exit;
 }
 
@@ -202,7 +148,8 @@ $order = ($_GET['order'] ?? '') === 'desc' ? 'DESC' : 'ASC';
 $where = [];
 $params = [];
 if ($search) {
-    $where[] = "(m.name LIKE ? OR m.description LIKE ?)";
+    $where[] = "(h.honorDesc LIKE ? OR h.honorAuth LIKE ? OR h.honorId LIKE ?)";
+    $params[] = "%$search%";
     $params[] = "%$search%";
     $params[] = "%$search%";
 }
@@ -217,16 +164,18 @@ switch($sort) {
         $orderSQL = "ORDER BY last_awarded $order";
         break;
     case "createdAt":
-        $orderSQL = "ORDER BY m.createdAt $order";
+        $orderSQL = "ORDER BY h.createdAt $order";
         break;
     default:
-        $orderSQL = "ORDER BY m.name $order";
+        $orderSQL = "ORDER BY h.honorDesc $order";
 }
 
-$sql = "SELECT m.*,
-    (SELECT COUNT(*) FROM staff_medals sm WHERE sm.medal_id=m.id) AS awarded_count,
-    (SELECT MAX(sm.award_date) FROM staff_medals sm WHERE sm.medal_id=m.id) AS last_awarded
-    FROM medals m
+// staff_awards.honorId is a proper foreign key back to honors.honorId
+// (added via migrations/2026_08_06_staff_awards_honors_link.sql).
+$sql = "SELECT h.*,
+    (SELECT COUNT(*) FROM staff_awards sa WHERE sa.honorId = h.honorId) AS awarded_count,
+    (SELECT MAX(sa.award_date) FROM staff_awards sa WHERE sa.honorId = h.honorId) AS last_awarded
+    FROM honors h
     $whereSQL
     $orderSQL";
 
@@ -240,15 +189,15 @@ $medals = $stmt->fetchAll(PDO::FETCH_ASSOC);
 <div class="content-wrapper with-sidebar">
     <div class="container-fluid p-4">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h2 class="mb-0"><i class="fa fa-medal"></i> Medals</h2>
+            <h2 class="mb-0"><i class="fa fa-medal"></i> Honors and Awards</h2>
             <div class="d-flex gap-2 flex-wrap">
                 <form method="get" class="d-inline">
                     <input type="hidden" name="csrf" value="<?=htmlspecialchars($csrfToken)?>">
                     <button type="submit" name="export_medals" value="1" class="btn btn-outline-secondary"><i class="fa fa-download"></i> Export CSV</button>
                 </form>
                 <button class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#importModal"><i class="fa fa-upload"></i> Import CSV</button>
-                <a href="create_medal.php" class="btn btn-outline-success"><i class="fa fa-plus"></i> Create Medal</a>
-                <a href="assign_medal.php" class="btn btn-primary"><i class="fa fa-medal"></i> Assign Medal</a>
+                <a href="create_medal.php" class="btn btn-outline-success"><i class="fa fa-plus"></i> Create Honor</a>
+                <a href="assign_medal.php" class="btn btn-primary"><i class="fa fa-medal"></i> Assign Honor</a>
                 <button class="btn btn-danger" id="bulkDeleteBtn" disabled><i class="fa fa-trash"></i> Bulk Delete</button>
             </div>
         </div>
@@ -259,12 +208,12 @@ $medals = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <form method="post" enctype="multipart/form-data">
                         <input type="hidden" name="csrf" value="<?=htmlspecialchars($csrfToken)?>">
                         <div class="modal-header">
-                            <h5 class="modal-title">Import Medals (CSV)</h5>
+                            <h5 class="modal-title">Import Honors (CSV)</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body">
                             <input type="file" name="import_file" accept=".csv" class="form-control" required>
-                            <div class="form-text">CSV columns: name,description,imagePath,createdAt</div>
+                            <div class="form-text">CSV columns: honorId,honorDesc,honorAuth (honorId: 1-2 alphanumeric characters)</div>
                         </div>
                         <div class="modal-footer">
                             <button type="submit" name="import_medals" value="1" class="btn btn-primary">Import</button>
@@ -276,7 +225,7 @@ $medals = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <!-- Search/filter bar -->
         <form class="row g-2 mb-3" method="get" id="filterForm">
             <div class="col-md-4">
-                <input type="text" class="form-control" name="search" value="<?=htmlspecialchars($search)?>" placeholder="Search name or description">
+                <input type="text" class="form-control" name="search" value="<?=htmlspecialchars($search)?>" placeholder="Search code, name or authority">
             </div>
             <div class="col-md-2">
                 <select name="sort" class="form-select" onchange="document.getElementById('filterForm').submit();">
@@ -311,7 +260,7 @@ $medals = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         <div class="card shadow-sm">
             <div class="card-header bg-info text-white">
-                <h5 class="mb-0"><i class="fa fa-list"></i> All Available Medals</h5>
+                <h5 class="mb-0"><i class="fa fa-list"></i> All Available Honors</h5>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -319,9 +268,9 @@ $medals = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         <thead class="table-light">
                             <tr>
                                 <th><input type="checkbox" id="checkAll"></th>
-                                <th>Image</th>
-                                <th>Name</th>
-                                <th>Description</th>
+                                <th>Code</th>
+                                <th>Name / Description</th>
+                                <th>Authority</th>
                                 <th>Awarded</th>
                                 <th>Last Awarded</th>
                                 <th>Actions</th>
@@ -329,29 +278,21 @@ $medals = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         </thead>
                         <tbody>
                         <?php foreach($medals as $medal): ?>
-                            <tr data-medal-id="<?=$medal['id']?>" class="medal-row">
-                                <td><input type="checkbox" class="select-medal" value="<?=$medal['id']?>"></td>
+                            <tr data-medal-id="<?=htmlspecialchars($medal['honorId'])?>" class="medal-row">
+                                <td><input type="checkbox" class="select-medal" value="<?=htmlspecialchars($medal['honorId'])?>"></td>
+                                <td><span class="badge bg-secondary"><?=htmlspecialchars($medal['honorId'])?></span></td>
                                 <td>
-                                    <?php if(!empty($medal['imagePath'])): ?>
-                                        <img src="<?=htmlspecialchars($medal['imagePath'])?>" alt="Medal Image" style="height:40px;max-width:70px;">
-                                    <?php else: ?>
-                                        <span class="text-muted">No Image</span>
-                                    <?php endif; ?>
-                                    <input type="text" class="form-control form-control-sm d-none medal-image-edit mt-2" value="<?=htmlspecialchars($medal['imagePath'] ?? '')?>" placeholder="Image file (jpg/png/gif)">
-                                    <small class="d-none text-muted medal-image-label">Image Path</small>
+                                    <span class="medal-name"><?=htmlspecialchars($medal['honorDesc'])?></span>
+                                    <input type="text" class="form-control form-control-sm d-none medal-name-edit" value="<?=htmlspecialchars($medal['honorDesc'])?>">
                                 </td>
                                 <td>
-                                    <span class="medal-name"><?=htmlspecialchars($medal['name'])?></span>
-                                    <input type="text" class="form-control form-control-sm d-none medal-name-edit" value="<?=htmlspecialchars($medal['name'])?>">
-                                </td>
-                                <td>
-                                    <span class="medal-desc"><?=htmlspecialchars($medal['description'])?></span>
-                                    <textarea class="form-control form-control-sm d-none medal-desc-edit"><?=htmlspecialchars($medal['description'])?></textarea>
+                                    <span class="medal-desc"><?=htmlspecialchars($medal['honorAuth'] ?? '')?></span>
+                                    <input type="text" class="form-control form-control-sm d-none medal-desc-edit" value="<?=htmlspecialchars($medal['honorAuth'] ?? '')?>">
                                 </td>
                                 <td>
                                     <span class="badge bg-primary"><?=intval($medal['awarded_count'])?></span>
                                     <?php if ($medal['awarded_count'] > 0): ?>
-                                        <a href="recipients.php?medal_id=<?=$medal['id']?>" class="ms-1 text-decoration-underline" title="View Recipients">View</a>
+                                        <a href="recipients.php?medal_id=<?=urlencode($medal['honorId'])?>" class="ms-1 text-decoration-underline" title="View Recipients">View</a>
                                     <?php endif; ?>
                                 </td>
                                 <td>
@@ -365,32 +306,17 @@ $medals = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                     <button class="btn btn-sm btn-outline-secondary edit-medal-btn" title="Edit"><i class="fa fa-edit"></i></button>
                                     <button class="btn btn-sm btn-success save-medal-btn d-none" title="Save"><i class="fa fa-save"></i></button>
                                     <button class="btn btn-sm btn-danger cancel-medal-btn d-none" title="Cancel"><i class="fa fa-times"></i></button>
-                                    <a href="assign_medal.php?medal_id=<?=$medal['id']?>" class="btn btn-sm btn-primary" title="Assign"><i class="fa fa-medal"></i> Assign</a>
-                                    <button class="btn btn-sm btn-outline-info audit-trail-btn" title="Audit Trail"><i class="fa fa-history"></i></button>
+                                    <a href="assign_medal.php?medal_id=<?=urlencode($medal['honorId'])?>" class="btn btn-sm btn-primary" title="Assign"><i class="fa fa-medal"></i> Assign</a>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
                         <?php if(empty($medals)): ?>
                             <tr>
-                                <td colspan="8" class="text-center text-muted">No medals found. <a href="create_medal.php">Create one.</a></td>
+                                <td colspan="7" class="text-center text-muted">No honors found. <a href="create_medal.php">Create one.</a></td>
                             </tr>
                         <?php endif;?>
                         </tbody>
                     </table>
-                </div>
-            </div>
-        </div>
-        <!-- Audit Trail Modal -->
-        <div class="modal fade" id="auditTrailModal" tabindex="-1">
-            <div class="modal-dialog modal-lg">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">Audit Trail</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body" id="auditTrailContent">
-                        <div class="text-center text-muted">Loading...</div>
-                    </div>
                 </div>
             </div>
         </div>
@@ -402,22 +328,20 @@ $(function(){
     $('#medalsTable').on('click', '.edit-medal-btn', function(){
         let $tr = $(this).closest('tr');
         $tr.find('.medal-name, .medal-desc, .edit-medal-btn').addClass('d-none');
-        $tr.find('.medal-name-edit, .medal-desc-edit, .medal-image-edit, .medal-image-label, .save-medal-btn, .cancel-medal-btn').removeClass('d-none');
+        $tr.find('.medal-name-edit, .medal-desc-edit, .save-medal-btn, .cancel-medal-btn').removeClass('d-none');
     });
     $('#medalsTable').on('click', '.cancel-medal-btn', function(){
         let $tr = $(this).closest('tr');
         $tr.find('.medal-name-edit').val($tr.find('.medal-name').text());
         $tr.find('.medal-desc-edit').val($tr.find('.medal-desc').text());
-        $tr.find('.medal-image-edit').val($tr.find('img').attr('src') || '');
         $tr.find('.medal-name, .medal-desc, .edit-medal-btn').removeClass('d-none');
-        $tr.find('.medal-name-edit, .medal-desc-edit, .medal-image-edit, .medal-image-label, .save-medal-btn, .cancel-medal-btn').addClass('d-none');
+        $tr.find('.medal-name-edit, .medal-desc-edit, .save-medal-btn, .cancel-medal-btn').addClass('d-none');
     });
     $('#medalsTable').on('click', '.save-medal-btn', function(){
         let $tr = $(this).closest('tr');
         let medalId = $tr.data('medal-id');
         let name = $tr.find('.medal-name-edit').val();
         let desc = $tr.find('.medal-desc-edit').val();
-        let imagePath = $tr.find('.medal-image-edit').val();
         let $btn = $(this);
         $btn.prop('disabled', true);
         $.post('medals.php', {
@@ -425,7 +349,6 @@ $(function(){
             medal_id: medalId,
             name: name,
             description: desc,
-            imagePath: imagePath,
             csrf: <?=json_encode($csrfToken)?>,
             ajax: 1
         }, function(resp){
@@ -433,26 +356,13 @@ $(function(){
             if(resp.success){
                 $tr.find('.medal-name').text(name);
                 $tr.find('.medal-desc').text(desc);
-                if(imagePath){
-                    if($tr.find('img').length){
-                        $tr.find('img').attr('src', imagePath);
-                    } else {
-                        $tr.find('td:eq(1)').html('<img src="'+imagePath+'" alt="Medal Image" style="height:40px;max-width:70px;">');
-                    }
-                } else {
-                    $tr.find('td:eq(1)').html('<span class="text-muted">No Image</span>');
-                }
                 $tr.find('.medal-name, .medal-desc, .edit-medal-btn').removeClass('d-none');
-                $tr.find('.medal-name-edit, .medal-desc-edit, .medal-image-edit, .medal-image-label, .save-medal-btn, .cancel-medal-btn').addClass('d-none');
+                $tr.find('.medal-name-edit, .medal-desc-edit, .save-medal-btn, .cancel-medal-btn').addClass('d-none');
             }
             if(resp.errors && resp.errors.length){
                 alert(resp.errors.join("\n"));
             }
         },'json');
-    });
-    $('#medalsTable').on('click', '.edit-medal-btn', function(){
-        let $tr = $(this).closest('tr');
-        $tr.find('.medal-image-label').removeClass('d-none');
     });
 
     $('#checkAll').on('change', function(){
@@ -464,7 +374,7 @@ $(function(){
     $('#bulkDeleteBtn').on('click', function(){
         let ids = $('.select-medal:checked').map(function(){return $(this).val();}).get();
         if (!ids.length) return;
-        if (!confirm("Are you sure you want to delete the selected medals? This cannot be undone.")) return;
+        if (!confirm("Are you sure you want to delete the selected honors? This cannot be undone.")) return;
         $.post('medals.php', {bulk_delete:1, ids:ids, csrf:<?=json_encode($csrfToken)?>}, function(resp){
             if(resp.success){
                 $('.select-medal:checked').closest('tr').fadeOut(function(){$(this).remove();});
@@ -475,42 +385,10 @@ $(function(){
             }
         },'json');
     });
-
-    $('#medalsTable').on('click', '.audit-trail-btn', function(){
-        let $tr = $(this).closest('tr');
-        let medalId = $tr.data('medal-id');
-        $('#auditTrailContent').html('<div class="text-center text-muted">Loading...</div>');
-        var modal = new bootstrap.Modal(document.getElementById('auditTrailModal'));
-        modal.show();
-        $.get('medals.php', {audit_medal_id: medalId}, function(resp){
-            if (!resp.trail || !resp.trail.length) {
-                $('#auditTrailContent').html('<div class="text-muted">No audit trail found for this medal.</div>');
-                return;
-            }
-            let html = '<table class="table table-sm"><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Before</th><th>After</th></tr></thead><tbody>';
-            resp.trail.forEach(function(row){
-                html += '<tr>';
-                html += '<td>'+row.changed_at+'</td>';
-                html += '<td>'+row.changed_by+'</td>';
-                html += '<td>'+row.action+'</td>';
-                html += '<td><pre style="max-width:220px;white-space:pre-wrap;word-break:break-all;">'+escapeHtml(row.beforeJson)+'</pre></td>';
-                html += '<td><pre style="max-width:220px;white-space:pre-wrap;word-break:break-all;">'+escapeHtml(row.after_json)+'</pre></td>';
-                html += '</tr>';
-            });
-            html += '</tbody></table>';
-            $('#auditTrailContent').html(html);
-        },'json');
-    });
-    function escapeHtml(text) {
-        return text ? text.replace(/[&<>"']/g, function(m) {
-            return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];
-        }) : '';
-    }
 });
 </script>
 <style>
-#medalsTable input[type="text"], #medalsTable textarea { min-width: 120px;}
-#medalsTable .medal-image-edit { max-width: 170px;}
+#medalsTable input[type="text"] { min-width: 120px;}
 #medalsTable td { vertical-align: middle;}
 #medalsTable .btn { margin-bottom: 2px;}
 .badge.bg-primary { font-size: 1em;}

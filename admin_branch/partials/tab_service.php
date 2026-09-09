@@ -1,11 +1,11 @@
-<div class="tab-pane fade p-3 border rounded <?=isset($tabErrors['service']) ? 'show active' : ''?>" id="service" role="tabpanel">
+<div class="tab-pane fade p-3 border rounded <?=$activeTabKey === 'service' ? 'show active' : ''?>" id="service" role="tabpanel">
     <h5 class="mb-3 text-success">Service Details</h5>
     <div class="row mb-3">
         <input type="hidden" name="svcStatus" value="Serving">
         <div class="col-md-4 mb-2">
-            <label class="form-label form-label-sm" for="svcNo">Service Number *</label>
-            <input type="text" name="svcNo" id="svcNo" class="form-control form-control-sm" required maxlength="20" pattern="[0-9]+" aria-label="Service Number" value="<?=old('svcNo') ?>" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'');">
-            <small class="form-text text-warning">Please enter numbers only for the Service Number.</small>
+            <label class="form-label form-label-sm">Service Number</label>
+            <input type="text" class="form-control form-control-sm" value="<?=htmlspecialchars(old('svcNo'))?>" disabled>
+            <small class="form-text text-muted">Set on the Personal Details tab.</small>
         </div>
         <div class="col-md-4 mb-2">
             <label class="form-label form-label-sm" for="unitID">Unit *</label>
@@ -91,18 +91,23 @@
     <button type="button" class="btn btn-outline-secondary btn-sm mb-3" onclick="addPromotion()">Add Promotion/Reversion</button>
 </div>
 <script>
-// Auto-fill current appointment unit based on selected unit
-document.getElementById('unitID').addEventListener('change', function() {
-    var unitText = this.options[this.selectedIndex].text;
-    document.getElementById('current_appointment_unit').value = unitText !== 'Select Unit' ? unitText : '';
-});
+// FIX: this previously tried to auto-fill a 'current_appointment_unit'
+// field that doesn't exist anywhere in this form (there is no such input
+// in tab_service.php or any other tab), so every unit selection threw
+// "Cannot set properties of null" in the browser console. Removed rather
+// than pointed at a real element, since no equivalent free-text "current
+// appointment unit" field exists to auto-fill - the unit is already
+// captured by the Unit dropdown above.
 
 // Auto-fill current promotion rank based on selected rank in personal details
 var rankSelect = document.getElementById('rankSelect');
 if(rankSelect){
     rankSelect.addEventListener('change', function() {
         var rankText = this.options[this.selectedIndex].text;
-        document.getElementById('current_promotion_rank').value = rankText !== 'Select Rank' ? rankText : '';
+        var rankField = document.getElementById('current_promotion_rank');
+        if (rankField) {
+            rankField.value = rankText !== 'Select Rank' ? rankText : '';
+        }
     });
 }
 </script>

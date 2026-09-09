@@ -29,30 +29,42 @@ function handlePasswordResetRequest() {
     }
     if (empty($errors)) {
         try {
-            $conn = getMysqliConnection();
-            // Check if user exists
-            $stmt = $conn->prepare("SELECT * FROM staff WHERE email = ? AND accStatus = 'active'");
-            $stmt->bind_param('s', $email);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            if ($result->num_rows > 0) {
-                $user = $result->fetch_assoc();
+            $pdo = getDbConnection();
+            // Check if user exists.
+            // FIX: `staff` has no `email` column - the real columns are
+            // `officialEmail` and `emailPvt`. Matches either, since a
+            // person requesting a reset may only remember whichever one
+            // they registered with (same fallback pattern used by
+            // UserProfileManager elsewhere in this app).
+            // FIX: `getMysqliConnection()` did not exist anywhere in this
+            // codebase - only `getDbConnection()` (PDO) does, which every
+            // other file in the app uses. That undefined-function call
+            // was a fatal error hit on every single reset attempt, before
+            // the request ever reached the (also broken) SQL below.
+            $stmt = $pdo->prepare("SELECT * FROM staff WHERE (officialEmail = ? OR emailPvt = ?) AND accStatus = 'active'");
+            $stmt->execute([$email, $email]);
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($user) {
                 // Generate reset token
                 $resetToken = bin2hex(random_bytes(32));
                 $expiry = date('Y-m-d H:i:s', strtotime('+1 hour'));
-                // Create staff_password_resets table if not exists
-                $conn->query('CREATE TABLE IF NOT EXISTS staff_password_resets (
+                // Create staff_password_resets table if not exists.
+                // FIX: svcNo is VARCHAR(10) on `staff` (values like '007414'
+                // have meaningful leading zeros) - declaring this column as
+                // INT would silently mangle/truncate those values and break
+                // every lookup that joins back against the real svcNo.
+                $pdo->exec('CREATE TABLE IF NOT EXISTS staff_password_resets (
                     id INT AUTO_INCREMENT PRIMARY KEY,
-                    svcNo INT NOT NULL,
+                    svcNo VARCHAR(10) NOT NULL,
                     reset_token VARCHAR(128) NOT NULL,
                     expires_at DATETIME NOT NULL,
                     used TINYINT(1) DEFAULT 0,
                     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
                 )');
-                // Insert token
-                $stmt2 = $conn->prepare('INSERT INTO staff_password_resets (svcNo, reset_token, expires_at) VALUES (?, ?, ?)');
-                $stmt2->bind_param('iss', $user['id'], $resetToken, $expiry);
-                $stmt2->execute();
+                // Insert token.
+                // FIX: staff has no `id` column - its primary key is `svcNo`.
+                $stmt2 = $pdo->prepare('INSERT INTO staff_password_resets (svcNo, reset_token, expires_at) VALUES (?, ?, ?)');
+                $stmt2->execute([$user['svcNo'], $resetToken, $expiry]);
                 // Send reset email
                 $mailer = new ARMISMailer();
                 $emailResult = $mailer->sendPasswordResetEmail($user, $resetToken);
@@ -97,23 +109,20 @@ function handlePasswordReset() {
     }
     if (empty($errors)) {
         try {
-            $conn = getMysqliConnection();
+            $pdo = getDbConnection();
             // Find reset token in staff_password_resets
-            $stmt = $conn->prepare('SELECT * FROM staff_password_resets WHERE reset_token = ? AND used = 0 LIMIT 1');
-            $stmt->bind_param('s', $token);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            if ($result->num_rows > 0) {
-                $resetRow = $result->fetch_assoc();
+            $stmt = $pdo->prepare('SELECT * FROM staff_password_resets WHERE reset_token = ? AND used = 0 LIMIT 1');
+            $stmt->execute([$token]);
+            $resetRow = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($resetRow) {
                 if (strtotime($resetRow['expires_at']) > time()) {
-                    $staffId = $resetRow['svcNo'];
-                    // Check password history (prevent reuse of last 3 passwords)
-                    $historyStmt = $conn->prepare('SELECT password_hash FROM staff_password_history WHERE svcNo = ? ORDER BY createdAt DESC LIMIT 3');
-                    $historyStmt->bind_param('i', $staffId);
-                    $historyStmt->execute();
-                    $historyResult = $historyStmt->get_result();
+                    $staffSvcNo = $resetRow['svcNo'];
+                    // Check password history (prevent reuse of last 3 passwords).
+                    // FIX: svcNo is a string, not an int.
+                    $historyStmt = $pdo->prepare('SELECT password_hash FROM staff_password_history WHERE svcNo = ? ORDER BY createdAt DESC LIMIT 3');
+                    $historyStmt->execute([$staffSvcNo]);
                     $passwordReused = false;
-                    while ($row = $historyResult->fetch_assoc()) {
+                    foreach ($historyStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
                         if (password_verify($password, $row['password_hash'])) {
                             $passwordReused = true;
                             break;
@@ -122,20 +131,31 @@ function handlePasswordReset() {
                     if ($passwordReused) {
                         $_SESSION['error_message'] = 'You cannot reuse one of your last 3 passwords.';
                     } else {
-                        // Update password
+                        // Update password.
+                        // FIX: `staff` has no `id`, `temp_password`,
+                        // `force_password_change`, or `last_password_change`
+                        // columns - the real, equivalent columns are
+                        // `svcNo`, `isFirstLogin`, and `passwordChangedAt`.
+                        // This UPDATE previously referenced four columns
+                        // that don't exist, meaning password reset could
+                        // never actually complete even after everything
+                        // above it was fixed.
                         $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
                         $now = date('Y-m-d H:i:s');
-                        $updateStmt = $conn->prepare('UPDATE staff SET password = ?, temp_password = 0, force_password_change = 0, last_password_change = ? WHERE id = ?');
-                        $updateStmt->bind_param('ssi', $hashedPassword, $now, $staffId);
-                        $updateStmt->execute();
+                        $updateStmt = $pdo->prepare('UPDATE staff SET password = ?, isFirstLogin = 0, passwordChangedAt = ? WHERE svcNo = ?');
+                        $updateStmt->execute([$hashedPassword, $now, $staffSvcNo]);
                         // Add to password history
-                        $historyInsertStmt = $conn->prepare('INSERT INTO staff_password_history (svcNo, password_hash) VALUES (?, ?)');
-                        $historyInsertStmt->bind_param('is', $staffId, $hashedPassword);
-                        $historyInsertStmt->execute();
+                        $pdo->exec('CREATE TABLE IF NOT EXISTS staff_password_history (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            svcNo VARCHAR(10) NOT NULL,
+                            password_hash VARCHAR(255) NOT NULL,
+                            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+                        )');
+                        $historyInsertStmt = $pdo->prepare('INSERT INTO staff_password_history (svcNo, password_hash) VALUES (?, ?)');
+                        $historyInsertStmt->execute([$staffSvcNo, $hashedPassword]);
                         // Mark token as used
-                        $markUsedStmt = $conn->prepare('UPDATE staff_password_resets SET used = 1 WHERE id = ?');
-                        $markUsedStmt->bind_param('i', $resetRow['id']);
-                        $markUsedStmt->execute();
+                        $markUsedStmt = $pdo->prepare('UPDATE staff_password_resets SET used = 1 WHERE id = ?');
+                        $markUsedStmt->execute([$resetRow['id']]);
                         $_SESSION['success_message'] = 'Your password has been successfully updated. You can now log in with your new password.';
                         header('Location: login.php');
                         exit;
@@ -163,7 +183,10 @@ function handleTempPasswordChange() {
         exit;
     }
     
-    $userId = $_SESSION['temp_password_user_id'];
+    // FIX: this is the person's svcNo (staff has no `id` column), kept as
+    // the variable name the rest of this function already used to avoid
+    // touching the session-key contract with login.php.
+    $userSvcNo = $_SESSION['temp_password_user_id'];
     $currentPassword = trim($_POST['current_password']);
     $newPassword = trim($_POST['new_password']);
     $confirmPassword = trim($_POST['confirm_password']);
@@ -188,30 +211,38 @@ function handleTempPasswordChange() {
     
     if (empty($errors)) {
         try {
-            $conn = getMysqliConnection();
+            $pdo = getDbConnection();
             
-            // Verify current password
-            $stmt = $conn->prepare("SELECT password FROM staff WHERE id = ?");
-            $stmt->bind_param('i', $userId);
-            $stmt->execute();
-            $result = $stmt->get_result();
+            // Verify current password. FIX: WHERE id -> WHERE svcNo.
+            $stmt = $pdo->prepare("SELECT password FROM staff WHERE svcNo = ?");
+            $stmt->execute([$userSvcNo]);
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
             
-            if ($result->num_rows > 0) {
-                $user = $result->fetch_assoc();
-                
+            if ($user) {
                 if (password_verify($currentPassword, $user['password'])) {
-                    // Update password
+                    // Update password.
+                    // FIX: same column-name corrections as handlePasswordReset()
+                    // above - `id`/`temp_password`/`force_password_change`/
+                    // `last_password_change`/`account_activated` don't exist;
+                    // the real columns are `svcNo`/`isFirstLogin`/
+                    // `passwordChangedAt`. `accStatus` (a real column) is set
+                    // to 'active' as the closest real equivalent of
+                    // "account_activated = 1".
                     $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
                     $now = date('Y-m-d H:i:s');
                     
-                    $updateStmt = $conn->prepare("UPDATE staff SET password = ?, temp_password = 0, force_password_change = 0, last_password_change = ?, account_activated = 1 WHERE id = ?");
-                    $updateStmt->bind_param('ssi', $hashedPassword, $now, $userId);
-                    $updateStmt->execute();
+                    $updateStmt = $pdo->prepare("UPDATE staff SET password = ?, isFirstLogin = 0, passwordChangedAt = ?, accStatus = 'active' WHERE svcNo = ?");
+                    $updateStmt->execute([$hashedPassword, $now, $userSvcNo]);
                     
                     // Add to password history
-                    $historyStmt = $conn->prepare("INSERT INTO staff_password_history (svcNo, password_hash) VALUES (?, ?)");
-                    $historyStmt->bind_param('is', $userId, $hashedPassword);
-                    $historyStmt->execute();
+                    $pdo->exec('CREATE TABLE IF NOT EXISTS staff_password_history (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        svcNo VARCHAR(10) NOT NULL,
+                        password_hash VARCHAR(255) NOT NULL,
+                        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )');
+                    $historyStmt = $pdo->prepare("INSERT INTO staff_password_history (svcNo, password_hash) VALUES (?, ?)");
+                    $historyStmt->execute([$userSvcNo, $hashedPassword]);
                     
                     // Clear temp password session
                     unset($_SESSION['temp_password_change_required']);

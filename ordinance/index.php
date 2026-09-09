@@ -24,14 +24,7 @@ $moduleName = "Ordinance";
 $moduleIcon = "shield-alt";
 $currentPage = "dashboard";
 
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/ordinance/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Inventory', 'url' => '/Armis2/ordinance/inventory.php', 'icon' => 'boxes', 'page' => 'inventory'],
-    ['title' => 'Weapons Registry', 'url' => '/Armis2/ordinance/weapons.php', 'icon' => 'crosshairs', 'page' => 'weapons'],
-    ['title' => 'Ammunition', 'url' => '/Armis2/ordinance/ammunition.php', 'icon' => 'circle', 'page' => 'ammunition'],
-    ['title' => 'Maintenance', 'url' => '/Armis2/ordinance/maintenance.php', 'icon' => 'tools', 'page' => 'maintenance'],
-    ['title' => 'Reports', 'url' => '/Armis2/ordinance/reports.php', 'icon' => 'chart-bar', 'page' => 'reports']
-];
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';

@@ -17,6 +17,12 @@ header('Content-Type: application/json');
 
 // Include database connection
 require_once dirname(__DIR__) . '/shared/database_connection.php';
+require_once __DIR__ . '/includes/auth.php';
+
+// This endpoint previously had NO authentication check at all — it
+// returns real staff records (names, service numbers) to anyone who
+// requested the URL.
+requireAuth();
 
 try {
     // Get rank ID from request

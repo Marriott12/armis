@@ -5,7 +5,7 @@
 
 // Current step tracker
 let currentStep = 1;
-const totalSteps = 5; // Update this if you add more steps
+const totalSteps = 8;
 
 // Function to navigate to a specific step
 function goToStep(stepNumber) {
@@ -124,10 +124,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.step').forEach((step, index) => {
         step.addEventListener('click', () => {
             const stepNumber = index + 1;
-            // Only allow clicking on previous steps or the next step
-            if (stepNumber <= currentStep + 1) {
-                goToStep(stepNumber);
-            }
+            goToStep(stepNumber);
         });
     });
     

@@ -114,13 +114,7 @@ $moduleName = "System Admin";
 $moduleIcon = "heartbeat";
 $currentPage = "health";
 
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'System Health', 'url' => '/Armis2/admin/health.php', 'icon' => 'heartbeat', 'page' => 'health'],
-    ['title' => 'Performance', 'url' => '/Armis2/admin/performance.php', 'icon' => 'chart-line', 'page' => 'performance'],
-    ['title' => 'User Management', 'url' => '/Armis2/admin/users.php', 'icon' => 'users', 'page' => 'users'],
-    ['title' => 'System Settings', 'url' => '/Armis2/admin/settings.php', 'icon' => 'cogs', 'page' => 'settings']
-];
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';

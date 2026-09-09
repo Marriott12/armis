@@ -227,15 +227,12 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                             <i class="fas fa-graduation-cap fa-2x text-success"></i>
                                                         </div>
                                                         <div class="flex-grow-1 ms-3">
-                                                            <h6 class="mb-1"><?= htmlspecialchars($education['qualification'] ?? $education['level'] ?? '') ?></h6>
+                                                            <h6 class="mb-1"><?= htmlspecialchars($education['qualification'] ?? $education['level'] ?? 'Qualification not specified') ?></h6>
                                                             <p class="text-muted mb-1">
-                                                                <strong><?= htmlspecialchars($education['institution'] ?? '') ?></strong>
+                                                                <strong><?= htmlspecialchars($education['institution'] ?? 'Institution not specified') ?></strong>
                                                             </p>
-                                                            <p class="text-muted mb-1">
-                                                                <span class="badge bg-info">
-                                                                    <?= htmlspecialchars($education['level'] ?? '') ?>
-                                                                </span>
-                                                            </p>
+                                                            <?php if (!empty($education['course_id'])): ?><p class="text-muted mb-1"><small>Course ID: <?= htmlspecialchars($education['course_id']) ?></small></p><?php endif; ?>
+                                                            <?php if (!empty($education['result']) || !empty($education['grade'])): ?><p class="text-muted mb-1"><small><?= !empty($education['result']) ? 'Result: ' . htmlspecialchars($education['result']) : '' ?><?= !empty($education['result']) && !empty($education['grade']) ? ' | ' : '' ?><?= !empty($education['grade']) ? 'Grade: ' . htmlspecialchars($education['grade']) : '' ?></small></p><?php endif; ?>
                                                             <p class="text-muted mb-0">
                                                                 <small>
                                                                     <?php if (!empty($education['year_started']) && !empty($education['year_completed'])): ?>
@@ -247,6 +244,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                                                     <?php endif; ?>
                                                                 </small>
                                                             </p>
+                                                            <?php if (!empty($education['authID'])): ?><p class="text-muted mb-0"><small>Authority: <?= htmlspecialchars($education['authID']) ?></small></p><?php endif; ?>
                                                             <?php if (!empty($education['field_of_study'])): ?>
                                                                 <p class="text-muted mb-0">
                                                                     <small><?= htmlspecialchars($education['field_of_study']) ?></small>

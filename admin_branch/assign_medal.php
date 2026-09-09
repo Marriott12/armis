@@ -23,34 +23,8 @@ $moduleName = "Admin Branch";
 $moduleIcon = "users-cog";
 $currentPage = "medals";
 
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create_staff'],
-    ['title' => 'Edit Staff', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'user-edit', 'page' => 'edit_staff'],
-    ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/appointments.php', 'icon' => 'briefcase', 'page' => 'appointments'],
-    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medal.php', 'icon' => 'medal', 'page' => 'medals'],
-    [
-        'title' => 'Reports',
-        'icon' => 'chart-bar',
-        'page' => 'reports',
-        'children' => [
-            ['title' => 'Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php'],
-            ['title' => 'Unit List', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
-            ['title' => 'Contracts', 'url' => '/Armis2/admin_branch/reports_contract.php'],
-            ['title' => 'Courses', 'url' => '/Armis2/admin_branch/reports_courses.php'],
-            ['title' => 'Deceased', 'url' => '/Armis2/admin_branch/reports_deceased.php'],
-            ['title' => 'Gender', 'url' => '/Armis2/admin_branch/reports_gender.php'],
-            ['title' => 'Marital', 'url' => '/Armis2/admin_branch/reports_marital.php'],
-            ['title' => 'Rank', 'url' => '/Armis2/admin_branch/reports_rank.php'],
-            ['title' => 'Retired', 'url' => '/Armis2/admin_branch/reports_retired.php'],
-            ['title' => 'Trade', 'url' => '/Armis2/admin_branch/reports_trade.php'],
-            ['title' => 'Corps', 'url' => '/Armis2/admin_branch/reports_corps.php'],
-            ['title' => 'Units', 'url' => '/Armis2/admin_branch/reports_units.php'],
-        ]
-    ],
-    ['title' => 'System Settings', 'url' => '/Armis2/admin_branch/system_settings.php', 'icon' => 'cogs', 'page' => 'settings']
-];
+$sidebarLinks = []; // set by shared nav include below
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 // CSRF Token
 if (!isset($_SESSION)) { session_start(); }
@@ -69,28 +43,22 @@ if (!function_exists('Token')) {
 }
 $csrfToken = Token::generate();
 
+// honorId is a fixed-width varchar(2) primary key in the `honors` table.
+function isValidHonorId($id) {
+    return is_string($id) && preg_match('/^[A-Za-z0-9]{1,2}$/', $id);
+}
+
 $errors = [];
 $success = false;
-$warnings = []; // Add warnings array for non-critical issues like duplicates
+$warnings = []; // Non-critical issues like duplicate assignments
 $pdo = getDbConnection();
 $medals = [];
 try {
-    // Fetch medals and ensure unique by name (or id if you prefer)
-    $stmt = $pdo->query("SELECT id, name, description, imagePath FROM medals ORDER BY name ASC");
-    $allMedals = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    // Remove duplicate medals by name (or by id as key)
-    $uniqueMedals = [];
-    foreach ($allMedals as $medal) {
-        // Use name as key (case-insensitive) to avoid duplicates
-        $key = strtolower(trim($medal['name']));
-        if (!isset($uniqueMedals[$key])) {
-            $uniqueMedals[$key] = (object)$medal;
-        }
-    }
-    $medals = array_values($uniqueMedals);
+    // honorId is already unique (it's the primary key), so no de-duplication is needed.
+    $stmt = $pdo->query("SELECT honorId, honorDesc, honorAuth FROM honors ORDER BY honorDesc ASC");
+    $medals = $stmt->fetchAll(PDO::FETCH_OBJ);
 } catch (Exception $e) {
-    $errors[] = "Error fetching medals: " . htmlspecialchars($e->getMessage());
+    $errors[] = "Error fetching honors: " . htmlspecialchars($e->getMessage());
 }
 
 $BULK_CONFIRMATION_THRESHOLD = 5;
@@ -99,105 +67,114 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!Token::check($_POST['csrf'] ?? '')) {
         $errors[] = "Invalid CSRF token.";
     } else {
-        $medalId = trim($_POST['medal_id'] ?? '');
+        $honorId = trim($_POST['medal_id'] ?? '');
         $awardDate = trim($_POST['award_date'] ?? '');
         $selectedStaff = $_POST['selected_staff'] ?? [];
         $remark = trim($_POST['remark'] ?? '');
         $gazetteReference = trim($_POST['gazette_reference'] ?? '');
-        $barNumber = trim($_POST['bar_number'] ?? '');
+        $barNumberRaw = trim($_POST['bar_number'] ?? '');
+        $barNumber = ($barNumberRaw !== '' && ctype_digit($barNumberRaw)) ? (int)$barNumberRaw : null;
 
         // Permission check - allow admin_branch access
         if (!hasPermission(PERM_ASSIGN_MEDALS)) {
             $errors[] = "You do not have permission to assign medals.";
         }
-        
-        if (!ctype_digit($medalId)) $errors[] = "Invalid medal selected.";
+
+        if (!isValidHonorId($honorId)) $errors[] = "Invalid medal selected.";
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $awardDate)) $errors[] = "Invalid award date.";
         if (empty($selectedStaff) || !is_array($selectedStaff)) $errors[] = "Please select at least one staff member.";
         if (count($selectedStaff) !== count(array_unique($selectedStaff))) {
             $errors[] = "Duplicate staff selected.";
         }
 
-        // Initialize duplicate tracking array before the loop
+        // Look up the honor's display name up front - needed for the INSERT
+        // (award_name) and for the success message.
+        $honorDesc = null;
+        if (isValidHonorId($honorId)) {
+            $hStmt = $pdo->prepare("SELECT honorDesc FROM honors WHERE honorId = ?");
+            $hStmt->execute([$honorId]);
+            $honorDesc = $hStmt->fetchColumn();
+            if ($honorDesc === false) {
+                $errors[] = "Selected medal no longer exists.";
+                $honorDesc = null;
+            }
+        }
+
+        // Track duplicates (already-awarded staff) for later reporting
         $duplicateStaff = [];
         $staffInfoList = [];
-        
-        foreach ($selectedStaff as $staffIdOrServiceNumber) {
-            // Handle both staff ID (numeric) and service number (may be alphanumeric)
-            $staffIdOrServiceNumber = trim($staffIdOrServiceNumber);
-            
-            // Try multiple lookup strategies
-            $row = null;
-            
-            // Strategy 1: Try as database ID (most common)
-            if (ctype_digit($staffIdOrServiceNumber) && $staffIdOrServiceNumber > 0) {
-                $stmt = $pdo->prepare("SELECT id, svcNo, CONCAT(fName, ' ', lName) as full_name FROM staff WHERE id = ?");
-                $stmt->execute([$staffIdOrServiceNumber]);
-                $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            }
-            
-            // Strategy 2: If not found, try as service number
+
+        foreach ($selectedStaff as $svcNo) {
+            // staff.svcNo is the actual primary key - there is no separate
+            // integer `id` column on this table.
+            $svcNo = trim($svcNo);
+            if ($svcNo === '') continue;
+
+            $stmt = $pdo->prepare("SELECT svcNo, branch_id, CONCAT(fName, ' ', lName) as full_name FROM staff WHERE svcNo = ?");
+            $stmt->execute([$svcNo]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            // Fallback: allow for leading zeros being stripped client-side
+            // (e.g. "007414" submitted as "7414").
             if (!$row) {
-                $stmt = $pdo->prepare("SELECT id, svcNo, CONCAT(fName, ' ', lName) as full_name FROM staff WHERE svcNo = ?");
-                $stmt->execute([$staffIdOrServiceNumber]);
-                $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            }
-            
-            // Strategy 3: If still not found, try with leading zeros removed (for cases like "007414" -> "7414")
-            if (!$row && ctype_digit($staffIdOrServiceNumber)) {
-                $numericValue = ltrim($staffIdOrServiceNumber, '0');
-                if ($numericValue !== $staffIdOrServiceNumber && $numericValue !== '') {
-                    $stmt = $pdo->prepare("SELECT id, svcNo, CONCAT(fName, ' ', lName) as full_name FROM staff WHERE svcNo = ? OR id = ?");
-                    $stmt->execute([$numericValue, $numericValue]);
+                $numericValue = ltrim($svcNo, '0');
+                if ($numericValue !== $svcNo && $numericValue !== '') {
+                    $stmt = $pdo->prepare("SELECT svcNo, branch_id, CONCAT(fName, ' ', lName) as full_name FROM staff WHERE svcNo = ?");
+                    $stmt->execute([$numericValue]);
                     $row = $stmt->fetch(PDO::FETCH_ASSOC);
                 }
             }
-            
-            // If still not found, log error and continue
+
             if (!$row || empty($row['svcNo'])) {
-                // Log for debugging
-                error_log("Medal Assignment: Staff lookup failed for identifier: {$staffIdOrServiceNumber}");
-                $errors[] = "Staff member with identifier '{$staffIdOrServiceNumber}' not found. Please verify the staff exists in the system.";
+                error_log("Medal Assignment: Staff lookup failed for identifier: {$svcNo}");
+                $errors[] = "Staff member with identifier '".htmlspecialchars($svcNo)."' not found. Please verify the staff exists in the system.";
                 continue;
             }
-            
-            $staffId = $row['id'];
-            $svcNo = $row['svcNo'];
+
+            if (function_exists('canAlterRecord') && !canAlterRecord($row['branch_id'] ?? null)) {
+                $errors[] = "Staff member '".htmlspecialchars($row['full_name'])."' is outside your branch - skipped.";
+                continue;
+            }
+
+            $resolvedSvcNo = $row['svcNo'];
             $full_name = $row['full_name'];
-            
-            // Check for duplicate medal assignment
-            $stmt2 = $pdo->prepare("SELECT COUNT(*) FROM staff_medals WHERE svcNo = ? AND medal_id = ?");
-            $stmt2->execute([$staffId, $medalId]);
-            $alreadyAwarded = $stmt2->fetchColumn();
-            if ($alreadyAwarded > 0) {
-                // Track duplicate for later reporting (don't add to staffInfoList)
-                $duplicateStaff[] = "{$full_name} ({$svcNo})";
-                continue;
+
+            // Check for duplicate honor assignment
+            if (isValidHonorId($honorId)) {
+                $stmt2 = $pdo->prepare("SELECT COUNT(*) FROM staff_awards WHERE svcNo = ? AND honorId = ?");
+                $stmt2->execute([$resolvedSvcNo, $honorId]);
+                $alreadyAwarded = $stmt2->fetchColumn();
+                if ($alreadyAwarded > 0) {
+                    $duplicateStaff[] = "{$full_name} ({$resolvedSvcNo})";
+                    continue;
+                }
             }
-            
+
             $staffInfoList[] = [
-                'svcNo' => $staffId,
-                'svcNo' => $svcNo,
+                'svcNo' => $resolvedSvcNo,
                 'full_name' => $full_name
             ];
         }
 
         // Process assignments if there are valid staff members and no errors
-        if (empty($errors) && !empty($staffInfoList)) {
+        if (empty($errors) && !empty($staffInfoList) && $honorDesc !== null) {
             try {
                 $pdo->beginTransaction();
-                $stmt = $pdo->prepare("INSERT INTO staff_medals (svcNo, svcNo, medal_id, award_date, citation, gazette_reference, bar_number, createdBy, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt = $pdo->prepare("INSERT INTO staff_awards
+                    (svcNo, honorId, award_type, award_name, award_date, citation, gazette_reference, bar_number, createdBy, createdAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 $createdBy = $_SESSION['username'] ?? 'admin';
                 $now = date('Y-m-d H:i:s');
-                
+
                 $successCount = 0;
-                
+
                 foreach ($staffInfoList as $info) {
                     try {
                         $stmt->execute([
                             $info['svcNo'],
-                            $info['svcNo'],
-                            $medalId,
+                            $honorId,
+                            'Honor',
+                            $honorDesc,
                             $awardDate,
                             $remark,
                             $gazetteReference,
@@ -207,27 +184,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ]);
                         $successCount++;
                     } catch (PDOException $e) {
-                        // Check for duplicate entry error (race condition)
-                        if ($e->getCode() == 23000 && strpos($e->getMessage(), 'Duplicate entry') !== false) {
+                        // Race-condition safety net: the uniq_staff_honor
+                        // constraint on staff_awards(svcNo, honorId) catches
+                        // simultaneous submissions the pre-check above missed.
+                        if ($e->getCode() == 23000) {
                             $duplicateStaff[] = $info['full_name'] . " (" . $info['svcNo'] . ")";
                         } else {
-                            throw $e; // Re-throw if it's not a duplicate error
+                            throw $e;
                         }
                     }
                 }
-                
+
                 $pdo->commit();
-                
-                // Get medal name for success message
-                $medalStmt = $pdo->prepare("SELECT name FROM medals WHERE id = ?");
-                $medalStmt->execute([$medalId]);
-                $medalName = $medalStmt->fetchColumn();
-                
-                // Build success message
+
                 if ($successCount > 0) {
-                    $success = "Successfully assigned <strong>{$medalName}</strong> to {$successCount} staff member" . ($successCount > 1 ? 's' : '') . ".";
+                    $success = "Successfully assigned <strong>".htmlspecialchars($honorDesc)."</strong> to {$successCount} staff member" . ($successCount > 1 ? 's' : '') . ".";
+
+                    // Notify each honored staff member directly, plus a
+                    // single oversight notification to admins.
+                    require_once dirname(__DIR__) . '/shared/notifications_helper.php';
+                    foreach ($staffInfoList as $info) {
+                        createNotification(
+                            $info['svcNo'],
+                            'admin_branch',
+                            'medal_assigned',
+                            'Honor/Award received',
+                            "You were awarded: $honorDesc" . ($remark ? " ($remark)" : ''),
+                            '/Armis2/admin_branch/view_staff.php?svcNo=' . urlencode($info['svcNo'])
+                        );
+                    }
+                    notifyRoles(
+                        ['admin', 'superadmin'],
+                        'admin_branch',
+                        'medal_assigned',
+                        'Honor/Award assigned',
+                        "$honorDesc was assigned to $successCount staff member" . ($successCount > 1 ? 's' : '') . '.',
+                        null,
+                        $_SESSION['user_id'] ?? null
+                    );
                 }
-                
+
                 $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
                 $csrfToken = $_SESSION['csrf_token'];
                 $_POST = [];
@@ -236,11 +232,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = "Error assigning medal: " . htmlspecialchars($e->getMessage());
             }
         }
-        
+
         // Report all duplicates (found in pre-check or during database insert)
-        // This runs whether or not we entered the transaction block
         if (!empty($duplicateStaff)) {
-            $duplicateList = implode(', ', $duplicateStaff);
+            $duplicateList = implode(', ', array_map('htmlspecialchars', $duplicateStaff));
             $warnings[] = "The following staff members have already been awarded this medal: <strong>{$duplicateList}</strong>";
         }
     }
@@ -275,7 +270,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
             <?php endif; ?>
-            
+
             <?php if ($warnings): ?>
                 <div class="alert alert-warning alert-dismissible fade show shadow-sm border-0" role="alert">
                     <div class="d-flex align-items-start">
@@ -294,7 +289,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
             <?php endif; ?>
-            
+
             <?php if ($errors): ?>
                 <div class="alert alert-danger alert-dismissible fade show shadow-sm border-0" role="alert">
                     <div class="d-flex align-items-start">
@@ -313,7 +308,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
             <?php endif; ?>
-            
+
             <!-- Dynamic Progress Bar -->
             <div class="mb-4">
                 <div class="d-flex justify-content-between align-items-center mb-2">
@@ -321,16 +316,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <span class="badge bg-primary" id="progressPercentage">0%</span>
                 </div>
                 <div class="progress" style="height: 10px;">
-                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" 
-                         id="progressBar" 
-                         role="progressbar" 
+                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-success"
+                         id="progressBar"
+                         role="progressbar"
                          style="width: 0%"
-                         aria-valuenow="0" 
-                         aria-valuemin="0" 
+                         aria-valuenow="0"
+                         aria-valuemin="0"
                          aria-valuemax="100">
                     </div>
                 </div>
-                
+
                 <!-- Stepper -->
                 <ul class="stepper mt-3 mb-0">
                     <li class="step" id="step1"><i class="fa fa-medal"></i> Select Medal</li>
@@ -339,10 +334,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <li class="step" id="step4"><i class="fa fa-check"></i> Confirm</li>
                 </ul>
             </div>
-            
+
             <form method="post" action="" autocomplete="off" aria-label="Assign Medal Form" id="assignMedalForm">
                 <input type="hidden" name="csrf" value="<?=htmlspecialchars($csrfToken)?>">
-                
+
                 <!-- Two-Column Layout -->
                 <div class="row">
                     <!-- Left Column - Primary Fields -->
@@ -354,29 +349,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <select name="medal_id" id="medal_id" class="form-select" required aria-required="true">
                                 <option value="">Select Medal...</option>
                                 <?php foreach ($medals as $medal): ?>
-                                    <option value="<?=htmlspecialchars($medal->id)?>" 
-                                            data-image="<?=htmlspecialchars($medal->imagePath ?? '')?>"
-                                            data-description="<?=htmlspecialchars($medal->description ?? 'No description available')?>"
-                                            <?=isset($_POST['medal_id']) && $_POST['medal_id']==$medal->id?'selected':''?>>
-                                        <?=htmlspecialchars($medal->name)?>
+                                    <option value="<?=htmlspecialchars($medal->honorId)?>"
+                                            data-description="<?=htmlspecialchars($medal->honorAuth ?? 'No authority on file')?>"
+                                            <?=isset($_POST['medal_id']) && $_POST['medal_id']==$medal->honorId?'selected':''?>>
+                                        <?=htmlspecialchars($medal->honorDesc)?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        
+
                         <!-- Medal Preview Card -->
                         <div id="medalPreviewCard" class="card bg-light p-3 mb-3" style="display: none;">
                             <div class="row align-items-center">
-                                <div class="col-3 text-center">
-                                    <img id="previewImage" src="" alt="Medal" class="img-fluid" style="max-height: 80px;">
-                                </div>
-                                <div class="col-9">
+                                <div class="col-12">
                                     <h6 id="previewMedalName" class="mb-1 text-primary"></h6>
-                                    <p id="previewMedalDescription" class="text-muted mb-0 small"></p>
+                                    <p class="text-muted mb-0 small"><i class="fa fa-landmark"></i> Awarding Authority: <span id="previewMedalDescription"></span></p>
                                 </div>
                             </div>
                         </div>
-                        
+
                         <div class="mb-3">
                             <label for="award_date" class="form-label" aria-label="Award Date">
                                 <i class="fa fa-calendar text-primary"></i> Award Date <span class="text-danger">*</span>
@@ -384,28 +375,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <input type="date" class="form-control" id="award_date" name="award_date" required aria-required="true" min="1900-01-01" max="<?=date('Y-m-d')?>" value="<?=htmlspecialchars($_POST['award_date'] ?? date('Y-m-d'))?>">
                         </div>
                     </div>
-                    
+
                     <!-- Right Column - Optional Fields -->
                     <div class="col-md-6">
                         <div class="card bg-light h-100 p-3">
                             <h6 class="text-muted mb-3">
                                 <i class="fa fa-info-circle"></i> Additional Information <small class="text-muted">(Optional)</small>
                             </h6>
-                            
+
                             <div class="mb-3">
                                 <label for="remark" class="form-label" aria-label="Citation or Remarks">
                                     <i class="fa fa-quote-left text-info"></i> Citation / Remarks
                                 </label>
                                 <textarea class="form-control" id="remark" name="remark" rows="3" placeholder="Enter citation or remarks..."><?=htmlspecialchars($_POST['remark'] ?? '')?></textarea>
                             </div>
-                            
+
                             <div class="mb-3">
                                 <label for="gazette_reference" class="form-label">
                                     <i class="fa fa-file-alt text-secondary"></i> Gazette Reference
                                 </label>
                                 <input type="text" class="form-control" id="gazette_reference" name="gazette_reference" value="<?=htmlspecialchars($_POST['gazette_reference'] ?? '')?>" placeholder="e.g., GRZ No. 123/2025">
                             </div>
-                            
+
                             <div class="mb-3">
                                 <label for="bar_number" class="form-label">
                                     <i class="fa fa-bars text-secondary"></i> Bar Number
@@ -415,13 +406,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
                 </div>
-                
+
                 <!-- Staff Selection Section -->
                 <div class="mb-3 mt-4">
                     <label for="selected_staff" class="form-label" aria-label="Select Staff Members">
                         <i class="fa fa-users text-success"></i> Select Staff Members <span class="text-danger">*</span>
                     </label>
-                    
+
                     <!-- Quick Filter Buttons -->
                     <div class="btn-toolbar mb-3" role="toolbar" aria-label="Staff filter toolbar">
                         <div class="btn-group btn-group-sm me-2" role="group" aria-label="Staff category filter">
@@ -434,8 +425,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <button type="button" class="btn btn-outline-info filter-category" data-filter="ncos">
                                 <i class="fa fa-user"></i> NCOs Only
                             </button>
+                            <button type="button" class="btn btn-outline-warning filter-category" data-filter="ce">
+                                <i class="fa fa-user-tie"></i> Civilian Employees Only
+                            </button>
                         </div>
-                        
+
                         <div class="btn-group btn-group-sm me-2" role="group" aria-label="Staff status filter">
                             <button type="button" class="btn btn-outline-secondary filter-status active" data-filter="all">
                                 <i class="fa fa-list"></i> All
@@ -447,17 +441,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <i class="fa fa-user-clock"></i> Retired
                             </button>
                         </div>
-                        
+
                         <div class="input-group input-group-sm flex-grow-1" style="max-width: 300px;">
                             <span class="input-group-text"><i class="fa fa-search"></i></span>
                             <input type="text" class="form-control" id="quickSearch" placeholder="Quick search by name or service number...">
                         </div>
                     </div>
-                    
+
                     <!-- Staff Selection Controls -->
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <h6 class="mb-0">
-                            <i class="fa fa-list"></i> 
+                            <i class="fa fa-list"></i>
                             Staff List <small class="text-muted">(Ordered by Seniority)</small>
                         </h6>
                         <div>
@@ -469,15 +463,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </button>
                         </div>
                     </div>
-                    
+
                     <div class="alert alert-info d-flex justify-content-between align-items-center">
                         <div>
                             <i class="fa fa-info-circle"></i>
-                            <strong>Total Staff:</strong> <span id="totalStaffCount">0</span> | 
+                            <strong>Total Staff:</strong> <span id="totalStaffCount">0</span> |
                             <strong>Selected:</strong> <span id="selectionCount">0</span> staff member(s)
                         </div>
                     </div>
-                    
+
                     <!-- Staff Selection Table -->
                     <div class="table-responsive" id="staffTableContainer">
                         <table class="table table-hover table-sm" id="staffSelectionTable" style="width:100%">
@@ -499,7 +493,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </tbody>
                         </table>
                     </div>
-                    
+
                     <!-- Selected Staff Profile Cards (Matching appointments.php style) -->
                     <div id="selectedStaffCards" class="mt-4" style="display: none;">
                         <h6 class="border-bottom pb-2 mb-3">
@@ -510,10 +504,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <!-- Profile cards will be populated here -->
                         </div>
                     </div>
-                    
+
                     <!-- Hidden container to store selected staff for form submission -->
                     <div id="selectedStaffInputs"></div>
-                    
+
                     <!-- Legacy Select2 hidden input for compatibility -->
                     <select name="selected_staff[]" id="selected_staff" multiple style="display: none;">
                         <!-- Will be populated by JavaScript -->
@@ -536,7 +530,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </ul>
                     </div>
                 </div>
-                
+
                 <!-- Enhanced Confirmation Modal -->
                 <div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalLabel" aria-hidden="true">
                     <div class="modal-dialog modal-lg">
@@ -553,7 +547,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <div class="card-body">
                                         <div class="row text-center">
                                             <div class="col-md-4">
-                                                <div class="h2 text-primary mb-0" id="totalStaffCount">0</div>
+                                                <div class="h2 text-primary mb-0" id="modalSelectedCount">0</div>
                                                 <small class="text-muted">Staff Members</small>
                                             </div>
                                             <div class="col-md-4">
@@ -567,7 +561,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 <!-- Assignment Details -->
                                 <div id="confirmSummary"></div>
                             </div>
@@ -618,26 +612,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Fetch recent medal assignments
             try {
                 $recentMedalsStmt = $pdo->prepare("
-                    SELECT 
-                        sm.id,
-                        sm.award_date,
-                        sm.citation,
-                        sm.createdBy,
-                        sm.createdAt,
+                    SELECT
+                        sa.id,
+                        sa.award_date,
+                        sa.citation,
+                        sa.createdBy,
+                        sa.createdAt,
                         s.svcNo,
                         s.fName,
                         s.lName,
-                        COALESCE(r.rankId, r.rankId) AS rank_abbr,
-                        COALESCE(u.code, u.name) AS unit_name,
-                        m.name AS medal_name,
-                        m.description AS medal_description
-                    FROM staff_medals sm
-                    LEFT JOIN staff s ON sm.svcNo = s.id
-                    -- Prefer canonical `rank` table and join by rankId (string)
+                        r.rankId AS rank_abbr,
+                        COALESCE(u.unitLoc, u.mainUnit, 'N/A') AS unit_name,
+                        COALESCE(h.honorDesc, sa.award_name) AS medal_name,
+                        h.honorAuth AS medal_description
+                    FROM staff_awards sa
+                    LEFT JOIN staff s ON sa.svcNo = s.svcNo
                     LEFT JOIN `rank` r ON s.rankId = r.rankId
                     LEFT JOIN unit u ON s.unitId = u.unitId
-                    LEFT JOIN medals m ON sm.medal_id = m.id
-                    ORDER BY sm.createdAt DESC, sm.award_date DESC
+                    LEFT JOIN honors h ON sa.honorId = h.honorId
+                    ORDER BY sa.createdAt DESC, sa.award_date DESC
                     LIMIT 20
                 ");
                 $recentMedalsStmt->execute();
@@ -747,7 +740,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="row mt-3">
                     <div class="col-md-6">
                         <small class="text-muted">
-                            <i class="fa fa-info-circle"></i> 
+                            <i class="fa fa-info-circle"></i>
                             Showing the latest <?= count($recentMedals) ?> medal assignments
                         </small>
                     </div>
@@ -850,12 +843,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     #staffSelectionTable {
         font-size: 0.8rem;
     }
-    
+
     #staffSelectionTable thead th,
     #staffSelectionTable tbody td {
         padding: 0.5rem 0.25rem;
     }
-    
+
     /* Hide less important columns on mobile */
     #staffSelectionTable th:nth-child(6),
     #staffSelectionTable td:nth-child(6),
@@ -865,7 +858,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     #staffSelectionTable td:nth-child(8) {
         display: none;
     }
-    
+
     .d-flex.justify-content-between {
         flex-direction: column;
         gap: 10px;
@@ -946,81 +939,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         width: 100%;
         margin-bottom: 1rem;
     }
-    
+
     /* Reduce padding on mobile */
     .container-fluid {
         padding-left: 0.5rem !important;
         padding-right: 0.5rem !important;
     }
-    
+
     .card {
         margin-bottom: 1rem;
     }
-    
+
     .card-body {
         padding: 1rem;
     }
-    
+
     /* Adjust progress bar on mobile */
     .progress {
         height: 1.5rem;
     }
-    
+
     .progress-bar {
         font-size: 0.75rem;
     }
-    
+
     /* Stepper adjustments */
     .stepper {
         flex-wrap: wrap;
         gap: 5px;
     }
-    
+
     .step {
         padding: 3px 8px;
         font-size: 0.8rem;
     }
-    
+
     /* Filter buttons stack on mobile */
     .btn-group {
         display: flex;
         flex-wrap: wrap;
         gap: 0.25rem;
     }
-    
+
     .btn-group .btn {
         font-size: 0.8rem;
         padding: 0.375rem 0.5rem;
     }
-    
+
     /* Split button adjustments */
     .dropdown-menu {
         min-width: 200px;
     }
-    
+
     /* Modal adjustments */
     .modal-dialog {
         margin: 0.5rem;
     }
-    
+
     /* Staff profile cards - full width on mobile */
     .staff-profile-card .col-md-6,
     .staff-profile-card .col-lg-4 {
         width: 100%;
     }
-    
+
     /* Quick search input */
     #quickSearch {
         width: 100%;
         margin-top: 0.5rem;
     }
-    
+
     /* Alert messages */
     .alert {
         font-size: 0.9rem;
         padding: 0.75rem;
     }
-    
+
     .alert .btn-close {
         padding: 0.5rem;
     }
@@ -1031,7 +1024,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .row.g-4 > .col-md-8 {
         width: 60%;
     }
-    
+
     .row.g-4 > .col-md-4 {
         width: 40%;
     }
@@ -1049,11 +1042,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .filter-status {
         display: none !important;
     }
-    
+
     .card {
         break-inside: avoid;
     }
-    
+
     #recentMedalsSection {
         display: block !important;
     }
@@ -1085,30 +1078,57 @@ function waitForJQuery(callback) {
 waitForJQuery(function() {
     $(document).ready(function() {
         console.log('Assign Medal page loaded, initializing staff table...');
-        
+
         // Add loading indicator
         $('#staffTableContainer').addClass('loading');
-        
+
         initializeStaffTable();
         bindEventHandlers();
-        
+
         // Initial button state check
         enableAssignButton();
     });
+
+    // Medal Preview Card (moved inside waitForJQuery so $ is guaranteed defined)
+    $('#medal_id').on('change', function() {
+        const selectedOption = $(this).find('option:selected');
+        const medalName = selectedOption.text();
+        const description = selectedOption.data('description') || 'No description available';
+        const medalId = $(this).val();
+
+        if (medalId) {
+            $('#medalPreviewCard').show();
+            $('#previewMedalName').text(medalName);
+            $('#previewMedalDescription').text(description);
+
+            // Reload staff table excluding those who already have this medal
+            console.log('Medal selected, reloading staff excluding those with medal ID:', medalId);
+            initializeStaffTable(medalId);
+        } else {
+            $('#medalPreviewCard').hide();
+            // Reload all staff when medal is cleared
+            console.log('Medal cleared, reloading all staff');
+            initializeStaffTable(null);
+        }
+
+        enableAssignButton();
+    });
+
+    $('#medal_id, #award_date').on('input', enableAssignButton);
 });
 
 function initializeStaffTable(excludeMedalId = null) {
     // Show loading state
     $('#staffTableContainer').addClass('loading');
-    
+
     // Load all staff data with proper seniority information
     const ajaxData = { q: 'all', limit: 1000 };
-    
+
     // Exclude staff who already have the selected medal
     if (excludeMedalId) {
         ajaxData.exclude_medal_id = excludeMedalId;
     }
-    
+
     $.ajax({
         url: 'search_staff.php',
         method: 'GET',
@@ -1116,7 +1136,7 @@ function initializeStaffTable(excludeMedalId = null) {
         dataType: 'json',
         success: function(response) {
             console.log('Staff data loaded:', response);
-            
+
             if (Array.isArray(response)) {
                 allStaffData = response;
                 initDataTable();
@@ -1141,29 +1161,25 @@ function initializeStaffTable(excludeMedalId = null) {
 
 function initDataTable() {
     console.log('Initializing DataTable with', allStaffData.length, 'staff members');
-    
+
     // Remove loading indicator
     $('#staffTableContainer').removeClass('loading');
-    
+
     // Helper function to format names in sentence case (same as reports_seniority.php)
     function formatSentenceCase(name) {
         if (!name) return '';
-        return name.split(' ').map(word => 
+        return name.split(' ').map(word =>
             word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
         ).join(' ');
     }
-    
-    // Convert staff data for DataTables with proper seniority sorting
+
+    // Convert staff data for DataTables with proper seniority sorting.
+    // staff.svcNo is the one true identifier - there is no separate `id`.
     const tableData = allStaffData.map(staff => {
-        // Ensure we have the correct ID mapping
-        // search_staff.php returns: svcNo (database ID), id (svcNo), svcNo
-        const databaseId = staff.svcNo || staff.id;
-        const serviceNumber = staff.svcNo || staff.id;
-        
+        const serviceNumber = staff.svcNo;
+
         return {
-            id: databaseId,                      // Use database ID for operations
-            svcNo: databaseId,                // Alias for clarity
-            svcNo: serviceNumber,       // Service number for display
+            svcNo: serviceNumber,
             fName: staff.fName || '',
             lName: staff.lName || '',
             rank_name: staff.rank_name || 'N/A',
@@ -1181,37 +1197,16 @@ function initDataTable() {
             tempWef: staff.tempWef || ''
         };
     });
-    
-    // Data is already sorted by seniority from search_staff.php ORDER BY clause:
-    // ORDER BY r.level ASC, s.subWef ASC, s.tempWef ASC, s.attestDate ASC, s.svcNo ASC
-    // No need to re-sort here - preserve the database order
-    
-    console.log('Table data sample (database seniority order):', tableData.slice(0, 3));
-    console.log('Checking rank_category field:', tableData.slice(0, 5).map(s => ({ 
-        service: s.svcNo, 
-        rank: s.rank_abbr, 
-        category: s.rank_category,
-        level: s.rank_level 
-    })));
-    console.log('Total staff by category:', {
-        officers: tableData.filter(s => s.rank_category === 'Officer').length,
-        ncos: tableData.filter(s => s.rank_category === 'NCO').length,
-        ce: tableData.filter(s => s.rank_category === 'CE').length,
-        undefined: tableData.filter(s => !s.rank_category).length
-    });
-    console.log('Sample NCOs:', tableData.filter(s => s.rank_category === 'NCO').slice(0, 5).map(s => ({
-        service: s.svcNo,
-        rank: s.rank_abbr,
-        category: s.rank_category,
-        level: s.rank_level
-    })));
-    
+
+    // Data is already sorted by seniority from search_staff.php ORDER BY clause.
+    // No need to re-sort here - preserve the database order.
+
     $('#totalStaffCount').text(tableData.length);
-    
+
     if ($.fn.DataTable.isDataTable('#staffSelectionTable')) {
         $('#staffSelectionTable').DataTable().destroy();
     }
-    
+
     try {
         staffTable = $('#staffSelectionTable').DataTable({
             data: tableData,
@@ -1225,15 +1220,15 @@ function initDataTable() {
                     orderable: false,
                     className: 'select-checkbox text-center',
                     render: function(data, type, row) {
-                        return `<input type="checkbox" class="staff-checkbox form-check-input" value="${row.svcNo}" data-staff-id="${row.id}">`;
+                        return `<input type="checkbox" class="staff-checkbox form-check-input" value="${row.svcNo}">`;
                     }
                 },
-                { 
-                    data: 'svcNo', 
+                {
+                    data: 'svcNo',
                     title: 'Service No.',
                     orderable: false // Maintain seniority order
                 },
-                { 
+                {
                     data: null,
                     title: 'Rank',
                     orderable: false,
@@ -1252,17 +1247,17 @@ function initDataTable() {
                             return str.trim().split(/\s+/).map(word => {
                                 if (word.length === 0) return '';
                                 // Handle hyphenated names and apostrophes
-                                return word.split('-').map(part => 
-                                    part.split("'").map(subpart => 
+                                return word.split('-').map(part =>
+                                    part.split("'").map(subpart =>
                                         subpart.charAt(0).toUpperCase() + subpart.slice(1).toLowerCase()
                                     ).join("'")
                                 ).join('-');
                             }).join(' ');
                         }
-                        
+
                         const surname = toTitleCase(row.lName || '');
                         const firstName = toTitleCase(row.fName || '');
-                        
+
                         // Properly format name without comma
                         let fullName = '';
                         if (surname && firstName) {
@@ -1274,22 +1269,22 @@ function initDataTable() {
                         } else {
                             fullName = 'N/A';
                         }
-                        
+
                         return `<div class="fw-bold">${fullName}</div>`;
                     }
                 },
-                { 
-                    data: 'unit_name', 
+                {
+                    data: 'unit_name',
                     title: 'Unit',
                     orderable: false
                 },
-                { 
-                    data: 'corps', 
+                {
+                    data: 'corps',
                     title: 'Corps',
                     orderable: false
                 },
-                { 
-                    data: 'status', 
+                {
+                    data: 'status',
                     title: 'Status',
                     orderable: false,
                     render: function(data, type, row) {
@@ -1306,12 +1301,12 @@ function initDataTable() {
             },
             dom: '<"row"<"col-sm-12 col-md-6"l><"col-sm-12 col-md-6"f>>rtip'
         });
-        
+
         console.log('DataTable initialized successfully with military seniority sorting');
     } catch (error) {
         console.error('DataTable initialization failed:', error);
         $('#staffTableContainer').removeClass('loading');
-        
+
         // Show fallback message
         $('#staffSelectionTable tbody').html(
             '<tr><td colspan="8" class="text-center text-danger">' +
@@ -1327,25 +1322,18 @@ function bindEventHandlers() {
         const isChecked = $(this).is(':checked');
         $('.staff-checkbox:visible').prop('checked', isChecked).trigger('change');
     });
-    
+
     // Individual checkbox handler
     $(document).on('change', '.staff-checkbox', function() {
         const checkbox = $(this);
         const serviceNumber = checkbox.val();
-        const staffId = checkbox.data('staff-id');
         const row = checkbox.closest('tr');
-        
+
         if (checkbox.is(':checked')) {
             // Add to selection
             if (!selectedStaff.find(s => s.svcNo === serviceNumber)) {
                 const staffData = allStaffData.find(s => s.svcNo === serviceNumber);
                 if (staffData) {
-                    console.log('Selected staff:', {
-                        svcNo: staffData.svcNo,
-                        svcNo: staffData.svcNo,
-                        id: staffData.id,
-                        name: staffData.fName + ' ' + staffData.lName
-                    });
                     selectedStaff.push(staffData);
                     row.addClass('selected');
                 } else {
@@ -1357,17 +1345,17 @@ function bindEventHandlers() {
             selectedStaff = selectedStaff.filter(s => s.svcNo !== serviceNumber);
             row.removeClass('selected');
         }
-        
+
         updateSelectionDisplay();
         updateLegacySelect();
         enableAssignButton();
     });
-    
+
     // Select All button
     $('#selectAllBtn').on('click', function() {
         $('#masterCheckbox').prop('checked', true).trigger('change');
     });
-    
+
     // Deselect All button
     $('#deselectAllBtn').on('click', function() {
         $('#masterCheckbox').prop('checked', false).trigger('change');
@@ -1377,11 +1365,11 @@ function bindEventHandlers() {
 function updateSelectionDisplay() {
     $('#selectionCount').text(selectedStaff.length);
     $('#selectedCardCount').text(selectedStaff.length);
-    
+
     // Update master checkbox state
     const visibleCheckboxes = $('.staff-checkbox:visible');
     const checkedBoxes = $('.staff-checkbox:visible:checked');
-    
+
     if (checkedBoxes.length === 0) {
         $('#masterCheckbox').prop('indeterminate', false).prop('checked', false);
     } else if (checkedBoxes.length === visibleCheckboxes.length) {
@@ -1389,7 +1377,7 @@ function updateSelectionDisplay() {
     } else {
         $('#masterCheckbox').prop('indeterminate', true);
     }
-    
+
     // Render staff profile cards (matching appointments.php style)
     renderStaffProfileCards();
 }
@@ -1398,37 +1386,37 @@ function updateSelectionDisplay() {
 function renderStaffProfileCards() {
     const container = $('#selectedStaffList');
     const cardsSection = $('#selectedStaffCards');
-    
+
     if (selectedStaff.length === 0) {
         cardsSection.hide();
         container.empty();
-        
+
         // Clear hidden inputs
         $('#selectedStaffInputs').empty();
         return;
     }
-    
+
     cardsSection.show();
     container.empty();
-    
+
     // Helper function for proper title case
     function toTitleCase(str) {
         if (!str) return '';
         return str.trim().split(/\s+/).map(word => {
             if (word.length === 0) return '';
-            return word.split('-').map(part => 
-                part.split("'").map(subpart => 
+            return word.split('-').map(part =>
+                part.split("'").map(subpart =>
                     subpart.charAt(0).toUpperCase() + subpart.slice(1).toLowerCase()
                 ).join("'")
             ).join('-');
         }).join(' ');
     }
-    
+
     selectedStaff.forEach((staff, index) => {
         const firstName = toTitleCase(staff.fName || '');
         const lastName = toTitleCase(staff.lName || '');
         const fullName = firstName && lastName ? `${firstName} ${lastName}` : (firstName || lastName || 'N/A');
-        
+
         const card = `
             <div class="col-md-6 col-lg-4">
                 <div class="card staff-profile-card border-primary" data-service-number="${staff.svcNo}">
@@ -1447,14 +1435,14 @@ function renderStaffProfileCards() {
                                         </div>
                                         <div class="staff-info">
                                             <i class="fas fa-star"></i>
-                                            ${staff.rank_abbr || staff.rank_name || 'N/A'} | 
+                                            ${staff.rank_abbr || staff.rank_name || 'N/A'} |
                                             <i class="fas fa-building"></i>
                                             ${staff.unit_name || 'N/A'}
                                         </div>
                                         ${staff.corps ? `<div class="staff-info"><i class="fas fa-shield-alt"></i> ${staff.corps}</div>` : ''}
                                     </div>
-                                    <button type="button" class="btn btn-sm btn-outline-danger btn-remove remove-staff-btn" 
-                                            data-service-number="${staff.svcNo}" 
+                                    <button type="button" class="btn btn-sm btn-outline-danger btn-remove remove-staff-btn"
+                                            data-service-number="${staff.svcNo}"
                                             title="Remove from selection">
                                         <i class="fas fa-times"></i>
                                     </button>
@@ -1465,17 +1453,17 @@ function renderStaffProfileCards() {
                 </div>
             </div>
         `;
-        
+
         container.append(card);
     });
-    
+
     // Update hidden inputs for form submission
     updateHiddenInputs();
-    
+
     // Bind remove button handlers
     $('.remove-staff-btn').off('click').on('click', function() {
         const serviceNumber = $(this).data('service-number');
-        
+
         // Uncheck the checkbox in the table
         $(`.staff-checkbox[value="${serviceNumber}"]`).prop('checked', false).trigger('change');
     });
@@ -1485,19 +1473,9 @@ function renderStaffProfileCards() {
 function updateHiddenInputs() {
     const inputsContainer = $('#selectedStaffInputs');
     inputsContainer.empty();
-    
+
     selectedStaff.forEach(staff => {
-        // Use svcNo (database ID) for submission, not svcNo
-        const staffId = staff.svcNo || staff.id;
-        
-        // Debug log
-        console.log('Adding hidden input for staff:', {
-            svcNo: staff.svcNo,
-            svcNo: staffId,
-            name: staff.fName + ' ' + staff.lName
-        });
-        
-        inputsContainer.append(`<input type="hidden" name="selected_staff[]" value="${staffId}">`);
+        inputsContainer.append(`<input type="hidden" name="selected_staff[]" value="${staff.svcNo}">`);
     });
 }
 
@@ -1505,7 +1483,7 @@ function updateLegacySelect() {
     // Update the hidden select element for form compatibility
     const select = $('#selected_staff');
     select.empty();
-    
+
     selectedStaff.forEach(staff => {
         const option = new Option(
             `${staff.svcNo} - ${staff.rank_name || ''} ${staff.fName} ${staff.lName}`,
@@ -1517,22 +1495,11 @@ function updateLegacySelect() {
     });
 }
 
-function calculateAge(dob) {
-    if (!dob) return null;
-    const birthDate = new Date(dob);
-    const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-        age--;
-    }
-    return age;
-}
 function enableAssignButton() {
     let allFilled = $('#medal_id').val() && $('#award_date').val() && selectedStaff.length > 0;
     $('#showConfirmModal').prop('disabled', !allFilled);
     $('#splitDropdown').prop('disabled', !allFilled);
-    
+
     // Update progress bar
     updateProgressBar();
 }
@@ -1540,180 +1507,119 @@ function enableAssignButton() {
 // Progress Bar Update Function
 function updateProgressBar() {
     let progress = 0;
-    let currentStep = 0;
-    
+
     // Step 1: Medal selected (25%)
     if ($('#medal_id').val()) {
         progress += 25;
-        currentStep = 1;
         $('#step1').addClass('completed').removeClass('active');
     } else {
         $('#step1').addClass('active').removeClass('completed');
         $('#step2, #step3, #step4').removeClass('active completed');
     }
-    
+
     // Step 2: Staff selected (25%)
     if (selectedStaff.length > 0 && $('#medal_id').val()) {
         progress += 25;
-        currentStep = 2;
         $('#step2').addClass('completed').removeClass('active');
     } else if ($('#medal_id').val()) {
         $('#step2').addClass('active').removeClass('completed');
         $('#step3, #step4').removeClass('active completed');
     }
-    
+
     // Step 3: Award date filled (25%)
     if ($('#award_date').val() && selectedStaff.length > 0 && $('#medal_id').val()) {
         progress += 25;
-        currentStep = 3;
         $('#step3').addClass('completed').removeClass('active');
     } else if (selectedStaff.length > 0 && $('#medal_id').val()) {
         $('#step3').addClass('active').removeClass('completed');
         $('#step4').removeClass('active completed');
     }
-    
+
     // Step 4: Ready to confirm (25%)
     if ($('#medal_id').val() && $('#award_date').val() && selectedStaff.length > 0) {
         progress += 25;
-        currentStep = 4;
         $('#step4').addClass('active').removeClass('completed');
     }
-    
+
     // Update progress bar
     $('#progressBar').css('width', progress + '%').attr('aria-valuenow', progress);
     $('#progressPercentage').text(progress + '%');
 }
 
-// Medal Preview Card
-$('#medal_id').on('change', function() {
-    const selectedOption = $(this).find('option:selected');
-    const medalName = selectedOption.text();
-    const imagePath = selectedOption.data('image') || '';
-    const description = selectedOption.data('description') || 'No description available';
-    const medalId = $(this).val();
-    
-    if (medalId) {
-        $('#medalPreviewCard').show();
-        $('#previewMedalName').text(medalName);
-        $('#previewMedalDescription').text(description);
-        
-        // Reload staff table excluding those who already have this medal
-        console.log('Medal selected, reloading staff excluding those with medal ID:', medalId);
-        initializeStaffTable(medalId);
-        
-        // Update image if available
-        if (imagePath) {
-            $('#previewImage').attr('src', imagePath).show();
-        } else {
-            $('#previewImage').hide();
-        }
-    } else {
-        $('#medalPreviewCard').hide();
-        // Reload all staff when medal is cleared
-        console.log('Medal cleared, reloading all staff');
-        initializeStaffTable(null);
-    }
-    
-    enableAssignButton();
-});
-
 // Quick Filter Buttons
-$('.filter-category').on('click', function() {
+$(document).on('click', '.filter-category', function() {
     $('.filter-category').removeClass('active');
     $(this).addClass('active');
-    
+
     const filter = $(this).data('filter');
-    
+
     if (staffTable) {
         // Use custom filter function for category filtering
         $.fn.dataTable.ext.search.pop(); // Remove previous custom filter if exists
-        
+
         if (filter === 'all') {
-            console.log('Showing all staff');
             staffTable.draw();
         } else {
-            let matchCount = 0;
-            let totalChecked = 0;
-            
             $.fn.dataTable.ext.search.push(
                 function(settings, data, dataIndex) {
                     const rowData = staffTable.row(dataIndex).data();
                     if (!rowData) return true;
-                    
-                    totalChecked++;
+
                     const rankCategory = rowData.rank_category || '';
                     const rankLevel = rowData.rank_level || 999;
                     const rankName = (rowData.rank_name || '').toLowerCase();
                     const rankAbbr = (rowData.rank_abbr || '').toLowerCase();
-                    
+
                     let matches = false;
-                    
+
                     if (filter === 'officers') {
-                        // Primary: Check database category field
                         if (rankCategory === 'Officer') {
                             matches = true;
-                        }
-                        // Secondary: Officers have rank_level 1-13 (level 14 is Officer Cadets)
-                        else if (rankLevel >= 1 && rankLevel <= 13) {
+                        } else if (rankLevel >= 1 && rankLevel <= 13) {
                             matches = true;
-                        }
-                        // Fallback: Check for officer titles
-                        else if (rankName.match(/officer|captain|lieutenant|major|colonel|general|brigadier|commander/i) ||
+                        } else if (rankName.match(/officer|captain|lieutenant|major|colonel|general|brigadier|commander/i) ||
                                rankAbbr.match(/^(2lt|lt|capt|maj|lt col|col|brig|maj gen|lt gen|gen|cmdr|cdr|o\/cdt)$/i)) {
                             matches = true;
                         }
                     } else if (filter === 'ncos') {
-                        // Primary: Check database category field
                         if (rankCategory === 'NCO') {
                             matches = true;
-                        }
-                        // Secondary: NCOs have rank_level 15-26 (level 27 is Recruits, 28 is Civilian)
-                        else if (rankLevel >= 15 && rankLevel <= 26) {
+                        } else if (rankLevel >= 15 && rankLevel <= 26) {
                             matches = true;
-                        }
-                        // Fallback: Check for NCO titles
-                        else if (rankName.match(/private|lance|corporal|sergeant|warrant/i) ||
+                        } else if (rankName.match(/private|lance|corporal|sergeant|warrant/i) ||
                                rankAbbr.match(/^(pvt|pte|rct|lcpl|l\/cpl|l cpl|cpl|sgt|ssgt|s sgt|wo1|wo2|woi|woii)$/i)) {
                             matches = true;
                         }
+                    } else if (filter === 'ce') {
+                        // FIX: "Civilian Employees Only" was previously
+                        // missing entirely — only Officers/NCOs/All
+                        // existed, even though CE is the third category
+                        // used everywhere else in this module (see
+                        // reports_seniority.php).
+                        if (rankCategory === 'Civilian Employee' || rankCategory === 'CE') {
+                            matches = true;
+                        } else if (rankLevel === 28) {
+                            matches = true;
+                        } else if (rankName.match(/civilian/i)) {
+                            matches = true;
+                        }
                     }
-                    
-                    if (matches) matchCount++;
-                    
-                    // Debug sample rows
-                    if (dataIndex < 5 || (filter === 'ncos' && matches && matchCount <= 5)) {
-                        console.log('Filter check:', {
-                            index: dataIndex,
-                            service: rowData.svcNo,
-                            rank: rankAbbr,
-                            category: rankCategory,
-                            level: rankLevel,
-                            filter: filter,
-                            matches: matches
-                        });
-                    }
-                    
+
                     return matches;
                 }
             );
-            
+
             staffTable.draw();
-            
-            // Log summary after a short delay to let DataTables finish drawing
-            setTimeout(function() {
-                console.log(`Filter "${filter}" applied: ${matchCount} of ${totalChecked} staff matched`);
-                console.log('Visible rows after filter:', staffTable.rows({search: 'applied'}).count());
-            }, 100);
         }
     }
 });
 
-$('.filter-status').on('click', function() {
+$(document).on('click', '.filter-status', function() {
     $('.filter-status').removeClass('active');
     $(this).addClass('active');
-    
+
     const status = $(this).data('filter');
-    
+
     if (staffTable) {
         if (status === 'all') {
             staffTable.column(6).search('').draw(); // Clear status filter
@@ -1725,7 +1631,7 @@ $('.filter-status').on('click', function() {
     }
 });
 
-$('#quickSearch').on('keyup', function() {
+$(document).on('keyup', '#quickSearch', function() {
     const searchValue = $(this).val();
     if (staffTable) {
         staffTable.search(searchValue).draw();
@@ -1733,21 +1639,19 @@ $('#quickSearch').on('keyup', function() {
 });
 
 // Split Button Actions
-$('#assignAndNew').on('click', function(e) {
+$(document).on('click', '#assignAndNew', function(e) {
     e.preventDefault();
-    // Set flag to reset form after assignment
     sessionStorage.setItem('assignAction', 'new');
     $('#showConfirmModal').click();
 });
 
-$('#assignAndView').on('click', function(e) {
+$(document).on('click', '#assignAndView', function(e) {
     e.preventDefault();
-    // Set flag to view profile after assignment
     sessionStorage.setItem('assignAction', 'view');
     $('#showConfirmModal').click();
 });
 
-$('#resetForm').on('click', function(e) {
+$(document).on('click', '#resetForm', function(e) {
     e.preventDefault();
     if (confirm('Are you sure you want to reset the form? All current selections will be lost.')) {
         location.reload();
@@ -1765,11 +1669,11 @@ $(document).on('keydown', function(e) {
 });
 
 // Collapse Icon Toggle
-$('#recentMedalsSection').on('show.bs.collapse', function() {
+$(document).on('show.bs.collapse', '#recentMedalsSection', function() {
     $('#collapseIcon').removeClass('fa-chevron-down').addClass('fa-chevron-up');
 });
 
-$('#recentMedalsSection').on('hide.bs.collapse', function() {
+$(document).on('hide.bs.collapse', '#recentMedalsSection', function() {
     $('#collapseIcon').removeClass('fa-chevron-up').addClass('fa-chevron-down');
 });
 
@@ -1812,8 +1716,7 @@ function hideLoadingOverlay() {
     });
 }
 
-$('#medal_id, #award_date').on('input', enableAssignButton);
-$('#showConfirmModal').on('click', function() {
+$(document).on('click', '#showConfirmModal', function() {
     if (selectedStaff.length >= <?=json_encode($BULK_CONFIRMATION_THRESHOLD)?>) {
         $('#bulkCount').text(selectedStaff.length);
         var modal = new bootstrap.Modal(document.getElementById('bulkConfirmModal'));
@@ -1832,9 +1735,9 @@ $('#showConfirmModal').on('click', function() {
 });
 function renderConfirmSummary(selected) {
     // Update statistics
-    $('#totalStaffCount').text(selected.length);
+    $('#modalSelectedCount').text(selected.length);
     $('#totalAssignments').text(selected.length);
-    
+
     // Render staff list
     let summary = '<ul class="list-group">';
     selected.forEach(function(staff){
@@ -1849,31 +1752,28 @@ function renderConfirmSummary(selected) {
     summary += '</ul>';
     $('#confirmSummary').html(summary);
 }
-$('#confirmSubmitBtn').on('click', function() {
+$(document).on('click', '#confirmSubmitBtn', function() {
     showLoadingOverlay('Assigning medals to selected staff...');
     $('#assignMedalForm').submit();
 });
-$('#assignMedalForm').on('submit', function() {
+$(document).on('submit', '#assignMedalForm', function() {
     $('#showConfirmModal').prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Assigning...');
 });
 
 // Handle post-assignment actions
-$(document).ready(function() {
+$(function() {
     const assignAction = sessionStorage.getItem('assignAction');
     if (assignAction) {
         sessionStorage.removeItem('assignAction');
-        
+
         if (assignAction === 'new') {
-            // Form is already cleared, just show success message
             console.log('Ready for new assignment');
         } else if (assignAction === 'view' && selectedStaff.length === 1) {
             // Redirect to profile view (you'll need to implement this URL)
             // window.location.href = 'view_staff.php?id=' + selectedStaff[0].svcNo;
         }
     }
-});
 
-$(function() {
     enableAssignButton();
 });
 </script>

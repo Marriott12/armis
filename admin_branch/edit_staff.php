@@ -13,7 +13,6 @@ require_once dirname(__DIR__) . '/shared/rbac.php';
 // Include database connection
 require_once dirname(__DIR__) . '/shared/database_connection.php';
 require_once dirname(__DIR__) . '/shared/rank_levels.php';
-require_once dirname(__DIR__) . '/shared/rank_levels.php';
 
 // Require authentication and admin privileges
 requireAuth();
@@ -44,37 +43,8 @@ $moduleIcon = "user-edit";
 $currentPage = "edit";
 
 // Sidebar navigation
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'],
-    ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create'],
-    ['title' => 'Delete Staff', 'url' => '/Armis2/admin_branch/delete_staff.php', 'icon' => 'user-times', 'page' => 'delete'],
-    ['title' => 'Promotions', 'url' => '/Armis2/admin_branch/promote_staff.php', 'icon' => 'arrow-up', 'page' => 'promotions'],
-    ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/appointments.php', 'icon' => 'user-tie', 'page' => 'appointments'],
-    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medal.php', 'icon' => 'medal', 'page' => 'medals'],
-    [
-        'title' => 'Reports',
-        'icon' => 'chart-bar',
-        'page' => 'reports',
-        'children' => [
-            ['title' => 'Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php'],
-            ['title' => 'Unit List', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
-            ['title' => 'Contracts', 'url' => '/Armis2/admin_branch/reports_contract.php'],
-            ['title' => 'Courses', 'url' => '/Armis2/admin_branch/reports_courses.php'],
-            ['title' => 'Deceased', 'url' => '/Armis2/admin_branch/reports_deceased.php'],
-            ['title' => 'Gender', 'url' => '/Armis2/admin_branch/reports_gender.php'],
-            ['title' => 'Marital', 'url' => '/Armis2/admin_branch/reports_marital.php'],
-            ['title' => 'Rank', 'url' => '/Armis2/admin_branch/reports_rank.php'],
-            ['title' => 'Retired', 'url' => '/Armis2/admin_branch/reports_retired.php'],
-            ['title' => 'Trade', 'url' => '/Armis2/admin_branch/reports_trade.php'],
-            ['title' => 'Corps', 'url' => '/Armis2/admin_branch/reports_corps.php'],
-            ['title' => 'Units', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Medals', 'url' => '/Armis2/admin_branch/reports_medals.php'],
-        ]
-    ],
-    ['title' => 'System Settings', 'url' => '/Armis2/admin_branch/system_settings.php', 'icon' => 'cogs', 'page' => 'settings']
-];
+$sidebarLinks = []; // set by shared nav include below
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 
 // --- Constants ---
@@ -84,7 +54,12 @@ define('MIN_NAME_LENGTH', 2);
 define('MIN_AGE_YEARS', 18);
 define('MAX_AGE_YEARS', 65);
 define('VALID_GENDERS', ['Male', 'Female']);
-define('VALID_STATUSES', ['Active', 'Inactive', 'Retired', 'Transferred']);
+// staff.svcStatus is a real DB enum('Active','Retired','Deceased','AWOL','Discharged','On Contract').
+// The enum stores 'AWOL' in UPPERCASE and also includes 'On Contract', which the previous
+// version of this file omitted entirely (making such staff impossible to edit/save without
+// forcing them onto a different status). No display->DB casing conversion is needed since the
+// enum's own labels already match what we want to show in the UI.
+define('VALID_STATUSES', ['Active', 'Retired', 'Deceased', 'AWOL', 'Discharged', 'On Contract']);
 define('MAX_FILE_SIZE', 2097152); // 2MB
 define('ALLOWED_IMAGE_TYPES', ['image/jpeg', 'image/png', 'image/gif']);
 define('UPLOAD_DIR', '../uploads/staff_photos/');
@@ -179,7 +154,7 @@ function validateDOB($dob) {
 
 function logStaffChange($svcNo, $oldData, $newData, $userId, $userIP, $pdo = null) {
     $changes = [];
-    $fields = ['fName', 'lName', 'rankId', 'unitId', 'corpsId', 'NRC', 'DOB', 'gender', 'svcStatus'];
+    $fields = ['fName', 'lName', 'rankId', 'unitId', 'corps', 'NRC', 'DOB', 'gender', 'svcStatus'];
     foreach ($fields as $field) {
         $oldValue = isset($oldData->$field) ? $oldData->$field : null;
         $newValue = isset($newData[$field]) ? $newData[$field] : null;
@@ -197,7 +172,7 @@ function logStaffChange($svcNo, $oldData, $newData, $userId, $userIP, $pdo = nul
             if ($pdo === null) {
                 $pdo = getDbConnection();
             }
-            
+
             // Insert log record (table should already exist - created before transaction)
             $stmt = $pdo->prepare("INSERT INTO staff_edit_log (svcNo, edited_by, edited_at, user_ip, changes) VALUES (?, ?, ?, ?, ?)");
             $stmt->execute([
@@ -219,64 +194,57 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename=staff_list.csv');
     $output = fopen('php://output', 'w');
-    
+
     // CSV headers
     fputcsv($output, ['Service Number', 'First Name', 'Last Name', 'Rank', 'Unit', 'Status', 'Date of Birth', 'Date of Enlistment', 'Category']);
-    
+
     // Build query for export (similar to AJAX search but with more fields)
     $pdo = getDbConnection();
-    $sql = "SELECT s.svcNo, s.fName, s.lName, r.rankId as rank_name, u.code as unit_name, 
-             s.svcStatus, s.DOB, s.attestDate, s.category 
+    $sql = "SELECT s.svcNo, s.fName, s.lName, r.rankId as rank_name, COALESCE(u.unitId, '') as unit_name,
+             s.svcStatus, s.DOB, s.attestDate, " . getRankCategoryCaseSQL('r') . " as category
          FROM staff s
          LEFT JOIN `rank` r ON s.rankId = r.rankId
          LEFT JOIN unit u ON s.unitId = u.unitId
          WHERE 1=1";
-    
+
     $params = [];
-    
+
     // Apply filters if set
     $rankFilter = $_GET['rank'] ?? '';
     $unitFilter = $_GET['unit'] ?? '';
     $statusFilter = $_GET['status'] ?? '';
     $search = trim($_GET['search'] ?? '');
-    
+
     if ($rankFilter !== '') {
         $sql .= " AND s.rankId = ?";
         $params[] = $rankFilter;
     }
-    
+
     if ($unitFilter !== '') {
         $sql .= " AND s.unitId = ?";
         $params[] = $unitFilter;
     }
-    
+
     if ($statusFilter !== '') {
         $sql .= " AND s.svcStatus = ?";
         $params[] = $statusFilter;
     }
-    
+
     if ($search !== '') {
         $sql .= " AND (s.svcNo LIKE ? OR s.fName LIKE ? OR s.lName LIKE ?)";
         $searchParam = '%' . $search . '%';
         $params = array_merge($params, [$searchParam, $searchParam, $searchParam]);
     }
-    
+
     // Exclude retired and deceased staff if requested
     if (isset($_GET['exclude_inactive']) && $_GET['exclude_inactive'] === '1') {
         $sql .= " AND s.svcStatus = 'Active'";
     }
-    
-    // 1. Primary: Rank level ascending
-    // 2. Secondary: Date of rank (subWef, tempWef, attestDate) earliest first
-    // 3. Tertiary: Service number ascending
-    // 4. Acting/Appointed: Use effective date if acting/appointed
-    // 5. Consistent Data Entry: Validate date fields before query
-    // 6. Retirement/Transfer: Exclude or mark retired/transferred staff
-    // 7. Audit/Validation: Log missing/inconsistent data
 
-    // Exclude retired/transferred staff unless explicitly requested
+    // Exclude retired/discharged staff unless explicitly requested.
+    // Real "not active" values are Retired/Deceased/AWOL/Discharged (DB stores AWOL uppercase).
     if (!isset($_GET['include_inactive']) || $_GET['include_inactive'] !== '1') {
-        $sql .= " AND s.svcStatus IN ('Active', 'Inactive')";
+        $sql .= " AND s.svcStatus IN ('Active', 'AWOL')";
     }
 
     // Validate date fields for consistency (log if missing)
@@ -286,28 +254,26 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     }
 
     // Order by seniority logic
-    $sql .= " ORDER BY r.level ASC, 
+    $sql .= " ORDER BY r.rankIndex ASC,
         LEAST(
             COALESCE(s.subWef, '9999-12-31'),
             COALESCE(s.tempWef, '9999-12-31'),
-            COALESCE(s.attestDate, '9999-12-31'),
-            COALESCE(s.actingWef, '9999-12-31'),
-            COALESCE(s.appointedWef, '9999-12-31')
+            COALESCE(s.attestDate, '9999-12-31')
         ) ASC,
         s.svcNo ASC,
         s.DOB ASC
     ";
 
     // Log missing/inconsistent data for audit
-    $auditStmt = $pdo->query("SELECT svcNo, subWef, tempWef, attestDate FROM staff WHERE (subWef IS NULL OR subWef = '' OR subWef < '1900-01-01') OR (temWef IS NULL OR temWef = '' OR temWef < '1900-01-01') OR (attestDate IS NULL OR attestDate = '' OR attestDate < '1900-01-01')");
+    $auditStmt = $pdo->query("SELECT svcNo, subWef, tempWef, attestDate FROM staff WHERE (subWef IS NULL OR subWef = '' OR subWef < '1900-01-01') OR (tempWef IS NULL OR tempWef = '' OR tempWef < '1900-01-01') OR (attestDate IS NULL OR attestDate = '' OR attestDate < '1900-01-01')");
     $auditRows = $auditStmt->fetchAll(PDO::FETCH_ASSOC);
     if (!empty($auditRows)) {
         error_log('Staff seniority audit: Missing/inconsistent date fields: ' . json_encode($auditRows));
     }
-    
+
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
-    
+
     // Export all rows
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
         fputcsv($output, [
@@ -322,7 +288,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
             $row['category']
         ]);
     }
-    
+
     // Log the export
     logActivity('staff_export', json_encode([
         'filters' => [
@@ -333,7 +299,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
         ],
         'count' => $stmt->rowCount()
     ]));
-    
+
     exit;
 }
 
@@ -345,7 +311,6 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
     $debug[] = 'AJAX handler entered';
     $pdo = getDbConnection();
     try {
-        $pdo = getDbConnection();
         // Handle audit logging for search
         if (isset($_GET['log_search']) && $_GET['log_search'] === '1') {
             $debug[] = 'log_search branch entered';
@@ -388,12 +353,6 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         }
         // Perform staff search with pagination and sorting like reports_seniority.php
         $debug[] = 'staff search branch entered';
-    $ranks = $pdo->query("SELECT rankId as rankID, rankId as rankName, level FROM `rank` ORDER BY level ASC")->fetchAll(PDO::FETCH_OBJ);
-    $rankMap = [];
-    foreach ($ranks as $r) $rankMap[$r->rankID] = $r->rankName;
-        $units = $pdo->query("SELECT unitId as unitID, code as unitName FROM unit ORDER BY code ASC")->fetchAll(PDO::FETCH_OBJ);
-        $unitMap = [];
-        foreach ($units as $u) $unitMap[$u->unitID] = $u->unitName;
         $search = trim($_GET['search'] ?? '');
         $rankFilter = $_GET['rank'] ?? '';
         $unitFilter = $_GET['unit'] ?? '';
@@ -406,11 +365,11 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         // Sorting parameters (matching reports_seniority.php)
         $sortable_columns = [
             'svcNo' => 's.svcNo',
-            'rank' => 'r.level',
+            'rank' => 'r.rankIndex',
             'surname' => 's.lName',
             'fName' => 's.fName',
-            'unit' => 'u.code',
-            'category' => 's.category',
+            'unit' => 'u.unitId',
+            'category' => 'r.rankIndex',
             'DOB' => 's.DOB',
             'attestDate' => 's.attestDate',
             'subWef' => 's.subWef',
@@ -420,21 +379,21 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         $sort_col = $_GET['sort_col'] ?? '';
         $sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
         // Main query with JOINs
-    $sql = "SELECT DISTINCT s.svcNo, s.fName, s.lName, s.rankId, s.unitId, s.svcStatus, 
-               r.rankId as rankName, r.rankId as rankAbbr, r.level as rankLevel, 
-               u.code as unitName, u.code as unitCode, 
-               s.subWef, s.tempWef, s.attestDate 
-        FROM staff s 
-        LEFT JOIN `rank` r ON s.rankId = r.rankId 
-        LEFT JOIN unit u ON s.unitId = u.unitId 
+        $sql = "SELECT DISTINCT s.svcNo, s.fName, s.lName, s.rankId, s.unitId, s.svcStatus,
+               r.rankId as rankName, r.rankId as rankAbbr, r.rankIndex as rankLevel,
+               COALESCE(u.unitId, '') as unitName, COALESCE(u.unitId, '') as unitCode,
+               s.subWef, s.tempWef, s.attestDate
+        FROM staff s
+        LEFT JOIN `rank` r ON s.rankId = r.rankId
+        LEFT JOIN unit u ON s.unitId = u.unitId
         WHERE 1=1";
         // Count query for pagination
-    $count_sql = "SELECT COUNT(DISTINCT s.svcNo) FROM staff s\n                      LEFT JOIN `rank` r ON s.rankId = r.rankId\n                      LEFT JOIN unit u ON s.unitId = u.unitId\n                      WHERE 1=1";
+        $count_sql = "SELECT COUNT(DISTINCT s.svcNo) FROM staff s\n                      LEFT JOIN `rank` r ON s.rankId = r.rankId\n                      LEFT JOIN unit u ON s.unitId = u.unitId\n                      WHERE 1=1";
         $params = [];
         $count_params = [];
         // Search condition
         if ($search !== '') {
-            $searchCondition = " AND (s.svcNo LIKE ? OR s.fName LIKE ? OR s.lName LIKE ? OR r.rankId LIKE ? OR r.rankId LIKE ? OR u.code LIKE ?)";
+            $searchCondition = " AND (s.svcNo LIKE ? OR s.fName LIKE ? OR s.lName LIKE ? OR r.rankId LIKE ? OR r.rankId LIKE ? OR CONCAT_WS(' ', COALESCE(u.unitId, ''), COALESCE(u.unitLoc, '')) LIKE ?)";
             $sql .= $searchCondition;
             $count_sql .= $searchCondition;
             $searchParam = '%' . $search . '%';
@@ -459,6 +418,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         if ($statusFilter !== '') {
             $sql .= " AND s.svcStatus = ?";
             $count_sql .= " AND s.svcStatus = ?";
+            // VALID_STATUSES labels already match the DB enum's own casing - no mapping needed
             $params[] = $statusFilter;
             $count_params[] = $statusFilter;
         }
@@ -478,9 +438,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         } else {
             // Default seniority sorting: rank level, then subWef, then tempWef, then attestDate, then service number
             // Personnel without ranks (NULL rankId) are listed last
-            $sql .= " ORDER BY 
+            $sql .= " ORDER BY
                 CASE WHEN s.rankId IS NULL THEN 1 ELSE 0 END,
-                r.level ASC,
+                r.rankIndex ASC,
                 s.subWef ASC,
                 s.tempWef ASC,
                 s.attestDate ASC,
@@ -501,12 +461,23 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                 'rank' => $s->rankAbbr ?? $s->rankName ?? 'N/A',
                 'name' => $s->lName . ' ' . $s->fName,
                 'unit' => $s->unitCode ?? $s->unitName ?? '',
-                'status' => $s->svcStatus
+                'status' => $s->svcStatus,
+                // Roster group (Officers/NCOs/Civilian Employees) for
+                // client-side section headers — the default sort order
+                // above (rankIndex ASC) is already contiguous by group,
+                // since shared/rank_levels.php partitions levels that
+                // way, so grouping consecutive rows is safe.
+                'rosterGroup' => getRosterGroupFromLevel($s->rankLevel ?? null),
             ];
         }
         // Return data with pagination info and debug trace
         echo json_encode([
             'data' => $result,
+            // Roster grouping (Officers/NCOs/CEs) only makes sense to
+            // display when rows are actually in the default,
+            // group-contiguous seniority order — not when the user has
+            // sorted by name/unit/etc, which interleaves groups.
+            'groupingSafe' => empty($sort_col),
             'pagination' => [
                 'current_page' => $page,
                 'per_page' => $per_page,
@@ -521,8 +492,6 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         echo json_encode(['error' => 'Server error: ' . $e->getMessage()]);
         exit;
     }
-    
-    // Unreachable code removed after exit;
 }
 
 // --- CSRF helper ---
@@ -532,14 +501,17 @@ if (!isset($_SESSION['csrf_token'])) {
 function csrf_token() { return $_SESSION['csrf_token']; }
 
 $pdo = getDbConnection();
-// Lookup ranks using the `rank` table and its rankId identifier
-$ranks = $pdo->query("SELECT rankId as rankID, rankId as rankName FROM `rank`")->fetchAll(PDO::FETCH_OBJ);
+// Lookup ranks using the `rank` table and its rankId identifier, ordered by
+// seniority (rankIndex) so the current selection is easy to find in the list.
+$ranks = $pdo->query("SELECT rankId as rankID, rankId as rankName FROM `rank` ORDER BY rankIndex ASC")->fetchAll(PDO::FETCH_OBJ);
 $rankMap = [];
 foreach ($ranks as $r) $rankMap[$r->rankID] = $r->rankName;
-$units = $pdo->query("SELECT unitId as unitID, code as unitName FROM unit")->fetchAll(PDO::FETCH_OBJ);
+$units = $pdo->query("SELECT unitId as unitID, unitId as unitName FROM unit ORDER BY unitId ASC")->fetchAll(PDO::FETCH_OBJ);
 $unitMap = [];
 foreach ($units as $u) $unitMap[$u->unitID] = $u->unitName;
-$corps = $pdo->query("SELECT corpsId as id, abbreviation as name FROM corps ORDER BY abbreviation ASC")->fetchAll(PDO::FETCH_OBJ);
+// Corps is a free-text column on staff (no separate corps lookup table) - the dropdown
+// is populated from distinct values already in use.
+$corps = $pdo->query("SELECT DISTINCT corps as id, corps as name FROM staff WHERE corps IS NOT NULL AND corps != '' ORDER BY corps ASC")->fetchAll(PDO::FETCH_OBJ);
 
 $errors = [];
 $success = false;
@@ -577,7 +549,7 @@ function calculateRetirementInfo($dateOfBirth, $dateOfEnlistment) {
                 'yearsRemaining' => null
             ]
         ];
-    
+
     // Expected Runout Date (Age 65)
     if (!empty($dateOfBirth)) {
         try {
@@ -585,13 +557,13 @@ function calculateRetirementInfo($dateOfBirth, $dateOfEnlistment) {
             $runoutDate = clone $dob;
             $runoutDate->modify('+65 years');
             $now = new DateTime();
-            
+
             $result['runout'] = [
                 'date' => $runoutDate,
                 'formatted' => $runoutDate->format('d M Y'),
                 'isPast' => $runoutDate < $now,
             ];
-            
+
             if ($runoutDate >= $now) {
                 $interval = $now->diff($runoutDate);
                 $years = $interval->y;
@@ -606,7 +578,7 @@ function calculateRetirementInfo($dateOfBirth, $dateOfEnlistment) {
             // Invalid date
         }
     }
-    
+
     // Expected Early Retirement (20 Years Service)
     if (!empty($dateOfEnlistment)) {
         try {
@@ -614,13 +586,13 @@ function calculateRetirementInfo($dateOfBirth, $dateOfEnlistment) {
             $earlyRetireDate = clone $enlistment;
             $earlyRetireDate->modify('+20 years');
             $now = new DateTime();
-            
+
             $result['earlyRetirement'] = [
                 'date' => $earlyRetireDate,
                 'formatted' => $earlyRetireDate->format('d M Y'),
                 'isPast' => $earlyRetireDate < $now,
             ];
-            
+
             if ($earlyRetireDate >= $now) {
                 $interval = $now->diff($earlyRetireDate);
                 $years = $interval->y;
@@ -635,7 +607,7 @@ function calculateRetirementInfo($dateOfBirth, $dateOfEnlistment) {
             // Invalid date
         }
     }
-    
+
     return $result;
 }
 
@@ -655,19 +627,19 @@ function getRetirementUrgencyClass($yearsRemaining) {
 if (isset($_GET['svcNo'])) {
     $svcNo = $_GET['svcNo'];
     $normalizedSvcNo = normalizeServiceNumber($svcNo);
-    
+
     // Try exact match first
     $stmt = $pdo->prepare("SELECT * FROM staff WHERE svcNo = ?");
     $stmt->execute([$svcNo]);
     $staff = $stmt->fetch(PDO::FETCH_OBJ);
-    
+
     // If not found and the normalized version is different, try that
     if (!$staff && $normalizedSvcNo !== $svcNo) {
         error_log("Staff not found with '$svcNo', trying normalized '$normalizedSvcNo'");
         $stmt->execute([$normalizedSvcNo]);
         $staff = $stmt->fetch(PDO::FETCH_OBJ);
     }
-    
+
     // If still not found, try without leading zeros
     if (!$staff) {
         $withoutZeros = ltrim($svcNo, '0');
@@ -677,28 +649,20 @@ if (isset($_GET['svcNo'])) {
             $staff = $stmt->fetch(PDO::FETCH_OBJ);
         }
     }
-    
+
     if ($staff) {
-        error_log("Found staff member: " . $staff->fName . " " . $staff->lName . " with service number: " . $staff->svcNo);
+        error_log("Found staff member with service number: " . $staff->svcNo);
     } else {
         error_log("Staff member not found with any variation of service number: " . $svcNo);
     }
 }
 
 // --- Handle edit post ---
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['edit_staff'])) {
     $svcNo = $_POST['svcNo'];
     $newSvcNo = trim($_POST['newSvcNo'] ?? $svcNo);
     $csrf = $_POST['csrf_token'] ?? '';
-    
-    // Debug logging
-    error_log("=== EDIT STAFF REQUEST ===");
-    error_log("Original service number: " . $svcNo);
-    error_log("New service number: " . $newSvcNo);
-    error_log("Has operations: " . (isset($_POST['operations']) ? count($_POST['operations']) : 0));
-    error_log("Has deployments: " . (isset($_POST['deployments']) ? count($_POST['deployments']) : 0));
-    error_log("Has education: " . (isset($_POST['education']) ? count($_POST['education']) : 0));
-    error_log("Has skills: " . (isset($_POST['skills']) ? count($_POST['skills']) : 0));
+
     if (!isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csrf)) {
         $errors[] = "Invalid CSRF token. Please reload the page and try again.";
     } else {
@@ -708,10 +672,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
         if (!$originalStaff) {
             $errors[] = "Staff member not found with service number: " . $svcNo . ". Please check the service number and try again.";
             error_log("Staff member not found with service number: " . $svcNo);
+        } elseif (function_exists('canAlterRecord') && !canAlterRecord($originalStaff->branch_id ?? null)) {
+            // Branch-scoping guard: a Chief Clerk/Staff Officer may only alter
+            // records belonging to their own assigned branch (Admin Branch is
+            // the one exception, since it's org-wide by nature). DG/AG never
+            // reach here since PERM_EDIT_STAFF is read-only for those roles.
+            $errors[] = "You are not permitted to alter records for this branch.";
+            error_log("Branch RBAC denied: role '" . ($_SESSION['role'] ?? 'unknown') . "' (branch " . (getUserBranch() ?? 'none') . ") attempted to alter svcNo $svcNo (branch " . ($originalStaff->branch_id ?? 'none') . ")");
         } else {
-            error_log("Found staff member: " . $originalStaff->fName . " " . $originalStaff->lName . " (SvcNo: " . $originalStaff->svcNo . ")");
             // Get and sanitize form data
             $fname = trim($_POST['fname'] ?? '');
+            $mname = trim($_POST['mname'] ?? '');
+            $prefix = trim($_POST['prefix'] ?? '');
+            $initials = trim($_POST['initials'] ?? '');
             $lname = trim($_POST['lname'] ?? '');
             $rankID = $_POST['rankID'] ?? '';
             $unitID = $_POST['unitID'] ?? '';
@@ -720,6 +693,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
             $NRC = trim($_POST['NRC'] ?? '');
             $DOB = $_POST['DOB'] ?? '';
             $gender = $_POST['gender'] ?? '';
+            // VALID_STATUSES already matches the DB enum's casing exactly - no display->DB mapping needed
             $svcStatus = $_POST['svcStatus'] ?? '';
             $tel = $_POST['tel'] ?? '';
             $email = $_POST['email'] ?? '';
@@ -737,8 +711,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
             $hdress = $_POST['hdress'] ?? '';
             $attestDate = $_POST['attestDate'] ?? '';
             $lastPromotion = $_POST['lastPromotion'] ?? '';
+            $subRank = trim($_POST['subRank'] ?? '');
+            $tempRank = trim($_POST['tempRank'] ?? '');
+            $localRank = trim($_POST['localRank'] ?? '');
             // Legacy fields - now managed in dynamic sections (Steps 6-8)
-            $postingHistory = ''; // Moved to staff_postings table
+            $postingHistory = ''; // Moved to staff_appointment table
             $awards = ''; // Moved to staff_awards table
             $disciplinaryRecord = ''; // Moved to staff_disciplinary table
 
@@ -763,19 +740,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
             if (!empty($validationErrors)) {
                 foreach ($validationErrors as $error) $errors[] = $error;
             } else {
+                // NOTE: this $updateData array is only used to feed logStaffChange() (the
+                // audit trail) below - the actual UPDATE statement is built later from
+                // $fieldMap, filtered against the real staff table columns.
                 $updateData = [
                     'svcNo' => $newSvcNo,
                     'fName' => $fname,
+                    'mName' => $mname,
+                    'prefix' => $prefix,
+                    'initials' => $initials,
                     'lName' => $lname,
                     'rankId' => $rankID,
                     'unitId' => $unitID,
-                    'corpsId' => $corpsID,
+                    'corps' => $corpsID,
                     'NRC' => $NRC,
                     'DOB' => $DOB,
                     'gender' => $gender,
                     'svcStatus' => $svcStatus,
-                    'tel' => $tel,
-                    'email' => $email,
+                    'telNo' => $tel,
+                    'officialEmail' => $email,
                     'address' => $address,
                     'nok' => $nok,
                     'nokTel' => $nokTel,
@@ -785,223 +768,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                     'trade' => $trade,
                     'specialization' => $specialization,
                     'combatSize' => $combatSize,
-                    'bsize' => $bsize,
-                    'ssize' => $ssize,
-                    'hdress' => $hdress,
+                    'bootSize' => $bsize,
+                    'hDress' => $hdress,
                     'attestDate' => $attestDate,
-                    'lastPromotion' => $lastPromotion,
                     'postingHistory' => $postingHistory,
                     'awards' => $awards,
                     'disciplinaryRecord' => $disciplinaryRecord
                 ];
-                    // --- Advanced rank logic: update tempWef/subWef based on rank type ---
-                    // Get rank details to determine if temporal or substantive
-                    $rankStmt = $pdo->prepare("SELECT rankId as name FROM `rank` WHERE rankId = ? LIMIT 1");
-                    $rankStmt->execute([$rankID]);
-                    $rankDetails = $rankStmt->fetch(PDO::FETCH_ASSOC);
-                    if ($rankDetails) {
-                        $rankName = $rankDetails['name'] ?? '';
-                        $lastPromotionDate = $lastPromotion;
-                        // Check if rank name contains 'Temporal' or starts with 'T' (case-insensitive)
-                        $isTemporal = stripos($rankName, 'Temporal') !== false || (strlen($rankName) > 1 && $rankName[0] === 'T' && ctype_upper($rankName[1]));
-                        if ($isTemporal) {
-                            $updateData['tempWef'] = $lastPromotionDate;
-                            $updateData['subWef'] = null;
-                        } else {
-                            $updateData['subWef'] = $lastPromotionDate;
-                            $updateData['tempWef'] = null;
-                        }
+                // Rank seniority: update subWef/tempWef based on the rank's real rankType
+                // column (Temporal vs Substantive/Local). These feed into $fieldMap below
+                // so they actually persist - subWef/tempWef also drive seniority ordering
+                // elsewhere (dashboard rank charts, reports_seniority.php).
+                $subWefValue = null;
+                $tempWefValue = null;
+                $rankStmt = $pdo->prepare("SELECT rankType FROM `rank` WHERE rankId = ? LIMIT 1");
+                $rankStmt->execute([$rankID]);
+                $rankDetails = $rankStmt->fetch(PDO::FETCH_ASSOC);
+                if ($rankDetails && !empty($lastPromotion)) {
+                    if (($rankDetails['rankType'] ?? '') === 'Temporal') {
+                        $tempWefValue = $lastPromotion;
+                    } else {
+                        // Substantive, Local, or unset rankType - treat as substantive seniority
+                        $subWefValue = $lastPromotion;
                     }
+                }
+                $updateData['subWef'] = $subWefValue;
+                $updateData['tempWef'] = $tempWefValue;
+
+                // Track whether any child-table save failed, so we can tell the user
+                // instead of silently reporting success while data is actually lost.
+                $childTableErrors = [];
+
                 try {
-                    // IMPORTANT: Ensure all tables exist BEFORE starting transaction
-                    // (CREATE TABLE causes implicit commit in MySQL, which would break our transaction)
-                    
-                    // Create staff_edit_log table if needed
-                    try {
-                        $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_edit_log'")->rowCount() > 0;
-                        if (!$tableExists) {
-                            $createSql = "
-                                CREATE TABLE staff_edit_log (
-                                    id INT AUTO_INCREMENT PRIMARY KEY,
-                                    svcNo VARCHAR(50) NOT NULL,
-                                    edited_by INT NOT NULL,
-                                    edited_at DATETIME NOT NULL,
-                                    user_ip VARCHAR(45),
-                                    changes JSON,
-                                    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                                )
-                            ";
-                            $pdo->exec($createSql);
-                            error_log("Created staff_edit_log table before transaction");
+                    // IMPORTANT: table/column existence is verified here, not created here.
+                    // Schema migrations (CREATE TABLE / ALTER TABLE) do NOT belong in a
+                    // per-request code path - see the deployment note at the bottom of this
+                    // file. Every INSERT below targets the REAL column names as defined in
+                    // armis1.sql, not a guessed/duplicate schema.
+
+                    $requiredTables = [
+                        'staff_edit_log', 'staff_operation', 'staff_deployments',
+                        'staff_course', 'staff_skills', 'staff_appointment',
+                        'staff_awards', 'staff_disciplinary'
+                    ];
+                    $missingTables = [];
+                    foreach ($requiredTables as $t) {
+                        if ($pdo->query("SHOW TABLES LIKE " . $pdo->quote($t))->rowCount() === 0) {
+                            $missingTables[] = $t;
                         }
-                    } catch (Exception $tableCheckE) {
-                        error_log("Error checking/creating log table: " . $tableCheckE->getMessage());
                     }
-                    
-                    // Create staff_operation table if needed
-                    try {
-                        $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_operation'")->rowCount() > 0;
-                        if (!$tableExists) {
-                            $createSql = "
-                                CREATE TABLE staff_operation (
-                                    id INT AUTO_INCREMENT PRIMARY KEY,
-                                    svcNo VARCHAR(10) NOT NULL,
-                                    opId VARCHAR(100) NOT NULL,
-                                    apptId VARCHAR(100),
-                                    startDate DATE,
-                                    endDate DATE,
-                                    reasonLeft VARCHAR(50),
-                                    remarks TEXT,
-                                    authorityId VARCHAR(10) NOT NULL,
-                                    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                    INDEX idx_svcNo (svcNo),
-                                    INDEX idx_opId (opId)
-                                )
-                            ";
-                            $pdo->exec($createSql);
-                            error_log("Created staff_operation table before transaction");
-                        }
-                    } catch (Exception $tableCheckE) {
-                        error_log("Error checking/creating staff_operation table: " . $tableCheckE->getMessage());
+                    if (!empty($missingTables)) {
+                        // Fail loudly and specifically rather than silently creating a
+                        // differently-shaped table at request time and corrupting saves.
+                        throw new Exception("Missing required table(s): " . implode(', ', $missingTables) . ". Run database migrations before using this form.");
                     }
-                    
-                    // Add missing columns to staff table if they don't exist
-                    try {
-                        $columns = $pdo->query('DESCRIBE staff')->fetchAll(PDO::FETCH_ASSOC);
-                        $existingCols = array_column($columns, 'Field');
-                        
-                        // Add specialization column if it doesn't exist
-                        if (!in_array('specialization', $existingCols)) {
-                            $pdo->exec("ALTER TABLE staff ADD COLUMN specialization VARCHAR(100) NULL AFTER trade");
-                            error_log("Added specialization column to staff table");
-                        }
-                    } catch (Exception $alterE) {
-                        error_log("Error adding specialization column to staff table: " . $alterE->getMessage());
-                    }
-                    
-                    // Create staff_deployments table if needed
-                    try {
-                        $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_deployments'")->rowCount() > 0;
-                        if (!$tableExists) {
-                            $createSql = "
-                                CREATE TABLE staff_deployments (
-                                    id INT AUTO_INCREMENT PRIMARY KEY,
-                                    svcNo VARCHAR(20) NOT NULL,
-                                    deployment_name VARCHAR(200),
-                                    mission_type VARCHAR(100),
-                                    location VARCHAR(100),
-                                    country VARCHAR(100),
-                                    startDate DATE,
-                                    endDate DATE,
-                                    durationMonths INT,
-                                    deployment_status VARCHAR(50),
-                                    rank_during_deployment VARCHAR(50),
-                                    role_during_deployment VARCHAR(100),
-                                    commanding_officer VARCHAR(100),
-                                    deployment_allowance DECIMAL(10,2),
-                                    notes TEXT,
-                                    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                                    INDEX idx_svcNo (svcNo)
-                                )
-                            ";
-                            $pdo->exec($createSql);
-                            error_log("Created staff_deployments table before transaction");
-                        }
-                    } catch (Exception $tableCheckE) {
-                        error_log("Error checking/creating staff_deployments table: " . $tableCheckE->getMessage());
-                    }
-                    
-                    // Create staff_course table if needed (for education/courses)
-                    try {
-                        $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_course'")->rowCount() > 0;
-                        if (!$tableExists) {
-                            $createSql = "
-                                CREATE TABLE staff_course (
-                                    id INT AUTO_INCREMENT PRIMARY KEY,
-                                    svcNo VARCHAR(20) NOT NULL,
-                                    instId INT,
-                                    cseId INT,
-                                    qualification VARCHAR(200),
-                                    yearStarted INT,
-                                    yearCompleted INT,
-                                    grade VARCHAR(20),
-                                    result VARCHAR(100),
-                                    certificate VARCHAR(200),
-                                    isHighest TINYINT(1) DEFAULT 0,
-                                    authorityId INT,
-                                    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                                    INDEX idx_svcNo (svcNo)
-                                )
-                            ";
-                            $pdo->exec($createSql);
-                            error_log("Created staff_course table before transaction");
-                        }
-                    } catch (Exception $tableCheckE) {
-                        error_log("Error checking/creating staff_course table: " . $tableCheckE->getMessage());
-                    }
-                    
-                    // Create staff_skills table if needed
-                    try {
-                        $tableExists = $pdo->query("SHOW TABLES LIKE 'staff_skills'")->rowCount() > 0;
-                        if (!$tableExists) {
-                            $createSql = "
-                                CREATE TABLE staff_skills (
-                                    id INT AUTO_INCREMENT PRIMARY KEY,
-                                    svcNo VARCHAR(20) NOT NULL,
-                                    course_name VARCHAR(200),
-                                    course_type VARCHAR(100),
-                                    institution VARCHAR(200),
-                                    startDate DATE,
-                                    endDate DATE,
-                                    duration_days INT,
-                                    certificateNumber VARCHAR(100),
-                                    grade_obtained VARCHAR(20),
-                                    location VARCHAR(100),
-                                    cost DECIMAL(10,2),
-                                    sponsored_by VARCHAR(100),
-                                    certification_status VARCHAR(50),
-                                    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                                    INDEX idx_svcNo (svcNo)
-                                )
-                            ";
-                            $pdo->exec($createSql);
-                            error_log("Created staff_skills table before transaction");
-                        }
-                    } catch (Exception $tableCheckE) {
-                        error_log("Error checking/creating staff_skills table: " . $tableCheckE->getMessage());
-                    }
-                    
-                    // NOW start the transaction (after ALL DDL operations)
+
+                    // NOW start the transaction
                     $pdo->beginTransaction();
-                    
-                    // Debug: Log the update operation
-                    error_log("Starting staff update for service number: " . $svcNo);
-                    
+
                     // Log staff changes (pass PDO connection to avoid transaction issues)
                     logStaffChange($svcNo, $originalStaff, $updateData, $user->data()->id ?? 0, $_SERVER['REMOTE_ADDR'] ?? '', $pdo);
-                    
+
                     // Get current staff table structure to build dynamic update query
                     $columns = $pdo->query('DESCRIBE staff')->fetchAll(PDO::FETCH_ASSOC);
                     $existingColumns = array_column($columns, 'Field');
-                    
-                    // Map form fields to database columns
+
+                    // Map form fields to database columns (real `staff` schema).
+                    // Fields with NO backing column (shoe size beyond sSize's constraints,
+                    // etc.) are left out of this map on purpose.
                     $fieldMap = [
                         'fName' => $fname,
+                        'mName' => $mname,
+                        'prefix' => $prefix,
+                        'initials' => $initials,
                         'lName' => $lname,
                         'rankId' => $rankID,
                         'unitId' => $unitID,
-                        'corpsId' => $corpsID,
+                        'corps' => $corpsID,
                         'category' => $category,
                         'svcNo' => $newSvcNo,
                         'NRC' => $NRC,
                         'DOB' => $DOB,
                         'gender' => $gender,
                         'svcStatus' => $svcStatus,
-                        'tel' => $tel,
-                        'email' => $email,
+                        'telNo' => $tel,
+                        'officialEmail' => $email,
                         'address' => $address,
                         'nok' => $nok,
                         'nokTel' => $nokTel,
@@ -1011,30 +862,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                         'trade' => $trade,
                         'specialization' => $specialization,
                         'combatSize' => $combatSize,
-                        'bootSize' => $bsize, 
-                        'shoeSize' => $ssize, 
-                        'hDress' => $hdress, 
+                        'bootSize' => $bsize,
+                        'sSize' => $ssize,
+                        'hDress' => $hdress,
                         'attestDate' => $attestDate,
-                        'lastPromotion' => $lastPromotion,
-                        'postingHistory' => $postingHistory,
-                        'awards' => $awards,
-                        'disciplinaryRecord' => $disciplinaryRecord,
+                        'subRank' => $subRank,
+                        'tempRank' => $tempRank,
+                        'localRank' => $localRank,
+                        'subWef' => $subWefValue,
+                        'tempWef' => $tempWefValue,
+                        'localWef' => $_POST['localWef'] !== '' ? ($_POST['localWef'] ?? null) : ($originalStaff->localWef ?? null),
+                        'passPort' => $_POST['passPort'] ?? null,
+                        'passExp' => $_POST['passExp'] !== '' ? ($_POST['passExp'] ?? null) : ($originalStaff->passExp ?? null),
+                        'unitAtt' => $_POST['unitAtt'] ?? null,
+                        'dateSeparated' => $_POST['dateSeparated'] ?? null,
+                        'contFrom' => $_POST['contFrom'] !== '' ? ($_POST['contFrom'] ?? null) : ($originalStaff->contFrom ?? null),
+                        'contDuration' => $_POST['contDuration'] !== '' ? ($_POST['contDuration'] ?? null) : ($originalStaff->contDuration ?? null),
+                        'contEnd' => $_POST['contEnd'] !== '' ? ($_POST['contEnd'] ?? null) : ($originalStaff->contEnd ?? null),
+                        'province' => $_POST['province'] ?? null,
+                        'district' => $_POST['district'] ?? null,
+                        'intake' => $_POST['intake'] ?? null,
+                        'village' => $_POST['village'] ?? null,
+                        'titles' => $_POST['titles'] ?? null,
+                        'digitalId' => $_POST['digitalId'] ?? null,
+                        'tel2' => $_POST['tel2'] ?? null,
+                        'altNok' => $_POST['altNok'] ?? null,
+                        'altNokTel' => $_POST['altNokTel'] ?? null,
+                        'altNokRelat' => $_POST['altNokRelat'] ?? null,
                         'marital' => $_POST['maritalStatus'] ?? null,
-                        'maritalStatus' => $_POST['maritalStatus'] ?? null,
-                        'marital_status' => $_POST['maritalStatus'] ?? null, // Handle both column names
                         'religion' => $_POST['religion'] ?? null,
-                        'bloodGroup' => $_POST['bloodGroup'] ?? null,
-                        'bloodGp' => $_POST['bloodGroup'] ?? null, // Handle both column names
+                        'bloodGp' => $_POST['bloodGroup'] ?? null,
                         'height' => $_POST['height'] ?? null
                     ];
-                    
+
+                    // Role/Branch: the edit_staff_step2_service.php partial disables these
+                    // inputs client-side for non-admins, but that's a UI convenience only -
+                    // re-check isAdmin() here too, server-side, since a forged POST could
+                    // otherwise reassign someone's role/branch through a disabled field.
+                    if (function_exists('isAdmin') && isAdmin()) {
+                        $fieldMap['role'] = $_POST['role'] ?? $originalStaff->role;
+                        $fieldMap['branch_id'] = (isset($_POST['branch_id']) && $_POST['branch_id'] !== '')
+                            ? (int)$_POST['branch_id']
+                            : null;
+                    }
+
                     // Build dynamic update query with only existing columns
                     $updateFields = [];
                     $updateParams = [];
-                    
-                    error_log("Specialization value from POST: '" . ($specialization ?? 'NULL') . "'");
-                    error_log("Existing staff table columns: " . implode(", ", $existingColumns));
-                    
+
                     foreach ($fieldMap as $column => $value) {
                         if (in_array($column, $existingColumns)) {
                             // Only allow svcNo update if changed
@@ -1048,127 +923,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                             }
                             $updateFields[] = "$column = ?";
                             $updateParams[] = $value;
-                            if ($column === 'specialization') {
-                                error_log("Specialization WILL BE UPDATED to: '" . $value . "'");
-                            }
-                        } else {
-                            error_log("Skipping missing column: $column");
                         }
                     }
                     // Add svcNo for WHERE clause
                     $updateParams[] = $svcNo;
                     $updateSql = "UPDATE staff SET " . implode(', ', $updateFields) . " WHERE svcNo = ?";
-                    
-                    // Debug: Log the SQL and parameters
-                    error_log("Dynamic Update SQL: " . $updateSql);
-                    error_log("Update Params: " . json_encode($updateParams));
-                    
+
                     $stmt = $pdo->prepare($updateSql);
                     if (!$stmt->execute($updateParams)) {
                         throw new Exception("Failed to update main staff record: " . implode(", ", $stmt->errorInfo()));
                     }
-                    
+
                     $rowsAffected = $stmt->rowCount();
-                    error_log("Rows affected by main update: " . $rowsAffected);
-                    
+
                     if ($rowsAffected === 0) {
-                        // Additional debugging: Check if the record exists
                         $checkStmt = $pdo->prepare("SELECT COUNT(*) FROM staff WHERE svcNo = ?");
                         $checkStmt->execute([$svcNo]);
                         $recordExists = $checkStmt->fetchColumn();
-                        
-                        error_log("DEBUG: Record exists check for service number '$svcNo': " . ($recordExists ? 'YES' : 'NO'));
-                        error_log("DEBUG: New service number: '$newSvcNo'");
-                        error_log("DEBUG: Update SQL: " . $updateSql);
-                        error_log("DEBUG: Update Params: " . json_encode($updateParams));
-                        
-                        if ($recordExists) {
-                            // Record exists but wasn't updated - might be no actual changes
-                            error_log("WARNING: Staff record exists but was not updated - possibly no changes detected");
-                            // Don't throw exception, continue processing
-                        } else {
+
+                        if (!$recordExists) {
                             throw new Exception("No staff record found with service number: " . $svcNo . ". Please verify the service number exists.");
                         }
+                        // Record exists but wasn't updated - possibly no actual changes. Continue processing.
                     }
-                    
+
                     // Use svcNo directly for child tables (staff table uses svcNo as primary key, not id)
                     $staffSvcNo = $newSvcNo;
-                    
-                    error_log("Using staff svcNo: " . $staffSvcNo . " for processing dynamic fields");
 
-                    // --- Operations (with error handling) ---
+                    // --- Operations (staff_operation: id, svcNo, opId, opStart, opEnd, remarks, authID, createdAt) ---
                     try {
-                        error_log("Processing operations for staff svcNo: " . $staffSvcNo);
-                        error_log("POST operations data: " . json_encode($_POST['operations'] ?? []));
-                        error_log("Number of operations in POST: " . count($_POST['operations'] ?? []));
-                        
-                        // Table already ensured to exist before transaction
-                        // Only process if operations data was submitted
                         if (isset($_POST['operations']) && is_array($_POST['operations'])) {
-                            // Delete existing operations for this staff member
                             $deleteStmt = $pdo->prepare("DELETE FROM staff_operation WHERE svcNo = ?");
                             $deleteStmt->execute([$staffSvcNo]);
-                            error_log("Deleted existing operations for svcNo: $staffSvcNo");
-                            
-                            // Insert new operations
-                            $opStmt = $pdo->prepare("INSERT INTO staff_operation (svcNo, opId, apptId, startDate, endDate, reasonLeft, remarks, authorityId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+
+                            $opStmt = $pdo->prepare("INSERT INTO staff_operation (svcNo, opId, opStart, opEnd, remarks, authID) VALUES (?, ?, ?, ?, ?, ?)");
                             $insertCount = 0;
                             foreach ($_POST['operations'] as $index => $op) {
-                            error_log("Processing operation #$index: " . json_encode($op));
-                            // Check if there's meaningful data (either opId or apptId should be present)
-                            if (!empty($op['opID']) || !empty($op['opId']) || !empty($op['apptID']) || !empty($op['apptId']) || !empty($op['operation_id'])) {
-                                try {
+                                $opId = !empty($op['opId']) ? $op['opId'] : (!empty($op['opID']) ? $op['opID'] : (!empty($op['operation_id']) ? $op['operation_id'] : ''));
+                                if (!empty($opId)) {
                                     $opStmt->execute([
                                         $staffSvcNo,
-                                        !empty($op['opId']) ? $op['opId'] : (!empty($op['opID']) ? $op['opID'] : (!empty($op['operation_id']) ? $op['operation_id'] : '')),
-                                        !empty($op['apptId']) ? $op['apptId'] : (!empty($op['apptID']) ? $op['apptID'] : ''),
+                                        $opId,
                                         !empty($op['startDate']) ? $op['startDate'] : null,
                                         !empty($op['endDate']) ? $op['endDate'] : null,
-                                        $op['reasonLeft'] ?? $op['reason_left'] ?? '',
                                         $op['remarks'] ?? '',
-                                        $op['authorityId'] ?? $op['authority_id'] ?? ''
+                                        $op['authorityId'] ?? $op['authority_id'] ?? $op['authID'] ?? ''
                                     ]);
                                     $insertCount++;
-                                    error_log("Successfully inserted operation #$index");
-                                } catch (Exception $insertEx) {
-                                    error_log("Failed to insert operation #$index: " . $insertEx->getMessage());
                                 }
-                            } else {
-                                error_log("Skipping empty operation #$index");
                             }
                         }
-                        error_log("Successfully inserted $insertCount operations for svcNo: $staffSvcNo");
-                        } else {
-                            error_log("No operations data submitted - preserving existing operations for svcNo: $staffSvcNo");
-                        }
                     } catch (Exception $e) {
+                        $childTableErrors[] = 'Operations';
                         error_log("Error processing operations: " . $e->getMessage());
-                        error_log("Operations data: " . json_encode($_POST['operations'] ?? []));
-                        error_log("Stack trace: " . $e->getTraceAsString());
-                        // Continue processing - don't fail the entire update for child table issues
                     }
 
-                    // --- Deployments (with error handling) ---
+                    // --- Deployments (matches real schema as-is) ---
                     try {
-                        error_log("Processing deployments for staff svcNo: " . $staffSvcNo);
-                        error_log("POST deployments data: " . json_encode($_POST['deployments'] ?? []));
-                        error_log("Number of deployments in POST: " . count($_POST['deployments'] ?? []));
-                        
-                        // Table already ensured to exist before transaction
-                        // Only process if deployments data was submitted
                         if (isset($_POST['deployments']) && is_array($_POST['deployments'])) {
-                            // Delete existing deployments for this staff member
                             $deleteStmt = $pdo->prepare("DELETE FROM staff_deployments WHERE svcNo = ?");
                             $deleteStmt->execute([$staffSvcNo]);
-                            error_log("Deleted existing deployments for svcNo: $staffSvcNo");
-                            
-                            // Insert new deployments
+
                             $depStmt = $pdo->prepare("INSERT INTO staff_deployments (svcNo, deployment_name, mission_type, location, country, startDate, endDate, durationMonths, deployment_status, rank_during_deployment, role_during_deployment, commanding_officer, deployment_allowance, notes, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
-                            $insertCount = 0;
                             foreach ($_POST['deployments'] as $index => $dep) {
-                            error_log("Processing deployment #$index: " . json_encode($dep));
-                            if (!empty($dep['deployment_name'])) {
-                                try {
+                                if (!empty($dep['deployment_name'])) {
                                     $depStmt->execute([
                                         $staffSvcNo,
                                         $dep['deployment_name'] ?? '',
@@ -1178,226 +996,146 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                                         !empty($dep['startDate']) ? $dep['startDate'] : null,
                                         !empty($dep['endDate']) ? $dep['endDate'] : null,
                                         !empty($dep['durationMonths']) ? intval($dep['durationMonths']) : null,
-                                        $dep['deployment_status'] ?? $dep['status'] ?? '', // Use the correct field name
+                                        $dep['deployment_status'] ?? $dep['status'] ?? '',
                                         $dep['rank_during_deployment'] ?? '',
-                                        $dep['role_during_deployment'] ?? $dep['role'] ?? '', // Use the correct field name
+                                        $dep['role_during_deployment'] ?? $dep['role'] ?? '',
                                         $dep['commanding_officer'] ?? '',
                                         !empty($dep['deployment_allowance']) ? floatval($dep['deployment_allowance']) : null,
                                         $dep['notes'] ?? ''
                                     ]);
-                                    $insertCount++;
-                                    error_log("Successfully inserted deployment #$index");
-                                } catch (Exception $insertEx) {
-                                    error_log("Failed to insert deployment #$index: " . $insertEx->getMessage());
                                 }
-                            } else {
-                                error_log("Skipping empty deployment #$index");
                             }
                         }
-                        error_log("Successfully inserted $insertCount deployments for svcNo: $staffSvcNo");
-                        } else {
-                            error_log("No deployments data submitted - preserving existing deployments for svcNo: $staffSvcNo");
-                        }
                     } catch (Exception $e) {
+                        $childTableErrors[] = 'Deployments';
                         error_log("Error processing deployments: " . $e->getMessage());
-                        error_log("Deployments data: " . json_encode($_POST['deployments'] ?? []));
-                        error_log("Stack trace: " . $e->getTraceAsString());
-                        // Continue processing
                     }
 
-                    // --- Education/Courses (with error handling) ---
+                    // --- Education/Courses (staff_course: instId, cseId, qualification, cseStart, cseEnd, grade, result, isHighest, authID) ---
                     try {
-                        error_log("Processing education/courses for staff svcNo: " . $staffSvcNo);
-                        error_log("POST education data: " . json_encode($_POST['education'] ?? []));
-                        error_log("Number of education records in POST: " . count($_POST['education'] ?? []));
-                        
-                        // Table already ensured to exist before transaction (staff_course)
-                        // Only process if education data was submitted
                         if (isset($_POST['education']) && is_array($_POST['education'])) {
-                            // Delete existing education/course records
                             $deleteStmt = $pdo->prepare("DELETE FROM staff_course WHERE svcNo = ?");
                             $deleteStmt->execute([$staffSvcNo]);
-                            error_log("Deleted existing courses for svcNo: $staffSvcNo");
-                            
-                            // Insert new education/course records
-                            $eduStmt = $pdo->prepare("INSERT INTO staff_course (svcNo, instId, cseId, qualification, yearStarted, yearCompleted, grade, result, certificate, isHighest, authorityId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                            $insertCount = 0;
+
+                            $eduStmt = $pdo->prepare("INSERT INTO staff_course (svcNo, instId, cseId, qualification, cseStart, cseEnd, grade, result, isHighest, authID) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                             foreach ($_POST['education'] as $index => $edu) {
-                            error_log("Processing education #$index: " . json_encode($edu));
-                            // Check if there's meaningful data (instId or cseId should be present)
-                            if (!empty($edu['instId']) || !empty($edu['cseId']) || !empty($edu['institution'])) {
-                                try {
+                                $instId = !empty($edu['instId']) ? $edu['instId'] : (!empty($edu['institution']) ? $edu['institution'] : '');
+                                if (!empty($instId) || !empty($edu['cseId'])) {
+                                    $yearStarted = !empty($edu['yearStarted']) ? $edu['yearStarted'] : ($edu['year_started'] ?? null);
+                                    $yearCompleted = !empty($edu['yearCompleted']) ? $edu['yearCompleted'] : ($edu['year_completed'] ?? null);
                                     $eduStmt->execute([
                                         $staffSvcNo,
-                                        !empty($edu['instId']) ? $edu['instId'] : (!empty($edu['institution']) ? $edu['institution'] : ''),
+                                        $instId,
                                         !empty($edu['cseId']) ? $edu['cseId'] : '',
                                         $edu['qualification'] ?? '',
-                                        !empty($edu['yearStarted']) ? intval($edu['yearStarted']) : (!empty($edu['year_started']) ? intval($edu['year_started']) : null),
-                                        !empty($edu['yearCompleted']) ? intval($edu['yearCompleted']) : (!empty($edu['year_completed']) ? intval($edu['year_completed']) : null),
+                                        // cseStart/cseEnd are DATE columns - a bare year still works as Y-01-01
+                                        $yearStarted ? (strlen((string)$yearStarted) === 4 ? $yearStarted . '-01-01' : $yearStarted) : null,
+                                        $yearCompleted ? (strlen((string)$yearCompleted) === 4 ? $yearCompleted . '-12-31' : $yearCompleted) : null,
                                         $edu['grade'] ?? $edu['grade_obtained'] ?? '',
                                         $edu['result'] ?? '',
-                                        $edu['certificate'] ?? '',
                                         !empty($edu['isHighest']) ? 1 : (!empty($edu['is_highest_qualification']) ? 1 : 0),
-                                        $edu['authorityId'] ?? $edu['authority_id'] ?? ''
+                                        $edu['authorityId'] ?? $edu['authority_id'] ?? $edu['authID'] ?? ''
                                     ]);
-                                    $insertCount++;
-                                    error_log("Successfully inserted education #$index");
-                                } catch (Exception $insertEx) {
-                                    error_log("Failed to insert education #$index: " . $insertEx->getMessage());
                                 }
-                            } else {
-                                error_log("Skipping empty education #$index");
                             }
                         }
-                        error_log("Successfully inserted $insertCount course records for svcNo: $staffSvcNo");
-                        } else {
-                            error_log("No education data submitted - preserving existing courses for svcNo: $staffSvcNo");
-                        }
                     } catch (Exception $e) {
+                        $childTableErrors[] = 'Education/Courses';
                         error_log("Error processing education: " . $e->getMessage());
-                        error_log("Education data: " . json_encode($_POST['education'] ?? []));
-                        error_log("Stack trace: " . $e->getTraceAsString());
-                        // Continue processing
                     }
-                    
-                    // --- Skills (with error handling) ---
+
+                    // --- Skills (matches real schema as-is) ---
                     try {
-                        error_log("Processing skills for staff svcNo: " . $staffSvcNo);
-                        error_log("POST skills data: " . json_encode($_POST['skills'] ?? []));
-                        error_log("Number of skills in POST: " . count($_POST['skills'] ?? []));
-                        
-                        // Table already ensured to exist before transaction
-                        // Only process if skills data was submitted
                         if (isset($_POST['skills']) && is_array($_POST['skills'])) {
-                            // Delete existing skills
                             $deleteStmt = $pdo->prepare("DELETE FROM staff_skills WHERE svcNo = ?");
                             $deleteStmt->execute([$staffSvcNo]);
-                            error_log("Deleted existing skills for svcNo: $staffSvcNo");
-                            
-                            // Insert new skills
-                            $skillStmt = $pdo->prepare("INSERT INTO staff_skills (svcNo, skillName, skillLevel, skillCategory, yearsOfExperience, certified, certificationBody, certificationDate, certificationExpiry) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                            $insertCount = 0;
+
+                            $skillStmt = $pdo->prepare("INSERT INTO staff_skills (svcNo, course_name, course_type, institution, startDate, endDate, duration_days, certificateNumber, grade_obtained, location, cost, sponsored_by, certification_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                             foreach ($_POST['skills'] as $index => $skill) {
-                            error_log("Processing skill #$index: " . json_encode($skill));
-                            if (!empty($skill['skillName']) || !empty($skill['skill_name'])) {
-                                try {
+                                if (!empty($skill['course_name'])) {
                                     $skillStmt->execute([
                                         $staffSvcNo,
-                                        $skill['skillName'] ?? $skill['skill_name'] ?? '',
-                                        $skill['skillLevel'] ?? $skill['skill_level'] ?? null,
-                                        $skill['skillCategory'] ?? $skill['skill_category'] ?? null,
-                                        !empty($skill['yearsOfExperience']) ? intval($skill['yearsOfExperience']) : (!empty($skill['years_of_experience']) ? intval($skill['years_of_experience']) : null),
-                                        !empty($skill['certified']) ? 1 : 0,
-                                        $skill['certificationBody'] ?? $skill['certification_body'] ?? null,
-                                        !empty($skill['certificationDate']) ? $skill['certificationDate'] : (!empty($skill['certification_date']) ? $skill['certification_date'] : null),
-                                        !empty($skill['certificationExpiry']) ? $skill['certificationExpiry'] : (!empty($skill['certification_expiry']) ? $skill['certification_expiry'] : null)
+                                        $skill['course_name'] ?? $skill['skill_name'] ?? '',
+                                        $skill['course_type'] ?? '',
+                                        $skill['institution'] ?? '',
+                                        !empty($skill['startDate']) ? $skill['startDate'] : null,
+                                        !empty($skill['endDate']) ? $skill['endDate'] : null,
+                                        !empty($skill['duration_days']) ? intval($skill['duration_days']) : null,
+                                        $skill['certificateNumber'] ?? '',
+                                        $skill['grade_obtained'] ?? '',
+                                        $skill['location'] ?? '',
+                                        !empty($skill['cost']) ? floatval($skill['cost']) : null,
+                                        $skill['sponsored_by'] ?? '',
+                                        $skill['certification_status'] ?? ''
                                     ]);
-                                    $insertCount++;
-                                    error_log("Successfully inserted skill #$index");
-                                } catch (Exception $insertEx) {
-                                    error_log("Failed to insert skill #$index: " . $insertEx->getMessage());
                                 }
-                            } else {
-                                error_log("Skipping empty skill #$index");
                             }
                         }
-                        error_log("Successfully inserted $insertCount skills for svcNo: $staffSvcNo");
-                        } else {
-                            error_log("No skills data submitted - preserving existing skills for svcNo: $staffSvcNo");
-                        }
                     } catch (Exception $e) {
+                        $childTableErrors[] = 'Skills';
                         error_log("Error processing skills: " . $e->getMessage());
-                        error_log("Skills data: " . json_encode($_POST['skills'] ?? []));
-                        error_log("Stack trace: " . $e->getTraceAsString());
-                        // Continue processing
                     }
 
-                    // ==================== PROCESS POSTING HISTORY (staff_appointment table) ====================
+                    // --- Posting History (staff_appointment: no createdBy/createdAt/updatedAt columns) ---
                     try {
-                        // Check if table exists
-                        $tableCheck = $pdo->query("SHOW TABLES LIKE 'staff_appointment'");
-                        if ($tableCheck->rowCount() > 0) {
-                            
                         if (isset($_POST['postings']) && is_array($_POST['postings'])) {
-                            error_log("Processing postings for svcNo: $staffSvcNo");
-                            
-                            // Delete existing postings for this staff member from staff_appointment
                             $deletePostings = $pdo->prepare("DELETE FROM staff_appointment WHERE svcNo = ?");
                             $deletePostings->execute([$staffSvcNo]);
-                            error_log("Deleted existing postings from staff_appointment for svcNo: $staffSvcNo");
-                            
-                            // Insert new postings into staff_appointment table
+
                             $insertPosting = $pdo->prepare("
-                                INSERT INTO staff_appointment 
-                                (svcNo, apptId, apptType, unitId, apptWef, powers, endDate, authorityId, remarks, createdBy)
+                                INSERT INTO staff_appointment
+                                (svcNo, apptId, apptType, unitId, apptWef, powers, endDate, durationMonths, authorityId, remarks)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             ");
-                            
-                            $insertCount = 0;
                             foreach ($_POST['postings'] as $index => $posting) {
-                                // Skip if missing required fields
-                                if (empty($posting['apptId']) && empty($posting['appointment_id'])) {
-                                    error_log("Skipping posting #$index - missing apptId");
+                                $apptId = $posting['apptId'] ?? $posting['appointment_id'] ?? '';
+                                if (empty($apptId)) {
                                     continue;
                                 }
-                                
+                                $startDate = $posting['startDate'] ?? $posting['apptWef'] ?? null;
+                                $endDate = !empty($posting['endDate']) ? $posting['endDate'] : null;
+                                $durationMonths = null;
+                                if ($startDate && $endDate) {
+                                    try {
+                                        $durationMonths = (new DateTime($startDate))->diff(new DateTime($endDate))->m
+                                            + ((new DateTime($startDate))->diff(new DateTime($endDate))->y * 12);
+                                    } catch (Exception $ignored) {}
+                                }
                                 $insertPosting->execute([
                                     $staffSvcNo,
-                                    $posting['apptId'] ?? $posting['appointment_id'] ?? '',
+                                    $apptId,
                                     $posting['appointment_type'] ?? $posting['apptType'] ?? null,
                                     $posting['unitId'] ?? null,
-                                    $posting['startDate'] ?? $posting['apptWef'] ?? null,
+                                    $startDate,
                                     $posting['powers'] ?? '',
-                                    !empty($posting['endDate']) ? $posting['endDate'] : null,
+                                    $endDate,
+                                    $durationMonths,
                                     $posting['authorityId'] ?? $posting['authority_id'] ?? null,
-                                    $posting['remarks'] ?? null,
-                                    $_SESSION['username'] ?? 'system'
+                                    $posting['remarks'] ?? null
                                 ]);
-                                $insertCount++;
                             }
-                            error_log("Successfully inserted $insertCount postings into staff_appointment for svcNo: $staffSvcNo");
-                        } else {
-                            error_log("No postings data submitted - preserving existing postings for svcNo: $staffSvcNo");
-                        }
-                        
                         }
                     } catch (Exception $e) {
+                        $childTableErrors[] = 'Posting History';
                         error_log("Error processing postings: " . $e->getMessage());
-                        error_log("Postings data: " . json_encode($_POST['postings'] ?? []));
-                        error_log("Stack trace: " . $e->getTraceAsString());
-                        // Continue processing
                     }
 
-                    // ==================== PROCESS AWARDS & COMMENDATIONS ====================
+                    // --- Awards & Commendations (matches real schema as-is) ---
                     try {
-                        // Check if table exists
-                        $tableCheck = $pdo->query("SHOW TABLES LIKE 'staff_awards'");
-                        if ($tableCheck->rowCount() > 0) {
-                            
                         if (isset($_POST['awards']) && is_array($_POST['awards'])) {
-                            error_log("Processing awards for svcNo: $staffSvcNo");
-                            
-                            // Delete existing awards for this staff member
                             $deleteAwards = $pdo->prepare("DELETE FROM staff_awards WHERE svcNo = ?");
                             $deleteAwards->execute([$staffSvcNo]);
-                            error_log("Deleted existing awards for svcNo: $staffSvcNo");
-                            
-                            // Insert new awards
+
                             $insertAward = $pdo->prepare("
-                                INSERT INTO staff_awards 
-                                (svcNo, award_type, award_name, award_date, awarded_by, 
+                                INSERT INTO staff_awards
+                                (svcNo, award_type, award_name, award_date, awarded_by,
                                  citation, certificateNumber, gazette_reference, remarks)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                             ");
-                            
-                            $insertCount = 0;
                             foreach ($_POST['awards'] as $index => $award) {
-                                // Skip if missing required fields
                                 if (empty($award['award_type']) || empty($award['award_name']) || empty($award['award_date'])) {
-                                    error_log("Skipping empty award #$index");
                                     continue;
                                 }
-                                
                                 $insertAward->execute([
                                     $staffSvcNo,
                                     $award['award_type'],
@@ -1409,52 +1147,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                                     $award['gazette_reference'] ?? null,
                                     $award['remarks'] ?? null
                                 ]);
-                                $insertCount++;
                             }
-                            error_log("Successfully inserted $insertCount awards for svcNo: $staffSvcNo");
-                        } else {
-                            error_log("No awards data submitted - preserving existing awards for svcNo: $staffSvcNo");
-                        }
-                        
                         }
                     } catch (Exception $e) {
+                        $childTableErrors[] = 'Awards';
                         error_log("Error processing awards: " . $e->getMessage());
-                        error_log("Awards data: " . json_encode($_POST['awards'] ?? []));
-                        error_log("Stack trace: " . $e->getTraceAsString());
-                        // Continue processing
                     }
 
-                    // ==================== PROCESS DISCIPLINARY RECORDS ====================
+                    // --- Disciplinary Records (matches real schema as-is) ---
                     try {
-                        // Check if table exists
-                        $tableCheck = $pdo->query("SHOW TABLES LIKE 'staff_disciplinary'");
-                        if ($tableCheck->rowCount() > 0) {
-                            
                         if (isset($_POST['disciplinary']) && is_array($_POST['disciplinary'])) {
-                            error_log("Processing disciplinary records for svcNo: $staffSvcNo");
-                            
-                            // Delete existing disciplinary records for this staff member
                             $deleteDisciplinary = $pdo->prepare("DELETE FROM staff_disciplinary WHERE svcNo = ?");
                             $deleteDisciplinary->execute([$staffSvcNo]);
-                            error_log("Deleted existing disciplinary records for svcNo: $staffSvcNo");
-                            
-                            // Insert new disciplinary records
+
                             $insertDisciplinary = $pdo->prepare("
-                                INSERT INTO staff_disciplinary 
-                                (svcNo, incident_type, incident_date, description, action_taken, 
-                                 disciplinary_authority, startDate, endDate, case_reference, 
+                                INSERT INTO staff_disciplinary
+                                (svcNo, incident_type, incident_date, description, action_taken,
+                                 disciplinary_authority, startDate, endDate, case_reference,
                                  outcome, appeal_details, clearance_date, confidential, remarks)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             ");
-                            
-                            $insertCount = 0;
                             foreach ($_POST['disciplinary'] as $index => $disc) {
-                                // Skip if missing required fields
                                 if (empty($disc['incident_type']) || empty($disc['incident_date']) || empty($disc['description'])) {
-                                    error_log("Skipping empty disciplinary record #$index");
                                     continue;
                                 }
-                                
                                 $insertDisciplinary->execute([
                                     $staffSvcNo,
                                     $disc['incident_type'],
@@ -1471,23 +1187,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                                     isset($disc['confidential']) ? (int)$disc['confidential'] : 1,
                                     $disc['remarks'] ?? null
                                 ]);
-                                $insertCount++;
                             }
-                            error_log("Successfully inserted $insertCount disciplinary records for svcNo: $staffSvcNo");
-                        } else {
-                            error_log("No disciplinary data submitted - preserving existing records for svcNo: $staffSvcNo");
-                        }
-                        
                         }
                     } catch (Exception $e) {
+                        $childTableErrors[] = 'Disciplinary Records';
                         error_log("Error processing disciplinary records: " . $e->getMessage());
-                        error_log("Disciplinary data: " . json_encode($_POST['disciplinary'] ?? []));
-                        error_log("Stack trace: " . $e->getTraceAsString());
-                        // Continue processing
                     }
 
                     $pdo->commit();
                     $success = true;
+                    if (!empty($childTableErrors)) {
+                        // Tell the user the truth instead of a blanket "Success!" - the main
+                        // record saved, but one or more sections did not.
+                        $errors[] = 'Staff record was updated, but the following section(s) failed to save and need attention: ' . implode(', ', $childTableErrors) . '. Check server logs for details.';
+                    }
                     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
                     $stmt = $pdo->prepare("SELECT * FROM staff WHERE svcNo = ?");
                     $stmt->execute([$newSvcNo]);
@@ -1502,10 +1215,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
                         }
                     }
                     error_log("Edit error by user {$user->data()->id}: " . $e->getMessage());
-                    
+
                     // More specific error messages
                     if (strpos($e->getMessage(), 'Column not found') !== false) {
-                        $errors[] = "Database schema error: " . $e->getMessage() . ". The system has been updated to handle missing columns. Please try again.";
+                        $errors[] = "Database schema error: " . $e->getMessage() . ". Please contact a system administrator.";
                     } elseif (strpos($e->getMessage(), 'Duplicate entry') !== false) {
                         $errors[] = "This staff member already exists with the same details.";
                     } else {
@@ -1518,8 +1231,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_staff'])) {
 }
 
 // --- Staff statistics ---
-function getStaffStatistics() {
-    $pdo = getDbConnection();
+function getStaffStatistics($pdo) {
     $stats = [];
     // Total staff count
     $stmt = $pdo->query("SELECT COUNT(*) as count FROM staff");
@@ -1537,19 +1249,31 @@ function getStaffStatistics() {
     $stmt = $pdo->query("SELECT r.rankId as rankName, COUNT(s.svcNo) as count FROM `rank` r LEFT JOIN staff s ON r.rankId = s.rankId GROUP BY r.rankId ORDER BY count DESC");
     $stats['ranks'] = $stmt->fetchAll(PDO::FETCH_OBJ);
     // Staff by unit
-    $stmt = $pdo->query("SELECT u.code as unitName, COUNT(s.svcNo) as count FROM unit u LEFT JOIN staff s ON u.unitId = s.unitId GROUP BY u.unitId, u.code ORDER BY count DESC");
+    $stmt = $pdo->query("SELECT COALESCE(CONCAT_WS(' - ', u.unitId, NULLIF(u.unitLoc, '')), u.unitId) as unitName, COUNT(s.svcNo) as count FROM unit u LEFT JOIN staff s ON u.unitId = s.unitId GROUP BY u.unitId, u.unitLoc ORDER BY count DESC");
     $stats['units'] = $stmt->fetchAll(PDO::FETCH_OBJ);
     return $stats;
 }
 
-$staffStats = getStaffStatistics();
+$staffStats = getStaffStatistics($pdo);
 
 // --- Recent Activity Function ---
-function getRecentActivity($limit = 10) {
-    $pdo = getDbConnection();
+function getRecentActivity($pdo, $limit = 10) {
     try {
+        // FIX: this query previously joined a `users` table that doesn't
+        // exist anywhere in this app - staff accounts live in `staff`
+        // itself. This silently failed on every page load (caught,
+        // logged, empty result), so "recent activity" here never showed
+        // anything.
+        // FIX: staff has no `id` column at all - its primary key is
+        // svcNo (varchar). edited_by is populated from
+        // $_SESSION['user_id'], which login.php sets from `s.svcNo AS id`
+        // (an alias, not a real numeric id column), stored into
+        // edited_by's `int` column - MySQL coerces the numeric-looking
+        // svcNo string to an integer on insert. Joined back through
+        // svcNo (letting the same int/varchar coercion apply in reverse)
+        // instead of a column that doesn't exist.
         $stmt = $pdo->prepare("
-            SELECT 
+            SELECT
                 sel.svcNo,
                 s.fName,
                 s.lName,
@@ -1559,11 +1283,12 @@ function getRecentActivity($limit = 10) {
                 u.username as edited_by_username
             FROM staff_edit_log sel
             LEFT JOIN staff s ON sel.svcNo = s.svcNo
-            LEFT JOIN users u ON sel.edited_by = u.id
+            LEFT JOIN staff u ON sel.edited_by = u.svcNo
             ORDER BY sel.edited_at DESC
             LIMIT ?
         ");
-        $stmt->execute([$limit]);
+        $stmt->bindValue(1, $limit, PDO::PARAM_INT);
+        $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_OBJ);
     } catch (Exception $e) {
         error_log("Error fetching recent activity: " . $e->getMessage());
@@ -1571,14 +1296,12 @@ function getRecentActivity($limit = 10) {
     }
 }
 
-$recentActivity = getRecentActivity(5);
+$recentActivity = getRecentActivity($pdo, 5);
 
 // Log page access with enhanced analytics
 logActivity('edit_staff_access', 'Accessed Edit Staff page');
 
-// Ensure shared admin branch CSS is loaded
-echo '<link rel="stylesheet" href="/Armis2/assets/css/admin_branch.css">';
-// Add unified design system CSS
+// Add unified design system CSS (admin_branch.css is already loaded by shared/header.php below)
 echo '<link rel="stylesheet" href="css/armis-unified.css">';
 echo '<link rel="stylesheet" href="css/form-step-styles.css">';
 
@@ -1595,75 +1318,37 @@ $staffAwards = [];
 $staffDisciplinary = [];
 
 if (!empty($staff)) {
-    error_log("Loading dynamic data for staff svcNo: " . $staff->svcNo);
-    
-    // Load operations (correct table name is staff_operation, singular)
-    if ($pdo->query("SHOW TABLES LIKE 'staff_operation'")->rowCount()) {
-        error_log("Staff operation table exists, loading operations");
-        $stmt = $pdo->prepare("SELECT * FROM staff_operation WHERE svcNo = ?");
-        $stmt->execute([$staff->svcNo]);
-        $staffOperations = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        error_log("Loaded operations: " . count($staffOperations));
-        error_log("Operations data: " . json_encode($staffOperations));
-    } else {
-        error_log("Staff operation table does not exist");
-    }
+    // Load operations
+    $stmt = $pdo->prepare("SELECT * FROM staff_operation WHERE svcNo = ?");
+    $stmt->execute([$staff->svcNo]);
+    $staffOperations = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     // Load deployments
-    if ($pdo->query("SHOW TABLES LIKE 'staff_deployments'")->rowCount()) {
-        error_log("Staff deployments table exists, loading deployments");
-        $stmt = $pdo->prepare("SELECT * FROM staff_deployments WHERE svcNo = ?");
-        $stmt->execute([$staff->svcNo]);
-        $staffDeployments = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        error_log("Loaded deployments: " . count($staffDeployments));
-        error_log("Deployments data: " . json_encode($staffDeployments));
-    } else {
-        error_log("Staff deployments table does not exist");
-    }
+    $stmt = $pdo->prepare("SELECT * FROM staff_deployments WHERE svcNo = ?");
+    $stmt->execute([$staff->svcNo]);
+    $staffDeployments = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     // Load education/courses
-    if ($pdo->query("SHOW TABLES LIKE 'staff_course'")->rowCount()) {
-        error_log("Staff course table exists, loading courses");
-        $stmt = $pdo->prepare("SELECT * FROM staff_course WHERE svcNo = ?");
-        $stmt->execute([$staff->svcNo]);
-        $staffEducation = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        error_log("Loaded courses: " . count($staffEducation));
-        error_log("Courses data: " . json_encode($staffEducation));
-    } else {
-        error_log("Staff course table does not exist");
-    }
+    $stmt = $pdo->prepare("SELECT * FROM staff_course WHERE svcNo = ?");
+    $stmt->execute([$staff->svcNo]);
+    $staffEducation = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Load skills/courses if you have such table, e.g. staff_skills
-    if ($pdo->query("SHOW TABLES LIKE 'staff_skills'")->rowCount()) {
-        error_log("Staff skills table exists, loading skills");
-        $stmt = $pdo->prepare("SELECT * FROM staff_skills WHERE svcNo = ?");
-        $stmt->execute([$staff->svcNo]);
-        $staffSkills = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        error_log("Loaded skills: " . count($staffSkills));
-        error_log("Skills data: " . json_encode($staffSkills));
-    } else {
-        error_log("Staff skills table does not exist");
-    }
+    // Load skills
+    $stmt = $pdo->prepare("SELECT * FROM staff_skills WHERE svcNo = ?");
+    $stmt->execute([$staff->svcNo]);
+    $staffSkills = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Load posting history from staff_appointment table
+    // Load posting history
     try {
-        if ($pdo->query("SHOW TABLES LIKE 'staff_appointment'")->rowCount()) {
-            error_log("Staff appointment table exists, loading postings");
-            // Load from staff_appointment - this table does NOT have rankId column
-            $stmt = $pdo->prepare("
-                SELECT sa.*, COALESCE(u.code, '') as unit_name
-                FROM staff_appointment sa
-                LEFT JOIN unit u ON sa.unitId = u.unitId
-                WHERE sa.svcNo = ? 
-                ORDER BY sa.apptWef DESC
-            ");
-            $stmt->execute([$staff->svcNo]);
-            $staffPostings = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            error_log("Loaded postings from staff_appointment: " . count($staffPostings));
-            error_log("Postings data: " . json_encode($staffPostings));
-        } else {
-            error_log("Staff appointment table does not exist");
-        }
+        $stmt = $pdo->prepare("
+            SELECT sa.*, COALESCE(CONCAT_WS(' - ', u.unitId, NULLIF(u.unitLoc, '')), u.unitId, '') as unit_name
+            FROM staff_appointment sa
+            LEFT JOIN unit u ON sa.unitId = u.unitId
+            WHERE sa.svcNo = ?
+            ORDER BY sa.apptWef DESC
+        ");
+        $stmt->execute([$staff->svcNo]);
+        $staffPostings = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } catch (Exception $e) {
         error_log("Error loading postings: " . $e->getMessage());
         $staffPostings = [];
@@ -1671,21 +1356,9 @@ if (!empty($staff)) {
 
     // Load awards & commendations
     try {
-        if ($pdo->query("SHOW TABLES LIKE 'staff_awards'")->rowCount()) {
-            error_log("Staff awards table exists, loading awards");
-            
-            // Check if award_date column exists
-            $columnCheck = $pdo->query("SHOW COLUMNS FROM staff_awards LIKE 'award_date'")->rowCount();
-            $orderBy = $columnCheck ? "award_date DESC" : "id DESC";
-            
-            $stmt = $pdo->prepare("SELECT * FROM staff_awards WHERE svcNo = ? ORDER BY $orderBy");
-            $stmt->execute([$staff->svcNo]);
-            $staffAwards = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            error_log("Loaded awards: " . count($staffAwards));
-            error_log("Awards data: " . json_encode($staffAwards));
-        } else {
-            error_log("Staff awards table does not exist");
-        }
+        $stmt = $pdo->prepare("SELECT * FROM staff_awards WHERE svcNo = ? ORDER BY award_date DESC");
+        $stmt->execute([$staff->svcNo]);
+        $staffAwards = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } catch (Exception $e) {
         error_log("Error loading awards: " . $e->getMessage());
         $staffAwards = [];
@@ -1693,16 +1366,9 @@ if (!empty($staff)) {
 
     // Load disciplinary records
     try {
-        if ($pdo->query("SHOW TABLES LIKE 'staff_disciplinary'")->rowCount()) {
-            error_log("Staff disciplinary table exists, loading disciplinary records");
-            $stmt = $pdo->prepare("SELECT * FROM staff_disciplinary WHERE svcNo = ? ORDER BY incident_date DESC");
-            $stmt->execute([$staff->svcNo]);
-            $staffDisciplinary = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            error_log("Loaded disciplinary records: " . count($staffDisciplinary));
-            error_log("Disciplinary data: " . json_encode($staffDisciplinary));
-        } else {
-            error_log("Staff disciplinary table does not exist");
-        }
+        $stmt = $pdo->prepare("SELECT * FROM staff_disciplinary WHERE svcNo = ? ORDER BY incident_date DESC");
+        $stmt->execute([$staff->svcNo]);
+        $staffDisciplinary = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } catch (Exception $e) {
         error_log("Error loading disciplinary records: " . $e->getMessage());
         $staffDisciplinary = [];
@@ -1714,12 +1380,10 @@ if (!empty($staff)) {
 <!-- Dynamically load initial data for dynamic sections -->
 <script>
 window.operationsOptions = <?php
-    // Defensive: operations table may not exist in all environments. Try/catch and return empty array if missing.
     try {
         $ops = [];
-        $res = $pdo->query("SHOW TABLES LIKE 'operations'");
-        if ($res && $res->rowCount()) {
-            $ops = $pdo->query("SELECT id, name, code FROM operations ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+        if ($pdo->query("SHOW TABLES LIKE 'operation'")->rowCount()) {
+            $ops = $pdo->query("SELECT opId as id, opId as name, opType as code FROM operation ORDER BY opId ASC")->fetchAll(PDO::FETCH_ASSOC);
         }
     } catch (Exception $e) {
         error_log("Could not load operations for edit_staff: " . $e->getMessage());
@@ -1728,14 +1392,10 @@ window.operationsOptions = <?php
     echo json_encode($ops);
 ?>;
 
-// Fetch distinct units (case-insensitive) for JavaScript dropdowns
+// Fetch distinct units for JavaScript dropdowns
 window.unitsOptions = <?php
     try {
-        $unitsForDropdown = [];
-        $res = $pdo->query("SHOW TABLES LIKE 'unit'");
-        if ($res && $res->rowCount()) {
-            $unitsForDropdown = $pdo->query("SELECT DISTINCT unitId, code, location FROM unit ORDER BY code ASC")->fetchAll(PDO::FETCH_ASSOC);
-        }
+        $unitsForDropdown = $pdo->query("SELECT DISTINCT unitId AS id, unitId AS name, unitLoc AS location FROM unit ORDER BY unitId ASC")->fetchAll(PDO::FETCH_ASSOC);
     } catch (Exception $e) {
         error_log("Could not load units for edit_staff: " . $e->getMessage());
         $unitsForDropdown = [];
@@ -1747,23 +1407,21 @@ window.unitsOptions = <?php
 window.ranksOptions = <?php
     try {
         $rankCategory = '';
-        if (isset($staff) && !empty($staff->rank)) {
-            // Get the rank category for this staff member from `rank` table
-            $stmtRank = $pdo->prepare("SELECT category FROM `rank` WHERE rankId = ? LIMIT 1");
-            $stmtRank->execute([$staff->rank]);
+        $staffRankId = $staff->rankId ?? null;
+        if (!empty($staffRankId)) {
+            $stmtRank = $pdo->prepare("SELECT rankIndex FROM `rank` WHERE rankId = ? LIMIT 1");
+            $stmtRank->execute([$staffRankId]);
             $rankCat = $stmtRank->fetch(PDO::FETCH_OBJ);
-            if ($rankCat) {
-                $rankCategory = $rankCat->category;
+            if ($rankCat && $rankCat->rankIndex !== null) {
+                $rankCategory = getRankCategory((int)$rankCat->rankIndex);
             }
         }
-        
-        // Get all ranks in the same category, or all if category not found
-        if (!empty($rankCategory)) {
-            $ranks = $pdo->prepare("SELECT rankId as id, rankId as name, rankId as abbreviation, level FROM `rank` WHERE category = ? ORDER BY level DESC");
-            $ranks->execute([$rankCategory]);
-            $ranksData = $ranks->fetchAll(PDO::FETCH_ASSOC);
+
+        if (!empty($rankCategory) && $rankCategory !== 'Unknown') {
+            $categoryWhere = getRankCategorySQL($rankCategory, 'r');
+            $ranksData = $pdo->query("SELECT r.rankId as id, r.rankId as name, r.rankId as abbreviation, r.rankIndex FROM `rank` r WHERE {$categoryWhere} ORDER BY r.rankIndex DESC")->fetchAll(PDO::FETCH_ASSOC);
         } else {
-            $ranksData = $pdo->query("SELECT rankId as id, rankId as name, rankId as abbreviation, level FROM `rank` ORDER BY level DESC")->fetchAll(PDO::FETCH_ASSOC);
+            $ranksData = $pdo->query("SELECT rankId as id, rankId as name, rankId as abbreviation, rankIndex FROM `rank` ORDER BY rankIndex DESC")->fetchAll(PDO::FETCH_ASSOC);
         }
     } catch (Exception $e) {
         error_log("Could not load ranks for edit_staff: " . $e->getMessage());
@@ -1773,99 +1431,38 @@ window.ranksOptions = <?php
 ?>;
 
 window.staffRankCategory = <?php echo json_encode($rankCategory ?? 'Unknown'); ?>;
-
-// Pre-populate dynamic sections if editing
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM content loaded, initializing dynamic sections');
-    
-    // Operations
-    <?php if (!empty($staffOperations)): ?>
-        console.log('Initializing operations: <?=count($staffOperations)?>');
-        <?php foreach ($staffOperations as $op): ?>
-            console.log('Adding operation: <?=json_encode($op)?>');
-            addOperationRow(<?=json_encode($op)?>);
-        <?php endforeach; ?>
-    <?php else: ?>
-        console.log('No operations to initialize');
-    <?php endif; ?>
-
-    // Deployments
-    <?php if (!empty($staffDeployments)): ?>
-        console.log('Initializing deployments: <?=count($staffDeployments)?>');
-        <?php foreach ($staffDeployments as $dep): ?>
-            console.log('Adding deployment: <?=json_encode($dep)?>');
-            addDeploymentRow(<?=json_encode($dep)?>);
-        <?php endforeach; ?>
-    <?php else: ?>
-        console.log('No deployments to initialize');
-    <?php endif; ?>
-
-    // Education
-    <?php if (!empty($staffEducation)): ?>
-        console.log('Initializing education: <?=count($staffEducation)?>');
-        <?php foreach ($staffEducation as $edu): ?>
-            console.log('Adding education: <?=json_encode($edu)?>');
-            addEducationRow(<?=json_encode($edu)?>);
-        <?php endforeach; ?>
-    <?php else: ?>
-        console.log('No education to initialize');
-    <?php endif; ?>
-
-    // Skills/Courses
-    <?php if (!empty($staffSkills)): ?>
-        console.log('Initializing skills: <?=count($staffSkills)?>');
-        <?php foreach ($staffSkills as $skill): ?>
-            console.log('Adding skill: <?=json_encode($skill)?>');
-            addSkillRow(<?=json_encode($skill)?>);
-        <?php endforeach; ?>
-    <?php else: ?>
-        console.log('No skills to initialize');
-    <?php endif; ?>
-
-    // Posting History
-    <?php if (!empty($staffPostings)): ?>
-        console.log('Initializing postings: <?=count($staffPostings)?>');
-        <?php foreach ($staffPostings as $posting): ?>
-            console.log('Adding posting: <?=json_encode($posting)?>');
-            addPostingRow(<?=json_encode($posting)?>);
-        <?php endforeach; ?>
-    <?php else: ?>
-        console.log('No postings to initialize');
-    <?php endif; ?>
-
-    // Awards & Commendations
-    <?php if (!empty($staffAwards)): ?>
-        console.log('Initializing awards: <?=count($staffAwards)?>');
-        <?php foreach ($staffAwards as $award): ?>
-            console.log('Adding award: <?=json_encode($award)?>');
-            addAwardRow(<?=json_encode($award)?>);
-        <?php endforeach; ?>
-    <?php else: ?>
-        console.log('No awards to initialize');
-    <?php endif; ?>
-
-    // Disciplinary Records
-    <?php if (!empty($staffDisciplinary)): ?>
-        console.log('Initializing disciplinary records: <?=count($staffDisciplinary)?>');
-        <?php foreach ($staffDisciplinary as $disc): ?>
-            console.log('Adding disciplinary record: <?=json_encode($disc)?>');
-            addDisciplinaryRow(<?=json_encode($disc)?>);
-        <?php endforeach; ?>
-    <?php else: ?>
-        console.log('No disciplinary records to initialize');
-    <?php endif; ?>
-});
+window.initialEditStaffData = <?=json_encode([
+    'operations' => $staffOperations,
+    'deployments' => $staffDeployments,
+    'education' => $staffEducation,
+    'skills' => $staffSkills,
+    'postings' => $staffPostings,
+    'awards' => $staffAwards,
+    'disciplinary' => $staffDisciplinary
+], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>;
 </script>
 
 <!-- Load custom CSS and assets -->
-<link rel="stylesheet" href="/Armis2/assets/css/admin_branch.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css">
 <link rel="stylesheet" href="/Armis2/admin_branch/css/form-step-styles.css">
 <!-- Core JS (jQuery + Bootstrap) are loaded centrally in shared/footer.php -->
-<script src="/Armis2/assets/js/edit_staff_support.js"></script>
+<script src="/Armis2/admin_branch/js/multi-step-form.js"></script>
 <div class="content-wrapper with-sidebar">
     <div class="container-fluid">
+        <nav aria-label="breadcrumb" class="mb-3">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a href="/Armis2/admin_branch/index.php">Admin Branch</a></li>
+                <?php if ($staff): ?>
+                    <li class="breadcrumb-item"><a href="/Armis2/admin_branch/edit_staff.php">Staff Management</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">
+                        Editing: <?=htmlspecialchars(trim(($staff->fName ?? '') . ' ' . ($staff->lName ?? '')))?>
+                    </li>
+                <?php else: ?>
+                    <li class="breadcrumb-item active" aria-current="page">Staff Management</li>
+                <?php endif; ?>
+            </ol>
+        </nav>
         <div class="main-content">
             <div class="row">
                 <div class="col-12">
@@ -1890,7 +1487,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <div class="card-body">
             <?php if ($success): ?>
                 <div class="alert alert-success alert-dismissible fade show" role="alert">
-                    <i class="fa fa-check-circle"></i> 
+                    <i class="fa fa-check-circle"></i>
                     <strong>Success!</strong> Staff member information has been updated successfully.
                     <div class="mt-2">
                         <a href="view_staff.php?svcNo=<?= urlencode($staff->svcNo ?? '') ?>" class="btn btn-sm btn-primary">
@@ -1903,11 +1500,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
             <?php endif; ?>
-            
+
             <?php if ($errors): ?>
                 <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                    <i class="fa fa-exclamation-triangle"></i> 
-                    <strong>Please correct the following errors:</strong>
+                    <i class="fa fa-exclamation-triangle"></i>
+                    <strong><?= $success ? 'Please note:' : 'Please correct the following errors:' ?></strong>
                     <ul class="mb-0 mt-2">
                         <?php foreach ($errors as $err): ?>
                             <li><?=htmlspecialchars($err)?></li>
@@ -1919,7 +1516,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             <?php if (!$staff && isset($_GET['svcNo'])): ?>
                 <div class="alert alert-warning alert-dismissible fade show" role="alert">
-                    <i class="fa fa-exclamation-triangle"></i> 
+                    <i class="fa fa-exclamation-triangle"></i>
                     <strong>Staff member not found.</strong> The requested staff member could not be found.
                     <a href="edit_staff.php" class="btn btn-sm btn-armis-primary ms-2">
                         <i class="fa fa-search"></i> Search Again
@@ -1955,7 +1552,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                     </div>
                 </div>
-                
+
 <!-- Action Buttons -->
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <div>
@@ -2022,7 +1619,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                     </div>
                 </div>
-                
+
                 <!-- Live Search Form -->
                 <div class="card mb-4">
                     <div class="card-header">
@@ -2032,10 +1629,12 @@ document.addEventListener('DOMContentLoaded', function() {
                         <form id="searchForm" aria-label="Search Staff" autocomplete="off" onsubmit="return false;">
                             <div class="row g-3">
                                 <div class="col-md-3">
-                                    <input type="text" name="search" id="searchStaff" class="form-control" 
+                                    <label for="searchStaff" class="visually-hidden">Search by service number or name</label>
+                                    <input type="text" name="search" id="searchStaff" class="form-control"
                                            placeholder="Search by Service No, Name..." autocomplete="off">
                                 </div>
                                 <div class="col-md-2">
+                                    <label for="filterRank" class="visually-hidden">Filter by rank</label>
                                     <select class="form-select" id="filterRank" name="filterRank">
                                         <option value="">Rank</option>
                                         <?php foreach ($ranks as $rank): ?>
@@ -2046,6 +1645,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     </select>
                                 </div>
                                 <div class="col-md-2">
+                                    <label for="filterUnit" class="visually-hidden">Filter by unit</label>
                                     <select class="form-select" id="filterUnit" name="filterUnit">
                                         <option value="">Unit</option>
                                         <?php foreach ($units as $unit): ?>
@@ -2056,6 +1656,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     </select>
                                 </div>
                                 <div class="col-md-2">
+                                    <label for="filterStatus" class="visually-hidden">Filter by status</label>
                                     <select class="form-select" id="filterStatus" name="filterStatus">
                                         <option value="">Status</option>
                                         <?php foreach (VALID_STATUSES as $status): ?>
@@ -2066,6 +1667,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     </select>
                                 </div>
                                 <div class="col-md-2">
+                                    <label for="perPageSelect" class="visually-hidden">Records per page</label>
                                     <select class="form-select" id="perPageSelect" name="per_page" title="Records per page">
                                         <?php foreach ([10, 25, 50, 100, 200] as $pp): ?>
                                             <option value="<?=$pp?>" <?=$pp === 25 ? 'selected' : ''?>><?=$pp?> per page</option>
@@ -2073,7 +1675,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     </select>
                                 </div>
                                 <div class="col-md-1">
-                                    <button class="btn btn-outline-secondary w-100" type="button" onclick="clearFilters()">
+                                    <button class="btn btn-outline-secondary w-100" type="button" onclick="clearFilters()" aria-label="Clear all search filters">
                                         <i class="fa fa-times"></i> Clear
                                     </button>
                                 </div>
@@ -2081,8 +1683,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         </form>
                     </div>
                 </div>
-                
-                
+
+
                 <!-- Results Table -->
                 <div class="table-responsive print-friendly">
                     <table class="table table-striped table-hover align-middle" id="staffResultsTable">
@@ -2096,54 +1698,13 @@ document.addEventListener('DOMContentLoaded', function() {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr><td colspan="5" class="text-center text-muted">Enter search criteria to find staff members</td></tr>
+                            <tr><td colspan="5" class="text-center text-muted py-4"><i class="fa fa-search me-2"></i>Enter search criteria to find staff members</td></tr>
                         </tbody>
                     </table>
                 </div>
                 <nav>
                     <ul class="pagination justify-content-end" id="pagination"></ul>
                 </nav>
-                <!-- Recent Activity (moved below results table) -->
-               <!-- <?php if (!empty($recentActivity) && is_array($recentActivity)): ?>
-                <div class="card mb-4">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h6 class="mb-0">Recent Staff Updates</h6>
-                        <small class="text-muted">Last 5 activities</small>
-                    </div>
-                    <div class="card-body">
-                        <div class="timeline">
-                            <?php foreach ($recentActivity as $activity): ?>
-                                <div class="timeline-item">
-                                    <div class="timeline-marker"></div>
-                                    <div class="timeline-content">
-                                        <h6 class="mb-1">
-                                            <?=htmlspecialchars(($activity->fName ?? 'Unknown') . ' ' . ($activity->lName ?? 'Staff'))?>
-                                            <small class="text-muted">(<?=htmlspecialchars($activity->svcNo ?? 'N/A')?>)</small>
-                                        </h6>
-                                        <p class="mb-1">
-                                            Updated by: <?=htmlspecialchars($activity->edited_by_username ?? 'Unknown')?>
-                                        </p>
-                                        <small class="text-muted">
-                                            <?=isset($activity->edited_at) ? date('M j, Y g:i A', strtotime($activity->edited_at)) : 'Unknown date'?>
-                                        </small>
-                                        <?php if (isset($activity->changes) && $activity->changes): ?>
-                                            <div class="mt-2">
-                                                <?php 
-                                                $changes = json_decode($activity->changes, true);
-                                                if ($changes): ?>
-                                                    <small class="text-info">
-                                                        Changes: <?=count($changes)?> field(s) updated
-                                                    </small>
-                                                <?php endif; ?>
-                                            </div>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                </div>
-                <?php endif; ?> -->
                 <script>
                 const searchInput = document.getElementById('searchStaff');
                 const resultsTable = document.getElementById('staffResultsTable').getElementsByTagName('tbody')[0];
@@ -2151,11 +1712,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 const filterUnit = document.getElementById('filterUnit');
                 const filterStatus = document.getElementById('filterStatus');
                 const perPageSelect = document.getElementById('perPageSelect');
-                
+
                 let typingTimer;
                 let lastSearchTerm = '';
                 let isSearching = false;
-                
+
                 function showSearchLoading() {
                     resultsTable.innerHTML = `
                         <tr>
@@ -2164,36 +1725,36 @@ document.addEventListener('DOMContentLoaded', function() {
                             </td>
                         </tr>`;
                 }
-                
+
                 function buildSearchQuery() {
                     const params = new URLSearchParams();
                     params.append('ajax', '1');
                     params.append('search', searchInput.value.trim());
-                    
+
                     if (filterRank.value) {
                         params.append('rank', filterRank.value);
                         filterRank.classList.add('filter-active');
                     } else {
                         filterRank.classList.remove('filter-active');
                     }
-                    
+
                     if (filterUnit.value) {
                         params.append('unit', filterUnit.value);
                         filterUnit.classList.add('filter-active');
                     } else {
                         filterUnit.classList.remove('filter-active');
                     }
-                    
+
                     if (filterStatus.value) {
                         params.append('status', filterStatus.value);
                         filterStatus.classList.add('filter-active');
                     } else {
                         filterStatus.classList.remove('filter-active');
                     }
-                    
+
                     return params.toString();
                 }
-                
+
                 function escapeHtml(unsafe) {
                     return unsafe
                         .replace(/&/g, "&amp;")
@@ -2202,20 +1763,21 @@ document.addEventListener('DOMContentLoaded', function() {
                         .replace(/"/g, "&quot;")
                         .replace(/'/g, "&#039;");
                 }
-                
+
                 // Server-side pagination parameters (matching reports_seniority.php)
                 let currentPage = 1;
                 let itemsPerPage = 25;
                 let totalItems = 0;
                 let totalPages = 0;
                 let currentData = [];
-                
+                let currentGroupingSafe = false;
+
                 function renderPagination() {
                     const pagination = document.getElementById('pagination');
                     pagination.innerHTML = '';
-                    
+
                     if (totalPages <= 1) return;
-                    
+
                     // Previous button
                     const prevLi = document.createElement('li');
                     prevLi.className = `page-item ${currentPage === 1 ? 'disabled' : ''}`;
@@ -2233,16 +1795,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     });
                     prevLi.appendChild(prevLink);
                     pagination.appendChild(prevLi);
-                    
+
                     // Page numbers (matching reports_seniority.php - 7 links)
                     const maxLinks = 7;
                     let startPage = Math.max(1, currentPage - Math.floor(maxLinks / 2));
                     let endPage = Math.min(totalPages, startPage + maxLinks - 1);
-                    
+
                     if (endPage - startPage + 1 < maxLinks) {
                         startPage = Math.max(1, endPage - maxLinks + 1);
                     }
-                    
+
                     for (let i = startPage; i <= endPage; i++) {
                         const pageLi = document.createElement('li');
                         pageLi.className = `page-item ${i === currentPage ? 'active' : ''}`;
@@ -2260,7 +1822,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         pageLi.appendChild(pageLink);
                         pagination.appendChild(pageLi);
                     }
-                    
+
                     // Next button
                     const nextLi = document.createElement('li');
                     nextLi.className = `page-item ${currentPage === totalPages ? 'disabled' : ''}`;
@@ -2279,16 +1841,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     nextLi.appendChild(nextLink);
                     pagination.appendChild(nextLi);
                 }
-                
+
                 function renderTable(data) {
-                // Convert string to Title Case (basic capitalization)
                 function titleCase(str) {
                     return str.replace(/\w\S*/g, function(txt){
                         return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
                     });
                 }
                     resultsTable.innerHTML = '';
-                    
+                    let lastRenderedGroup = null;
+
                     if (data.length === 0) {
                         resultsTable.innerHTML = `
                             <tr>
@@ -2299,18 +1861,29 @@ document.addEventListener('DOMContentLoaded', function() {
                             </tr>`;
                         return;
                     }
-                    
-                    // Server-side pagination - no client-side slicing needed
-                    // Render table rows directly from server data
+
                     data.forEach(function(staff) {
+                        // Roster group section header (Officers / NCOs /
+                        // Civilian Employees), only when rows are in
+                        // default seniority order so the groups are
+                        // actually contiguous.
+                        if (currentGroupingSafe && staff.rosterGroup && staff.rosterGroup !== lastRenderedGroup) {
+                            const groupTr = document.createElement('tr');
+                            groupTr.className = 'table-secondary';
+                            const td = document.createElement('td');
+                            td.colSpan = 5;
+                            td.innerHTML = '<strong>' + escapeHtml(staff.rosterGroup) + '</strong>';
+                            groupTr.appendChild(td);
+                            resultsTable.appendChild(groupTr);
+                            lastRenderedGroup = staff.rosterGroup;
+                        }
+
                         const tr = document.createElement('tr');
                         tr.ondblclick = function() {
-                            // Log audit view action
                             fetch('?ajax=1&audit_view=1&svcNo=' + encodeURIComponent(staff.svcNo));
-                            // Redirect to view page using svcNo
                             window.location.href = 'view_staff.php?svcNo=' + encodeURIComponent(staff.svcNo);
                         };
-                        
+
                         tr.innerHTML =
                             '<td class="fw-bold">' + escapeHtml(staff.svcNo) + '</td>' +
                             '<td><span class="badge bg-secondary">' + escapeHtml(staff.rank) + '</span></td>' +
@@ -2326,8 +1899,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             '</td>';
                         resultsTable.appendChild(tr);
                     });
-                    
-                    // Add pagination info row showing server-side pagination info
+
                     const start = (currentPage - 1) * itemsPerPage + 1;
                     const end = Math.min(currentPage * itemsPerPage, totalItems);
                     const countRow = document.createElement('tr');
@@ -2337,31 +1909,27 @@ document.addEventListener('DOMContentLoaded', function() {
                             <small><i class="fa fa-info-circle"></i> Showing ${start} to ${end} of ${totalItems} staff members (Page ${currentPage} of ${totalPages})</small>
                         </td>`;
                     resultsTable.appendChild(countRow);
-                    
-                    // Update pagination controls
+
                     renderPagination();
                 }
-                
+
                 function fetchResults() {
                     const queryString = buildSearchQuery();
-                    
-                    // Add server-side pagination parameters
+
                     const url = new URL(window.location.origin + window.location.pathname + '?' + queryString);
                     url.searchParams.append('exclude_inactive', '1');
-                    // Ensure server-side AJAX handler is invoked
                     url.searchParams.append('ajax', '1');
                     url.searchParams.append('page', currentPage);
                     url.searchParams.append('per_page', itemsPerPage);
-                    
-                    // Avoid duplicate searches
+
                     if (url.toString() === lastSearchTerm || isSearching) {
                         return;
                     }
-                    
+
                     lastSearchTerm = url.toString();
                     isSearching = true;
                     showSearchLoading();
-                    
+
                     fetch(url)
                         .then(response => {
                             if (!response.ok) {
@@ -2371,31 +1939,27 @@ document.addEventListener('DOMContentLoaded', function() {
                         })
                         .then(data => {
                             isSearching = false;
-                            
-                            // Handle new server-side pagination response format
+
                             if (data && data.data && data.pagination) {
-                                // Server returned pagination data
                                 currentData = data.data;
                                 totalItems = data.pagination.total_items;
                                 totalPages = data.pagination.total_pages;
                                 currentPage = data.pagination.current_page;
                                 itemsPerPage = data.pagination.per_page;
-                                
-                                // Render the table with server data
+                                currentGroupingSafe = !!data.groupingSafe;
+
                                 renderTable(currentData);
                             } else if (Array.isArray(data)) {
-                                // Fallback: old format without pagination
                                 currentData = data;
                                 totalItems = data.length;
                                 totalPages = 1;
-                                
-                                // Render the table
+                                currentGroupingSafe = false;
+
                                 renderTable(currentData);
                             } else {
                                 throw new Error('Invalid response format');
                             }
-                            
-                            // Log search action for audit trail
+
                             const searchParams = {
                                 search: searchInput.value.trim(),
                                 rank: filterRank.value,
@@ -2403,7 +1967,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 status: filterStatus.value,
                                 action: 'staff_search'
                             };
-                            
+
                             fetch('?ajax=1&log_search=1', {
                                 method: 'POST',
                                 headers: {
@@ -2424,90 +1988,82 @@ document.addEventListener('DOMContentLoaded', function() {
                                 </tr>`;
                         });
                 }
-                
+
                 function clearFilters() {
                     searchInput.value = '';
                     filterRank.value = '';
                     filterUnit.value = '';
                     filterStatus.value = '';
                     [filterRank, filterUnit, filterStatus].forEach(el => el.classList.remove('filter-active'));
-                    currentPage = 1; // Reset to first page
+                    currentPage = 1;
                     fetchResults();
                 }
-                
-                // Initialize search
+
                 fetchResults();
-                
-                // Event listeners
+
                 searchInput.addEventListener('input', function() {
                     clearTimeout(typingTimer);
-                    currentPage = 1; // Reset to first page on new search
+                    currentPage = 1;
                     typingTimer = setTimeout(fetchResults, 300);
                 });
-                
+
                 filterRank.addEventListener('change', function() {
-                    currentPage = 1; // Reset to first page on filter change
+                    currentPage = 1;
                     fetchResults();
                 });
                 filterUnit.addEventListener('change', function() {
-                    currentPage = 1; // Reset to first page on filter change
+                    currentPage = 1;
                     fetchResults();
                 });
                 filterStatus.addEventListener('change', function() {
-                    currentPage = 1; // Reset to first page on filter change
+                    currentPage = 1;
                     fetchResults();
                 });
-                
-                // Per-page selector change event
+
                 perPageSelect.addEventListener('change', function() {
                     itemsPerPage = parseInt(this.value);
-                    currentPage = 1; // Reset to first page
+                    currentPage = 1;
                     fetchResults();
                 });
-                
-                // Search on Enter key
+
                 searchInput.addEventListener('keypress', function(e) {
                     if (e.key === 'Enter') {
                         clearTimeout(typingTimer);
                         fetchResults();
                     }
                 });
-                
-                // Keyboard shortcuts
+
                 document.addEventListener('keydown', function(e) {
                     if (e.ctrlKey && e.key === 'f') {
                         e.preventDefault();
                         searchInput.focus();
                     }
                 });
-                
-                // Print functionality
+
                 document.getElementById('print-staff-list').addEventListener('click', function() {
                     window.print();
                 });
-                
-                // Column visibility toggle
+
                 document.querySelectorAll('.toggle-col').forEach(function(checkbox) {
                     const colName = checkbox.dataset.col;
-                    
-                    // Check local storage for saved preferences
+
                     const savedState = localStorage.getItem('staff-col-' + colName);
                     if (savedState !== null) {
                         checkbox.checked = savedState === 'true';
                         toggleColumnVisibility(colName, checkbox.checked);
                     }
-                    
+
                     checkbox.addEventListener('change', function() {
                         toggleColumnVisibility(colName, this.checked);
                         localStorage.setItem('staff-col-' + colName, this.checked);
                     });
                 });
-                
+
                 function toggleColumnVisibility(colName, isVisible) {
                     const table = document.getElementById('staffResultsTable');
                     const headerCells = table.querySelectorAll('thead th');
                     const dataCells = table.querySelectorAll('tbody td');
-                    
+
                     let columnIndex = -1;
                     for (let i = 0; i < headerCells.length; i++) {
                         if (headerCells[i].textContent.trim().toLowerCase().includes(colName.replace('-', ' '))) {
@@ -2515,12 +2071,10 @@ document.addEventListener('DOMContentLoaded', function() {
                             break;
                         }
                     }
-                    
+
                     if (columnIndex >= 0) {
-                        // Toggle header
                         headerCells[columnIndex].style.display = isVisible ? '' : 'none';
-                        
-                        // Toggle data cells
+
                         const rows = table.querySelectorAll('tbody tr');
                         rows.forEach(row => {
                             const cells = row.querySelectorAll('td');
@@ -2549,7 +2103,6 @@ document.addEventListener('DOMContentLoaded', function() {
                             display: none !important;
                         }
                     }
-                    /* Timeline styling */
                     .timeline {
                         position: relative;
                         padding-left: 30px;
@@ -2572,14 +2125,12 @@ document.addEventListener('DOMContentLoaded', function() {
                         padding-bottom: 15px;
                         border-bottom: 1px solid #e3e6f0;
                     }
-                    
-                    /* Filter active indicator */
+
                     .filter-active {
                         border-color: #4e73df;
                         box-shadow: 0 0 0 0.2rem rgba(78, 115, 223, 0.25);
                     }
-                    
-                    /* Staff table enhancements */
+
                     #staffResultsTable tbody tr {
                         cursor: pointer;
                         transition: background-color 0.15s ease;
@@ -2651,7 +2202,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="step-label">Operations</div>
             </div>
             <div class="step" data-step="4">
-                <div class="step-icon"><i class="fa fa-plane"></i></div>
+                <div class="step-icon"><i class="fa fa-person-rifle"></i></div>
                 <div class="step-label">Deployments</div>
             </div>
             <div class="step" data-step="5">
@@ -2791,11 +2342,14 @@ document.addEventListener('DOMContentLoaded', function() {
                             <option value="">Select Corps</option>
                             <?php foreach ($corps as $corpsItem): ?>
                                 <option value="<?= htmlspecialchars($corpsItem->id) ?>"
-                                        <?= (!empty($staff) && isset($staff->corpsId) && $staff->corpsId == $corpsItem->id) ? 'selected' : '' ?>>
+                                        <?= (!empty($staff) && isset($staff->corps) && $staff->corps == $corpsItem->id) ? 'selected' : '' ?>>
                                     <?= htmlspecialchars($corpsItem->name) ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
+                        <small class="form-text text-muted">
+                            Current: <strong><?= htmlspecialchars(!empty($staff) ? ($staff->corps ?? 'Not set') : 'Not set') ?></strong>
+                        </small>
                     </div>
                     <!-- NRC -->
                     <div class="col-md-6">
@@ -2842,11 +2396,13 @@ document.addEventListener('DOMContentLoaded', function() {
                         <label for="maritalStatus" class="form-label">Marital Status <span class="text-muted">(Optional)</span></label>
                         <select class="form-select" name="maritalStatus" id="maritalStatus">
                             <option value="">Select Status</option>
-                            <?php 
-                            $maritalStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
+                            <?php
+                            // staff.marital is enum('Single','Married','Divorced','Widowed') -
+                            // 'Separated' is not a valid value in the DB and would fail to save.
+                            $maritalStatuses = ['Single', 'Married', 'Divorced', 'Widowed'];
                             foreach ($maritalStatuses as $status): ?>
-                                <option value="<?= htmlspecialchars($status) ?>" 
-                                        <?= (!empty($staff) && ($staff->marital ?? $staff->maritalStatus ?? $staff->marital_status ?? '') === $status) ? 'selected' : '' ?>>
+                                <option value="<?= htmlspecialchars($status) ?>"
+                                        <?= (!empty($staff) && ($staff->marital ?? '') === $status) ? 'selected' : '' ?>>
                                     <?= htmlspecialchars($status) ?>
                                 </option>
                             <?php endforeach; ?>
@@ -2862,7 +2418,10 @@ document.addEventListener('DOMContentLoaded', function() {
                         <select class="form-select <?= isset($validationErrors['svcStatus']) ? 'is-invalid' : '' ?>"
                                 name="svcStatus" id="svcStatus" required aria-describedby="svcStatus-help">
                             <option value="">Select Status</option>
-                            <?php foreach (VALID_STATUSES as $status): ?>
+                            <?php
+                            // VALID_STATUSES labels match the DB enum's own casing exactly - no mapping needed
+                            foreach (VALID_STATUSES as $status):
+                            ?>
                                 <option value="<?= htmlspecialchars($status) ?>"
                                         <?= (!empty($staff) && $staff->svcStatus == $status) ? 'selected' : '' ?>>
                                     <?= htmlspecialchars($status) ?>
@@ -2876,7 +2435,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="col-md-6">
                         <label for="tel" class="form-label">Telephone <span class="text-muted">(Optional)</span></label>
                         <input type="tel" class="form-control <?= isset($validationErrors['tel']) ? 'is-invalid' : '' ?>" name="tel" id="tel"
-                               value="<?= htmlspecialchars($staff->tel ?? '') ?>"
+                               value="<?= htmlspecialchars($staff->telNo ?? '') ?>"
                                placeholder="+260 XXX XXX XXX" maxlength="20">
                         <small class="form-text text-muted">Contact telephone number (e.g., +260 977 123 456)</small>
                         <div class="invalid-feedback" id="tel-error"><?= $validationErrors['tel'] ?? '' ?></div>
@@ -2888,7 +2447,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="col-md-6">
                         <label for="email" class="form-label">Email Address <span class="text-muted">(Optional)</span></label>
                         <input type="email" class="form-control <?= isset($validationErrors['email']) ? 'is-invalid' : '' ?>" name="email" id="email"
-                               value="<?= htmlspecialchars($staff->email ?? '') ?>"
+                               value="<?= htmlspecialchars($staff->officialEmail ?? '') ?>"
                                placeholder="example@mail.com" maxlength="100">
                         <small class="form-text text-muted">Official email address (leave empty if not available)</small>
                         <div class="invalid-feedback" id="email-error"><?= $validationErrors['email'] ?? '' ?></div>
@@ -2908,10 +2467,10 @@ document.addEventListener('DOMContentLoaded', function() {
                         <label for="religion" class="form-label">Religion <span class="text-muted">(Optional)</span></label>
                         <select class="form-select" name="religion" id="religion">
                             <option value="">Select Religion</option>
-                            <?php 
+                            <?php
                             $religions = ['Christian', 'Islam', 'Hinduism', 'Buddhism', 'Judaism', 'Traditional', 'Other', 'None'];
                             foreach ($religions as $religion): ?>
-                                <option value="<?= htmlspecialchars($religion) ?>" 
+                                <option value="<?= htmlspecialchars($religion) ?>"
                                         <?= (!empty($staff) && ($staff->religion ?? '') === $religion) ? 'selected' : '' ?>>
                                     <?= htmlspecialchars($religion) ?>
                                 </option>
@@ -2924,11 +2483,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         <label for="bloodGroup" class="form-label">Blood Group <span class="text-muted">(Optional)</span></label>
                         <select class="form-select" name="bloodGroup" id="bloodGroup">
                             <option value="">Select Blood Group</option>
-                            <?php 
+                            <?php
                             $bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
                             foreach ($bloodGroups as $bg): ?>
-                                <option value="<?= htmlspecialchars($bg) ?>" 
-                                        <?= (!empty($staff) && ($staff->bloodGroup ?? $staff->bloodGp ?? '') === $bg) ? 'selected' : '' ?>>
+                                <option value="<?= htmlspecialchars($bg) ?>"
+                                        <?= (!empty($staff) && ($staff->bloodGp ?? '') === $bg) ? 'selected' : '' ?>>
                                     <?= htmlspecialchars($bg) ?>
                                 </option>
                             <?php endforeach; ?>
@@ -2945,8 +2504,6 @@ document.addEventListener('DOMContentLoaded', function() {
                         <div class="invalid-feedback" id="height-error"><?= $validationErrors['height'] ?? '' ?></div>
                     </div>
                 </div>
-
-
 
                 <!-- Next of Kin Information -->
                 <div class="alert alert-secondary">
@@ -2972,17 +2529,20 @@ document.addEventListener('DOMContentLoaded', function() {
                             <input type="text" class="form-control <?= isset($validationErrors['nokNrc']) ? 'is-invalid' : '' ?>" name="nokNrc" id="nokNrc"
                                    value="<?= htmlspecialchars($staff->nokNrc ?? '') ?>"
                                    placeholder="123456/12/1" maxlength="<?= MAX_NRC_LENGTH ?>">
-                            <small class="form-text text-muted">Format: XXXXXX/XX/X (e.g., 123456/12/1)</small>
+                            <small class="form-text text-muted">
+                                Format: XXXXXX/XX/X (e.g., 123456/12/1). This is saved to the
+                                <code>nokNrc</code> column on the staff table.
+                            </small>
                             <div class="invalid-feedback" id="nokNrc-error"><?= $validationErrors['nokNrc'] ?? '' ?></div>
                         </div>
                         <div class="col-md-6">
                             <label for="nokRelat" class="form-label">Relationship <span class="text-muted">(Optional)</span></label>
                             <select class="form-select" name="nokRelat" id="nokRelat">
                                 <option value="">Select Relationship</option>
-                                <?php 
+                                <?php
                                 $relationships = ['Parent', 'Spouse', 'Child', 'Sibling', 'Grandparent', 'Uncle', 'Aunt', 'Cousin', 'Friend', 'Other'];
                                 foreach ($relationships as $rel): ?>
-                                    <option value="<?= htmlspecialchars($rel) ?>" 
+                                    <option value="<?= htmlspecialchars($rel) ?>"
                                             <?= (!empty($staff) && ($staff->nokRelat ?? '') === $rel) ? 'selected' : '' ?>>
                                         <?= htmlspecialchars($rel) ?>
                                     </option>
@@ -3000,7 +2560,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <label for="profession" class="form-label">Profession <span class="text-muted">(Optional)</span></label>
                             <select class="form-select" name="profession" id="profession">
                                 <option value="">Select Profession</option>
-                                <?php 
+                                <?php
                                 $professions = [
                                     'Engineer', 'Doctor', 'Lawyer', 'Teacher', 'Accountant', 'Nurse', 'Pilot',
                                     'Mechanic', 'Electrician', 'Technician', 'Administrator', 'Manager',
@@ -3009,7 +2569,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     'Chef', 'Driver', 'Security Officer', 'Clerk', 'Supervisor'
                                 ];
                                 foreach ($professions as $profession): ?>
-                                    <option value="<?= htmlspecialchars($profession) ?>" 
+                                    <option value="<?= htmlspecialchars($profession) ?>"
                                             <?= (!empty($staff) && ($staff->profession ?? '') === $profession) ? 'selected' : '' ?>>
                                         <?= htmlspecialchars($profession) ?>
                                     </option>
@@ -3020,7 +2580,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <label for="trade" class="form-label">Trade <span class="text-muted">(Optional)</span></label>
                             <select class="form-select" name="trade" id="trade">
                                 <option value="">Select Trade</option>
-                                <?php 
+                                <?php
                                 $trades = [
                                     'Automotive Mechanic', 'Heavy Equipment Mechanic', 'Aircraft Mechanic',
                                     'Electrician', 'Electronics Technician', 'Telecommunications Technician',
@@ -3032,7 +2592,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     'Tailor', 'Barber', 'Armorer', 'Logistics Specialist'
                                 ];
                                 foreach ($trades as $trade): ?>
-                                    <option value="<?= htmlspecialchars($trade) ?>" 
+                                    <option value="<?= htmlspecialchars($trade) ?>"
                                             <?= (!empty($staff) && ($staff->trade ?? '') === $trade) ? 'selected' : '' ?>>
                                         <?= htmlspecialchars($trade) ?>
                                     </option>
@@ -3043,34 +2603,25 @@ document.addEventListener('DOMContentLoaded', function() {
                             <label for="specialization" class="form-label">Specialization <span class="text-muted">(Optional)</span></label>
                             <select class="form-select" name="specialization" id="specialization">
                                 <option value="">Select Specialization</option>
-                                <?php 
+                                <?php
                                 $specializations = [
-                                    // Medical Specializations
                                     'General Medicine', 'Surgery', 'Pediatrics', 'Psychiatry', 'Cardiology',
                                     'Orthopedics', 'Emergency Medicine', 'Anesthesiology', 'Radiology',
-                                    
-                                    // Engineering Specializations
                                     'Civil Engineering', 'Mechanical Engineering', 'Electrical Engineering',
                                     'Electronics Engineering', 'Computer Engineering', 'Aerospace Engineering',
                                     'Communications Engineering', 'Environmental Engineering',
-                                    
-                                    // Military Specializations
                                     'Infantry Operations', 'Artillery Operations', 'Armor Operations',
                                     'Aviation Operations', 'Naval Operations', 'Special Forces',
                                     'Intelligence Analysis', 'Cyber Operations', 'Logistics Management',
                                     'Military Police', 'Combat Engineering', 'Signal Operations',
-                                    
-                                    // Technical Specializations
                                     'Information Technology', 'Cybersecurity', 'Database Management',
                                     'Network Administration', 'Software Development', 'Systems Analysis',
                                     'Quality Assurance', 'Project Management', 'Training & Development',
-                                    
-                                    // Other Specializations
                                     'Human Resources', 'Finance & Accounting', 'Legal Affairs',
                                     'Public Relations', 'Administration', 'Procurement', 'Security Management'
                                 ];
                                 foreach ($specializations as $specialization): ?>
-                                    <option value="<?= htmlspecialchars($specialization) ?>" 
+                                    <option value="<?= htmlspecialchars($specialization) ?>"
                                             <?= (!empty($staff) && ($staff->specialization ?? '') === $specialization) ? 'selected' : '' ?>>
                                         <?= htmlspecialchars($specialization) ?>
                                     </option>
@@ -3081,7 +2632,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
             </div>
         </div>
-        
+
         <!-- Step Navigation Buttons -->
         <div class="d-flex justify-content-between mt-4">
             <button type="button" class="btn btn-secondary" disabled>Previous</button>
@@ -3097,19 +2648,19 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
             <div class="card-body">
                             <div class="alert alert-info mb-3">
-                                <i class="fa fa-info-circle"></i> 
+                                <i class="fa fa-info-circle"></i>
                                 <strong>Uniform & Equipment Sizing:</strong> These sizes are used for uniform and equipment allocation.
                             </div>
                             <div class="row mb-3">
                                 <div class="col-md-3">
                                     <label for="combatSize" class="form-label">Combat Size <span class="text-muted">(Optional)</span></label>
-                                    <select class="form-select" name="combatSize" id="combatSize" 
+                                    <select class="form-select" name="combatSize" id="combatSize"
                                             title="Combat uniform size for protective gear and field uniforms">
                                         <option value="">Select Size</option>
-                                        <?php 
+                                        <?php
                                         $combatSizes = [
                                             'XS' => 'Extra Small (XS)',
-                                            'S' => 'Small (S)', 
+                                            'S' => 'Small (S)',
                                             'M' => 'Medium (M)',
                                             'L' => 'Large (L)',
                                             'XL' => 'Extra Large (XL)',
@@ -3118,7 +2669,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                             '4XL' => '4X Large (4XL)'
                                         ];
                                         foreach ($combatSizes as $value => $label): ?>
-                                            <option value="<?= htmlspecialchars($value) ?>" 
+                                            <option value="<?= htmlspecialchars($value) ?>"
                                                     <?= (!empty($staff) && ($staff->combatSize ?? '') === $value) ? 'selected' : '' ?>>
                                                 <?= htmlspecialchars($label) ?>
                                             </option>
@@ -3127,13 +2678,13 @@ document.addEventListener('DOMContentLoaded', function() {
                                 </div>
                                 <div class="col-md-3">
                                     <label for="bsize" class="form-label">Boot Size <span class="text-muted">(Optional)</span></label>
-                                    <select class="form-select" name="bsize" id="bsize" 
+                                    <select class="form-select" name="bsize" id="bsize"
                                             title="Military boot size for protective and combat footwear">
                                         <option value="">Select Size</option>
-                                        <?php 
+                                        <?php
                                         for ($i = 4; $i <= 15; $i++): ?>
-                                            <option value="<?= $i ?>" 
-                                                    <?= (!empty($staff) && ($staff->bootSize ?? $staff->bsize ?? '') == $i) ? 'selected' : '' ?>>
+                                            <option value="<?= $i ?>"
+                                                    <?= (!empty($staff) && ($staff->bootSize ?? '') == $i) ? 'selected' : '' ?>>
                                                 <?= $i ?>
                                             </option>
                                         <?php endfor; ?>
@@ -3141,27 +2692,30 @@ document.addEventListener('DOMContentLoaded', function() {
                                 </div>
                                 <div class="col-md-3">
                                     <label for="ssize" class="form-label">Staff Shoe Size <span class="text-muted">(Optional)</span></label>
-                                    <select class="form-select" name="ssize" id="ssize" 
+                                    <select class="form-select" name="ssize" id="ssize"
                                             title="Dress shoe size for formal and ceremonial footwear">
                                         <option value="">Select Size</option>
-                                        <?php 
+                                        <?php
                                         for ($i = 4; $i <= 15; $i++): ?>
-                                            <option value="<?= $i ?>" 
-                                                    <?= (!empty($staff) && ($staff->shoeSize ?? $staff->ssize ?? '') == $i) ? 'selected' : '' ?>>
+                                            <option value="<?= $i ?>"
+                                                    <?= (!empty($staff) && ($staff->sSize ?? '') == $i) ? 'selected' : '' ?>>
                                                 <?= $i ?>
                                             </option>
                                         <?php endfor; ?>
                                     </select>
+                                    <small class="form-text text-muted">
+                                        Saved to the <code>sSize</code> column on staff.
+                                    </small>
                                 </div>
                                 <div class="col-md-3">
                                     <label for="hdress" class="form-label">Headdress Size <span class="text-muted">(Optional)</span></label>
-                                    <select class="form-select" name="hdress" id="hdress" 
+                                    <select class="form-select" name="hdress" id="hdress"
                                             title="Head dress size for berets, caps, and ceremonial headwear">
                                         <option value="">Select Size</option>
-                                        <?php 
+                                        <?php
                                         for ($i = 52; $i <= 65; $i++): ?>
-                                            <option value="<?= $i ?>" 
-                                                    <?= (!empty($staff) && ($staff->hDress ?? $staff->hdress ?? '') == $i) ? 'selected' : '' ?>>
+                                            <option value="<?= $i ?>"
+                                                    <?= (!empty($staff) && ($staff->hDress ?? '') == $i) ? 'selected' : '' ?>>
                                                 <?= $i ?>
                                             </option>
                                         <?php endfor; ?>
@@ -3178,15 +2732,56 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <div class="col-md-6">
                                     <label for="lastPromotion" class="form-label">Last Promotion Date <span class="text-muted">(Optional)</span></label>
                                     <input type="date" class="form-control" name="lastPromotion" id="lastPromotion"
-                                        value="<?=htmlspecialchars($staff->lastPromotion ?? '')?>">
+                                        value="<?=htmlspecialchars($staff->subWef ?? $staff->tempWef ?? '')?>">
+                                    <small class="form-text text-muted">Saved as substantive (subWef) or temporal (tempWef) seniority date, based on the selected rank's type</small>
+                                </div>
+                            </div>
+
+                            <div class="card border-secondary mb-3">
+                                <div class="card-header"><h6 class="mb-0"><i class="fa fa-id-card me-1"></i> Additional Staff Details</h6></div>
+                                <div class="card-body">
+                                    <div class="row g-3">
+                                        <div class="col-md-2"><label class="form-label" for="prefix">Prefix</label><input class="form-control" id="prefix" name="prefix" value="<?=htmlspecialchars($staff->prefix ?? '')?>" maxlength="3"></div>
+                                        <div class="col-md-5"><label class="form-label" for="mname">Middle Name(s)</label><input class="form-control" id="mname" name="mname" value="<?=htmlspecialchars($staff->mName ?? '')?>" maxlength="50"></div>
+                                        <div class="col-md-5"><label class="form-label" for="initials">Initials</label><input class="form-control" id="initials" name="initials" value="<?=htmlspecialchars($staff->initials ?? '')?>" maxlength="4"></div>
+                                        <div class="col-md-4"><label class="form-label" for="subRank">Substantive Rank Reference</label><input class="form-control" id="subRank" name="subRank" value="<?=htmlspecialchars($staff->subRank ?? '')?>" maxlength="10"></div>
+                                        <div class="col-md-4"><label class="form-label" for="tempRank">Temporary Rank Reference</label><input class="form-control" id="tempRank" name="tempRank" value="<?=htmlspecialchars($staff->tempRank ?? '')?>" maxlength="10"></div>
+                                        <div class="col-md-4"><label class="form-label" for="localRank">Local Rank</label><input class="form-control" id="localRank" name="localRank" value="<?=htmlspecialchars($staff->localRank ?? '')?>" maxlength="150"></div>
+                                        <div class="col-md-4"><label class="form-label" for="localWef">Local Rank Effective Date</label><input type="date" class="form-control" id="localWef" name="localWef" value="<?=htmlspecialchars($staff->localWef ?? '')?>"></div>
+                                        <div class="col-md-4"><label class="form-label" for="unitAtt">Unit Attached</label><input class="form-control" id="unitAtt" name="unitAtt" value="<?=htmlspecialchars($staff->unitAtt ?? '')?>" maxlength="25"></div>
+                                        <div class="col-md-4"><label class="form-label" for="intake">Intake</label><input class="form-control" id="intake" name="intake" value="<?=htmlspecialchars($staff->intake ?? '')?>" maxlength="15"></div>
+                                        <div class="col-md-4"><label class="form-label" for="province">Province</label><input class="form-control" id="province" name="province" value="<?=htmlspecialchars($staff->province ?? '')?>" maxlength="12"></div>
+                                        <div class="col-md-4"><label class="form-label" for="district">District</label><input class="form-control" id="district" name="district" value="<?=htmlspecialchars($staff->district ?? '')?>" maxlength="100"></div>
+                                        <div class="col-md-4"><label class="form-label" for="village">Village</label><input class="form-control" id="village" name="village" value="<?=htmlspecialchars($staff->village ?? '')?>" maxlength="100"></div>
+                                        <div class="col-md-4"><label class="form-label" for="titles">Titles</label><input class="form-control" id="titles" name="titles" value="<?=htmlspecialchars($staff->titles ?? '')?>" maxlength="80"></div>
+                                        <div class="col-md-4"><label class="form-label" for="digitalId">Digital ID</label><input class="form-control" id="digitalId" name="digitalId" value="<?=htmlspecialchars($staff->digitalId ?? '')?>" maxlength="10"></div>
+                                        <div class="col-md-4"><label class="form-label" for="tel2">Secondary Phone</label><input type="tel" class="form-control" id="tel2" name="tel2" value="<?=htmlspecialchars($staff->tel2 ?? '')?>" maxlength="20"></div>
+                                        <div class="col-md-4"><label class="form-label" for="passPort">Passport Number</label><input class="form-control" id="passPort" name="passPort" value="<?=htmlspecialchars($staff->passPort ?? '')?>" maxlength="15"></div>
+                                        <div class="col-md-4"><label class="form-label" for="passExp">Passport Expiry</label><input type="date" class="form-control" id="passExp" name="passExp" value="<?=htmlspecialchars($staff->passExp ?? '')?>"></div>
+                                    </div>
+                                    <hr>
+                                    <h6 class="text-secondary">Contract and Separation</h6>
+                                    <div class="row g-3">
+                                        <div class="col-md-4"><label class="form-label" for="contFrom">Contract Start</label><input type="date" class="form-control" id="contFrom" name="contFrom" value="<?=htmlspecialchars($staff->contFrom ?? '')?>"></div>
+                                        <div class="col-md-4"><label class="form-label" for="contDuration">Contract Duration</label><input class="form-control" id="contDuration" name="contDuration" value="<?=htmlspecialchars($staff->contDuration ?? '')?>" maxlength="11"></div>
+                                        <div class="col-md-4"><label class="form-label" for="contEnd">Contract End</label><input type="date" class="form-control" id="contEnd" name="contEnd" value="<?=htmlspecialchars($staff->contEnd ?? '')?>"></div>
+                                        <div class="col-md-4"><label class="form-label" for="dateSeparated">Date Separated</label><input type="date" class="form-control" id="dateSeparated" name="dateSeparated" value="<?=htmlspecialchars($staff->dateSeparated ?? '')?>"></div>
+                                    </div>
+                                    <hr>
+                                    <h6 class="text-secondary">Alternate Next of Kin</h6>
+                                    <div class="row g-3">
+                                        <div class="col-md-4"><label class="form-label" for="altNok">Name</label><input class="form-control" id="altNok" name="altNok" value="<?=htmlspecialchars($staff->altNok ?? '')?>" maxlength="50"></div>
+                                        <div class="col-md-4"><label class="form-label" for="altNokTel">Phone</label><input type="tel" class="form-control" id="altNokTel" name="altNokTel" value="<?=htmlspecialchars($staff->altNokTel ?? '')?>" maxlength="20"></div>
+                                        <div class="col-md-4"><label class="form-label" for="altNokRelat">Relationship</label><input class="form-control" id="altNokRelat" name="altNokRelat" value="<?=htmlspecialchars($staff->altNokRelat ?? '')?>" maxlength="30"></div>
+                                    </div>
                                 </div>
                             </div>
 
                             <?php if (isset($staff) && $staff): ?>
-                                <?php 
+                                <?php
                                     $retirementInfo = calculateRetirementInfo($staff->DOB ?? null, $staff->attestDate ?? null);
                                 ?>
-                                
+
                                 <!-- Retirement Information Display -->
                                 <div class="row mb-3">
                                     <div class="col-12">
@@ -3195,14 +2790,14 @@ document.addEventListener('DOMContentLoaded', function() {
                                                 <h6 class="card-title text-primary mb-3">
                                                     <i class="fa fa-calendar-times"></i> Retirement Information
                                                 </h6>
-                                                
+
                                                 <div class="row">
                                                     <!-- Expected Runout Date (Age 65) -->
                                                     <div class="col-md-6 mb-2">
                                                         <strong><i class="fa fa-hourglass-end text-primary"></i> Expected Runout Date (Age 65):</strong>
                                                         <div class="mt-1" data-retirement="runout">
                                                             <?php if ($retirementInfo['runout']): ?>
-                                                                <?php 
+                                                                <?php
                                                                     $runout = $retirementInfo['runout'];
                                                                     $urgencyClass = getRetirementUrgencyClass($runout['yearsRemaining']);
                                                                 ?>
@@ -3215,19 +2810,19 @@ document.addEventListener('DOMContentLoaded', function() {
                                                             <?php endif; ?>
                                                         </div>
                                                     </div>
-                                                    
+
                                                     <!-- Expected Early Retirement (20 Years Service) -->
                                                     <div class="col-md-6 mb-2">
                                                         <strong><i class="fa fa-calendar-alt text-primary"></i> Expected Early Retirement (20 Years Service):</strong>
                                                         <div class="mt-1" data-retirement="earlyRetirement">
                                                             <?php if ($retirementInfo['earlyRetirement']): ?>
-                                                                <?php 
+                                                                <?php
                                                                     $earlyRet = $retirementInfo['earlyRetirement'];
                                                                     $urgencyClass = getRetirementUrgencyClass($earlyRet['yearsRemaining']);
                                                                 ?>
                                                                 <div><?=$earlyRet['formatted']?></div>
                                                                 <small class="<?=$urgencyClass?>">
-                                                                    <i class="fa fa-clock"></i> <?=$earlyRet['remaining']?> 
+                                                                    <i class="fa fa-clock"></i> <?=$earlyRet['remaining']?>
                                                                     <?=$earlyRet['isPast'] ? '' : 'remaining'?>
                                                                 </small>
                                                             <?php else: ?>
@@ -3236,7 +2831,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                                         </div>
                                                     </div>
                                                 </div>
-                                                
+
                                                 <small class="text-muted d-block mt-2">
                                                     <i class="fa fa-info-circle"></i> These dates are automatically calculated and update when DOB or Attestation Date changes.
                                                 </small>
@@ -3251,7 +2846,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Step Navigation Buttons -->
                     <div class="d-flex justify-content-between mt-4">
                         <button type="button" class="btn btn-secondary" onclick="previousStep(1)">Previous</button>
@@ -3271,7 +2866,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             </div>
                             <div class="mb-3">
                                 <small class="text-muted">
-                                    <strong>Expected fields:</strong> Operation Name, Role, Location, Start/End Dates, Status, and Remarks
+                                    <strong>Expected fields:</strong> Operation Name, Location, Start/End Dates, and Remarks
                                 </small>
                             </div>
                             <div id="operationsList">
@@ -3282,7 +2877,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             </button>
                         </div>
                     </div>
-                    
+
                     <!-- Step Navigation Buttons -->
                     <div class="d-flex justify-content-between mt-4">
                         <button type="button" class="btn btn-secondary" onclick="previousStep(2)">Previous</button>
@@ -3294,7 +2889,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="form-step" id="step4">
                     <div class="card mb-4">
                         <div class="card-header bg-info text-white">
-                            <h5 class="mb-0"><i class="fa fa-plane"></i> Deployments</h5>
+                            <h5 class="mb-0"><i class="fa fa-person-rifle"></i> Deployments</h5>
                         </div>
                         <div class="card-body">
                             <div class="alert alert-info">
@@ -3313,7 +2908,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             </button>
                         </div>
                     </div>
-                    
+
                     <!-- Step Navigation Buttons -->
                     <div class="d-flex justify-content-between mt-4">
                         <button type="button" class="btn btn-secondary" onclick="previousStep(3)">Previous</button>
@@ -3344,7 +2939,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             </button>
                         </div>
                     </div>
-                    <!-- Dynamic Skills/Courses Section (optional, if applicable) -->
+                    <!-- Dynamic Skills/Courses Section -->
                     <div class="card mb-4">
                         <div class="card-header bg-warning text-dark">
                             <h5 class="mb-0"><i class="fa fa-cogs"></i> Skills & Courses</h5>
@@ -3386,7 +2981,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             </div>
                             <div class="mb-3">
                                 <small class="text-muted">
-                                    <strong>Expected fields:</strong> Unit, Location, Role/Appointment, Start/End Dates, Posting Order Reference
+                                    <strong>Expected fields:</strong> Appointment ID, Unit, Role/Appointment Type, Start/End Dates, Authority Reference
                                 </small>
                             </div>
                             <div id="postingsList">
@@ -3397,7 +2992,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             </button>
                         </div>
                     </div>
-                    
+
                     <!-- Step Navigation Buttons -->
                     <div class="d-flex justify-content-between mt-4">
                         <button type="button" class="btn btn-secondary" onclick="previousStep(5)">Previous</button>
@@ -3428,7 +3023,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             </button>
                         </div>
                     </div>
-                    
+
                     <!-- Step Navigation Buttons -->
                     <div class="d-flex justify-content-between mt-4">
                         <button type="button" class="btn btn-secondary" onclick="previousStep(6)">Previous</button>
@@ -3471,7 +3066,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         </button>
                     </div>
                 </div>
-                    
+
                     <div class="alert alert-info mt-3">
                         <p><i class="fa fa-info-circle"></i> <strong>Form Submission Tip:</strong> If the form isn't saving properly, navigate through all steps to ensure all required fields are completed.</p>
                     </div>
@@ -3488,13 +3083,9 @@ document.addEventListener('DOMContentLoaded', function() {
 <!-- Bootstrap JS and jQuery already loaded above -->
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Include multi-step form functionality
-    const script = document.createElement('script');
-    script.src = '/Armis2/admin_branch/js/multi-step-form.js';
-    document.head.appendChild(script);
     // Global counters for dynamic fields
     let operationCounter = 0;
-    let deploymentCounter = 0; 
+    let deploymentCounter = 0;
     let educationCounter = 0;
     let skillCounter = 0;
     let postingCounter = 0;
@@ -3510,26 +3101,27 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="card-body">
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="form-label">Operation ID</label>
-                            <input type="number" name="operations[${index}][opID]" class="form-control" 
-                                   placeholder="Operation ID" value="${data.opID || data.operation_id || ''}" required>
+                            <label class="form-label">Operation</label>
+                            <select name="operations[${index}][opId]" class="form-select" required>
+                                ${buildOperationsDropdown(data.opId)}
+                            </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">Appointment ID</label>
-                            <input type="number" name="operations[${index}][apptID]" class="form-control" 
-                                   placeholder="Appointment ID" value="${data.apptID || ''}">
+                            <label class="form-label">Authority Reference</label>
+                            <input type="text" name="operations[${index}][authorityId]" class="form-control"
+                                   placeholder="Authority reference" value="${data.authID || data.authorityId || ''}">
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
                         <div class="col-md-4">
                             <label class="form-label">Start Date</label>
-                            <input type="date" name="operations[${index}][startDate]" class="form-control" 
-                                   value="${data.startDate || ''}">
+                            <input type="date" name="operations[${index}][startDate]" class="form-control"
+                                   value="${data.opStart || data.startDate || ''}">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">End Date</label>
-                            <input type="date" name="operations[${index}][endDate]" class="form-control" 
-                                   value="${data.endDate || ''}">
+                            <input type="date" name="operations[${index}][endDate]" class="form-control"
+                                   value="${data.opEnd || data.endDate || ''}">
                         </div>
                         <div class="col-md-4 d-flex align-items-end">
                             <button type="button" class="btn btn-danger w-100" onclick="removeOperationRow(${index})">
@@ -3539,15 +3131,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                     <div class="row g-3 mt-2">
                         <div class="col-md-12">
-                            <label class="form-label">Reason Left</label>
-                            <textarea name="operations[${index}][reasonLeft]" class="form-control" rows="2" 
-                                      placeholder="Reason for leaving this operation">${data.reasonLeft || data.reason_left || ''}</textarea>
-                        </div>
-                    </div>
-                    <div class="row g-3 mt-2">
-                        <div class="col-md-12">
                             <label class="form-label">Remarks</label>
-                            <textarea name="operations[${index}][remarks]" class="form-control" rows="2" 
+                            <textarea name="operations[${index}][remarks]" class="form-control" rows="2"
                                       placeholder="Additional notes or remarks">${data.remarks || ''}</textarea>
                         </div>
                     </div>
@@ -3555,7 +3140,17 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
         `;
         container.insertAdjacentHTML('beforeend', html);
-        console.log('🎯 Added operation row #' + index);
+    }
+
+    function buildOperationsDropdown(selectedValue = '') {
+        let html = '<option value="">Select Operation</option>';
+        if (window.operationsOptions && window.operationsOptions.length > 0) {
+            window.operationsOptions.forEach(op => {
+                const selected = (selectedValue && selectedValue == op.id) ? 'selected' : '';
+                html += `<option value="${op.id}" ${selected}>${op.name}${op.code ? ' (' + op.code + ')' : ''}</option>`;
+            });
+        }
+        return html;
     }
 
     function addDeploymentRow(data = {}) {
@@ -3567,7 +3162,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="row g-3">
                         <div class="col-md-3">
                             <label class="form-label">Deployment Name</label>
-                            <input type="text" name="deployments[${index}][deployment_name]" class="form-control" 
+                            <input type="text" name="deployments[${index}][deployment_name]" class="form-control"
                                    placeholder="Deployment name" value="${data.deployment_name || ''}" required>
                         </div>
                         <div class="col-md-3">
@@ -3583,29 +3178,29 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Location</label>
-                            <input type="text" name="deployments[${index}][location]" class="form-control" 
+                            <input type="text" name="deployments[${index}][location]" class="form-control"
                                    placeholder="Deployment location" value="${data.location || ''}">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Country</label>
-                            <input type="text" name="deployments[${index}][country]" class="form-control" 
+                            <input type="text" name="deployments[${index}][country]" class="form-control"
                                    placeholder="Country" value="${data.country || ''}">
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
                         <div class="col-md-3">
                             <label class="form-label">Start Date</label>
-                            <input type="date" name="deployments[${index}][startDate]" class="form-control" 
+                            <input type="date" name="deployments[${index}][startDate]" class="form-control"
                                    value="${data.startDate || ''}">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">End Date</label>
-                            <input type="date" name="deployments[${index}][endDate]" class="form-control" 
+                            <input type="date" name="deployments[${index}][endDate]" class="form-control"
                                    value="${data.endDate || ''}">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Duration (Months) <small class="text-muted">Auto-calculated</small></label>
-                            <input type="number" name="deployments[${index}][durationMonths]" class="form-control" 
+                            <input type="number" name="deployments[${index}][durationMonths]" class="form-control"
                                    placeholder="Auto-calculated" value="${data.durationMonths || ''}" min="0" readonly>
                         </div>
                         <div class="col-md-3 d-flex align-items-end">
@@ -3617,7 +3212,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="row g-3 mt-2">
                         <div class="col-md-4">
                             <label class="form-label">Role During Deployment</label>
-                            <input type="text" name="deployments[${index}][role_during_deployment]" class="form-control" 
+                            <input type="text" name="deployments[${index}][role_during_deployment]" class="form-control"
                                    placeholder="Role during deployment" value="${data.role_during_deployment || data.role || ''}">
                         </div>
                         <div class="col-md-4">
@@ -3640,14 +3235,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="row g-3 mt-2">
                         <div class="col-md-12">
                             <label class="form-label">Commanding Officer</label>
-                            <input type="text" name="deployments[${index}][commanding_officer]" class="form-control" 
+                            <input type="text" name="deployments[${index}][commanding_officer]" class="form-control"
                                    placeholder="Commanding officer" value="${data.commanding_officer || ''}">
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
                         <div class="col-md-12">
                             <label class="form-label">Notes</label>
-                            <textarea name="deployments[${index}][notes]" class="form-control" rows="2" 
+                            <textarea name="deployments[${index}][notes]" class="form-control" rows="2"
                                       placeholder="Additional deployment notes">${data.notes || ''}</textarea>
                         </div>
                     </div>
@@ -3655,13 +3250,13 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
         `;
         container.insertAdjacentHTML('beforeend', html);
-        
+
         // Add event listeners for auto-calculating duration
         const deploymentCard = container.lastElementChild;
         const startDateInput = deploymentCard.querySelector(`input[name="deployments[${index}][startDate]"]`);
         const endDateInput = deploymentCard.querySelector(`input[name="deployments[${index}][endDate]"]`);
         const durationInput = deploymentCard.querySelector(`input[name="deployments[${index}][durationMonths]"]`);
-        
+
         function calculateDeploymentDuration() {
             if (startDateInput.value && endDateInput.value) {
                 const start = new Date(startDateInput.value);
@@ -3669,18 +3264,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (end >= start) {
                     const diffTime = Math.abs(end - start);
                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                    const months = Math.round(diffDays / 30.44); // Average days per month
+                    const months = Math.round(diffDays / 30.44);
                     durationInput.value = months;
                 } else {
                     durationInput.value = '';
                 }
             }
         }
-        
+
         startDateInput.addEventListener('change', calculateDeploymentDuration);
         endDateInput.addEventListener('change', calculateDeploymentDuration);
-        
-        console.log('✈️ Added deployment row #' + index);
     }
 
     function addEducationRow(data = {}) {
@@ -3691,74 +3284,68 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="card-body">
                     <div class="row g-3">
                         <div class="col-md-3">
-                            <label class="form-label">Institution ID</label>
-                            <input type="number" name="education[${index}][instId]" class="form-control" 
-                                   placeholder="Institution ID" value="${data.instId || data.institution || ''}" required>
+                            <label class="form-label">Institution</label>
+                            <input type="text" name="education[${index}][instId]" class="form-control"
+                                   placeholder="Institution" value="${data.instId || data.institution || ''}" required>
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Course ID</label>
-                            <input type="number" name="education[${index}][cseId]" class="form-control" 
+                            <input type="text" name="education[${index}][cseId]" class="form-control"
                                    placeholder="Course ID" value="${data.cseId || ''}">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Qualification</label>
-                            <input type="text" name="education[${index}][qualification]" class="form-control" 
+                            <input type="text" name="education[${index}][qualification]" class="form-control"
                                    placeholder="e.g., Bachelor's Degree" value="${data.qualification || ''}">
                         </div>
                         <div class="col-md-3">
-                            <label class="form-label">Authority ID</label>
-                            <input type="number" name="education[${index}][authorityId]" class="form-control" 
-                                   placeholder="Authority ID" value="${data.authorityId || ''}">
+                            <label class="form-label">Authority Reference</label>
+                            <input type="text" name="education[${index}][authorityId]" class="form-control"
+                                   placeholder="Authority reference" value="${data.authID || data.authorityId || ''}">
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
-                        <div class="col-md-2">
+                        <div class="col-md-3">
                             <label class="form-label">Start Year</label>
-                            <input type="number" name="education[${index}][yearStarted]" class="form-control" 
-                                   placeholder="2020" value="${data.yearStarted || data.year_started || ''}" min="1900" max="2030">
+                            <input type="number" name="education[${index}][yearStarted]" class="form-control"
+                                   placeholder="2020" value="${(data.cseStart || '').toString().slice(0,4) || data.yearStarted || ''}" min="1900" max="2030">
                         </div>
-                        <div class="col-md-2">
+                        <div class="col-md-3">
                             <label class="form-label">End Year</label>
-                            <input type="number" name="education[${index}][yearCompleted]" class="form-control" 
-                                   placeholder="2024" value="${data.yearCompleted || data.year_completed || ''}" min="1900" max="2030">
+                            <input type="number" name="education[${index}][yearCompleted]" class="form-control"
+                                   placeholder="2024" value="${(data.cseEnd || '').toString().slice(0,4) || data.yearCompleted || ''}" min="1900" max="2030">
                         </div>
-                        <div class="col-md-2">
+                        <div class="col-md-3">
                             <label class="form-label">Grade</label>
-                            <input type="text" name="education[${index}][grade]" class="form-control" 
-                                   placeholder="A, B+, etc." value="${data.grade || data.grade_obtained || ''}">
+                            <input type="text" name="education[${index}][grade]" class="form-control"
+                                   placeholder="A, B+, etc." value="${data.grade || ''}">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Result</label>
-                            <input type="text" name="education[${index}][result]" class="form-control" 
+                            <input type="text" name="education[${index}][result]" class="form-control"
                                    placeholder="Pass, Distinction, etc." value="${data.result || ''}">
-                        </div>
-                        <div class="col-md-3 d-flex align-items-end">
-                            <button type="button" class="btn btn-danger w-100" onclick="removeEducationRow(${index})">
-                                <i class="fa fa-trash"></i> Remove
-                            </button>
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
                         <div class="col-md-8">
-                            <label class="form-label">Certificate Number</label>
-                            <input type="text" name="education[${index}][certificate]" class="form-control" 
-                                   placeholder="Certificate number or reference" value="${data.certificate || ''}">
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-check mt-4">
-                                <input class="form-check-input" type="checkbox" name="education[${index}][isHighest]" 
-                                       value="1" id="highest_${index}" ${data.isHighest || data.is_highest_qualification ? 'checked' : ''}>
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" name="education[${index}][isHighest]"
+                                       value="1" id="highest_${index}" ${data.isHighest == 1 ? 'checked' : ''}>
                                 <label class="form-check-label" for="highest_${index}">
                                     Highest qualification
                                 </label>
                             </div>
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                            <button type="button" class="btn btn-danger w-100" onclick="removeEducationRow(${index})">
+                                <i class="fa fa-trash"></i> Remove
+                            </button>
                         </div>
                     </div>
                 </div>
             </div>
         `;
         container.insertAdjacentHTML('beforeend', html);
-        console.log('🎓 Added education row #' + index);
     }
 
     function addSkillRow(data = {}) {
@@ -3770,7 +3357,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="row g-3">
                         <div class="col-md-4">
                             <label class="form-label">Course/Skill Name</label>
-                            <input type="text" name="skills[${index}][course_name]" class="form-control" 
+                            <input type="text" name="skills[${index}][course_name]" class="form-control"
                                    placeholder="Course or skill name" value="${data.course_name || ''}" required>
                         </div>
                         <div class="col-md-4">
@@ -3786,41 +3373,41 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Duration (Days) <small class="text-muted">Auto-calculated</small></label>
-                            <input type="number" name="skills[${index}][duration_days]" class="form-control" 
+                            <input type="number" name="skills[${index}][duration_days]" class="form-control"
                                    placeholder="Auto-calculated" value="${data.duration_days || ''}" min="0" readonly>
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
                         <div class="col-md-4">
                             <label class="form-label">Institution</label>
-                            <input type="text" name="skills[${index}][institution]" class="form-control" 
+                            <input type="text" name="skills[${index}][institution]" class="form-control"
                                    placeholder="Training institution" value="${data.institution || ''}">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Start Date</label>
-                            <input type="date" name="skills[${index}][startDate]" class="form-control" 
+                            <input type="date" name="skills[${index}][startDate]" class="form-control"
                                    value="${data.startDate || ''}">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">End Date</label>
-                            <input type="date" name="skills[${index}][endDate]" class="form-control" 
+                            <input type="date" name="skills[${index}][endDate]" class="form-control"
                                    value="${data.endDate || ''}">
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
                         <div class="col-md-3">
                             <label class="form-label">Certificate Number</label>
-                            <input type="text" name="skills[${index}][certificateNumber]" class="form-control" 
+                            <input type="text" name="skills[${index}][certificateNumber]" class="form-control"
                                    placeholder="Certificate #" value="${data.certificateNumber || ''}">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Grade Obtained</label>
-                            <input type="text" name="skills[${index}][grade_obtained]" class="form-control" 
+                            <input type="text" name="skills[${index}][grade_obtained]" class="form-control"
                                    placeholder="Grade/Score" value="${data.grade_obtained || ''}">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Location</label>
-                            <input type="text" name="skills[${index}][location]" class="form-control" 
+                            <input type="text" name="skills[${index}][location]" class="form-control"
                                    placeholder="Training location" value="${data.location || ''}">
                         </div>
                         <div class="col-md-3">
@@ -3836,12 +3423,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="row g-3 mt-2">
                         <div class="col-md-4">
                             <label class="form-label">Cost</label>
-                            <input type="number" name="skills[${index}][cost]" class="form-control" 
+                            <input type="number" name="skills[${index}][cost]" class="form-control"
                                    placeholder="Training cost" value="${data.cost || ''}" step="0.01">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Sponsored By</label>
-                            <input type="text" name="skills[${index}][sponsored_by]" class="form-control" 
+                            <input type="text" name="skills[${index}][sponsored_by]" class="form-control"
                                    placeholder="Sponsoring organization" value="${data.sponsored_by || ''}">
                         </div>
                         <div class="col-md-4 d-flex align-items-end">
@@ -3854,31 +3441,29 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
         `;
         container.insertAdjacentHTML('beforeend', html);
-        
+
         // Add event listeners for auto-calculating duration
         const skillCard = container.lastElementChild;
         const startDateInput = skillCard.querySelector(`input[name="skills[${index}][startDate]"]`);
         const endDateInput = skillCard.querySelector(`input[name="skills[${index}][endDate]"]`);
         const durationInput = skillCard.querySelector(`input[name="skills[${index}][duration_days]"]`);
-        
+
         function calculateSkillDuration() {
             if (startDateInput.value && endDateInput.value) {
                 const start = new Date(startDateInput.value);
                 const end = new Date(endDateInput.value);
                 if (end >= start) {
                     const diffTime = Math.abs(end - start);
-                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both start and end days
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
                     durationInput.value = diffDays;
                 } else {
                     durationInput.value = '';
                 }
             }
         }
-        
+
         startDateInput.addEventListener('change', calculateSkillDuration);
         endDateInput.addEventListener('change', calculateSkillDuration);
-        
-        console.log('🛠️ Added skill row #' + index);
     }
 
     // Remove functions
@@ -3886,7 +3471,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const item = document.querySelector(`.operation-item[data-index="${index}"]`);
         if (item && confirm('Are you sure you want to remove this operation?')) {
             item.remove();
-            console.log('🗑️ Removed operation row #' + index);
         }
     }
     window.removeOperationRow = removeOperationRow;
@@ -3895,7 +3479,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const item = document.querySelector(`.deployment-item[data-index="${index}"]`);
         if (item && confirm('Are you sure you want to remove this deployment?')) {
             item.remove();
-            console.log('🗑️ Removed deployment row #' + index);
         }
     }
     window.removeDeploymentRow = removeDeploymentRow;
@@ -3904,17 +3487,14 @@ document.addEventListener('DOMContentLoaded', function() {
         const item = document.querySelector(`.education-item[data-index="${index}"]`);
         if (item && confirm('Are you sure you want to remove this education record?')) {
             item.remove();
-            console.log('🗑️ Removed education row #' + index);
         }
     }
-    // Make function globally accessible
     window.removeEducationRow = removeEducationRow;
 
     function removeSkillRow(index) {
         const item = document.querySelector(`.skill-item[data-index="${index}"]`);
         if (item && confirm('Are you sure you want to remove this skill/course?')) {
             item.remove();
-            console.log('🗑️ Removed skill row #' + index);
         }
     }
     window.removeSkillRow = removeSkillRow;
@@ -3924,7 +3504,7 @@ document.addEventListener('DOMContentLoaded', function() {
         let html = '<option value="">Select Rank</option>';
         if (window.ranksOptions && window.ranksOptions.length > 0) {
             window.ranksOptions.forEach(rank => {
-                const selected = (selectedValue && selectedValue == rank.id) ? 'selected' : 
+                const selected = (selectedValue && selectedValue == rank.id) ? 'selected' :
                                 (selectedValue && (selectedValue == rank.abbreviation || selectedValue == rank.name)) ? 'selected' : '';
                 html += `<option value="${rank.id}" ${selected}>${rank.abbreviation} - ${rank.name}</option>`;
             });
@@ -3936,7 +3516,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function addPostingRow(data = {}) {
         const container = document.getElementById('postingsList');
         const index = postingCounter++;
-        
+
         // Build units dropdown options
         let unitsOptionsHTML = '<option value="">Select Unit</option>';
         if (window.unitsOptions && window.unitsOptions.length > 0) {
@@ -3945,73 +3525,56 @@ document.addEventListener('DOMContentLoaded', function() {
                 unitsOptionsHTML += `<option value="${unit.id}" ${selected}>${unit.name}${unit.location ? ' - ' + unit.location : ''}</option>`;
             });
         }
-        
-        // Build ranks dropdown options (from staff member's category)
-        let ranksOptionsHTML = '<option value="">Select Rank</option>';
-        if (window.ranksOptions && window.ranksOptions.length > 0) {
-            window.ranksOptions.forEach(rank => {
-                const selected = (data.rankId && data.rankId == rank.id) ? 'selected' : '';
-                ranksOptionsHTML += `<option value="${rank.id}" ${selected}>${rank.abbreviation} - ${rank.name}</option>`;
-            });
-        }
-        
+
         const html = `
             <div class="card mb-3 posting-item" data-index="${index}">
                 <div class="card-body">
                     <div class="row g-3">
                         <div class="col-md-4">
-                            <label class="form-label">Unit <span class="text-danger">*</span></label>
-                            <select name="postings[${index}][unitId]" class="form-select" required>
+                            <label class="form-label">Appointment ID <span class="text-danger">*</span></label>
+                            <input type="text" name="postings[${index}][apptId]" class="form-control"
+                                   placeholder="Appointment reference" value="${data.apptId || ''}" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Unit</label>
+                            <select name="postings[${index}][unitId]" class="form-select">
                                 ${unitsOptionsHTML}
                             </select>
                             <small class="text-muted">Assigned unit/formation</small>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">Location</label>
-                            <input type="text" name="postings[${index}][location]" class="form-control" 
-                                   placeholder="Physical location/base" value="${data.location || ''}">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Appointment/Role</label>
-                            <input type="text" name="postings[${index}][appointment_role]" class="form-control" 
-                                   placeholder="e.g., Company Commander" value="${data.appointment_id || data.appointment_role || ''}">
+                            <label class="form-label">Appointment Type</label>
+                            <input type="text" name="postings[${index}][appointment_type]" class="form-control"
+                                   placeholder="e.g., Company Commander" value="${data.apptType || ''}">
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
                         <div class="col-md-3">
-                            <label class="form-label">Rank at Posting</label>
-                            <select name="postings[${index}][rankId]" class="form-select">
-                                ${ranksOptionsHTML}
-                            </select>
-                            <small class="text-muted">Rank held (${window.staffRankCategory || 'All'})</small>
-                        </div>
-                        <div class="col-md-3">
                             <label class="form-label">Start Date <span class="text-danger">*</span></label>
-                            <input type="date" name="postings[${index}][startDate]" class="form-control posting-start-date" 
-                                   value="${data.startDate || ''}" required onchange="calculatePostingDuration(${index})">
+                            <input type="date" name="postings[${index}][startDate]" class="form-control posting-start-date"
+                                   value="${data.apptWef || data.startDate || ''}" required onchange="calculatePostingDuration(${index})">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">End Date</label>
-                            <input type="date" name="postings[${index}][endDate]" class="form-control posting-end-date" 
+                            <input type="date" name="postings[${index}][endDate]" class="form-control posting-end-date"
                                    value="${data.endDate || ''}" onchange="calculatePostingDuration(${index})">
                             <small class="text-muted">Leave blank if current</small>
                         </div>
                         <div class="col-md-3">
-                            <label class="form-label">Duration (Months)</label>
-                            <input type="number" name="postings[${index}][durationMonths]" class="form-control posting-duration" 
-                                   value="${data.durationMonths || ''}" readonly>
-                            <small class="text-muted">Auto-calculated</small>
+                            <label class="form-label">Powers</label>
+                            <input type="text" name="postings[${index}][powers]" class="form-control"
+                                   value="${data.powers || ''}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Authority Reference</label>
+                            <input type="text" name="postings[${index}][authorityId]" class="form-control"
+                                   value="${data.authorityId || ''}">
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
-                        <div class="col-md-6">
-                            <label class="form-label">Posting Order Reference</label>
-                            <input type="text" name="postings[${index}][posting_order_reference]" class="form-control" 
-                                   placeholder="Official order number" value="${data.posting_order_reference || ''}">
-                        </div>
-                        <div class="col-md-6">
+                        <div class="col-md-12">
                             <label class="form-label">Remarks</label>
-                            <textarea name="postings[${index}][remarks]" class="form-control" rows="1" 
+                            <textarea name="postings[${index}][remarks]" class="form-control" rows="1"
                                       placeholder="Additional notes">${data.remarks || ''}</textarea>
                         </div>
                     </div>
@@ -4026,38 +3589,21 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
         `;
         container.insertAdjacentHTML('beforeend', html);
-        
-        // Calculate duration if dates exist
-        if (data.startDate) {
-            setTimeout(() => calculatePostingDuration(index), 100);
-        }
-        
-        console.log('➕ Added posting row #' + index);
     }
 
     function removePostingRow(index) {
         const item = document.querySelector(`.posting-item[data-index="${index}"]`);
         if (item && confirm('Are you sure you want to remove this posting?')) {
             item.remove();
-            console.log('🗑️ Removed posting row #' + index);
         }
     }
     window.removePostingRow = removePostingRow;
 
     function calculatePostingDuration(index) {
-        const posting = document.querySelector(`.posting-item[data-index="${index}"]`);
-        if (!posting) return;
-
-        const startDate = posting.querySelector('.posting-start-date').value;
-        const endDate = posting.querySelector('.posting-end-date').value || new Date().toISOString().split('T')[0];
-        
-        if (startDate && endDate) {
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-            const months = Math.round((end - start) / (1000 * 60 * 60 * 24 * 30.44));
-            posting.querySelector('.posting-duration').value = Math.max(0, months);
-        }
+        // Duration is computed server-side on save; nothing to render client-side
+        // since staff_appointment.durationMonths isn't shown as its own input.
     }
+    window.calculatePostingDuration = calculatePostingDuration;
 
     // ==================== AWARDS & COMMENDATIONS FUNCTIONS ====================
     function addAwardRow(data = {}) {
@@ -4081,43 +3627,43 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Award Name <span class="text-danger">*</span></label>
-                            <input type="text" name="awards[${index}][award_name]" class="form-control" 
+                            <input type="text" name="awards[${index}][award_name]" class="form-control"
                                    placeholder="Award name" value="${data.award_name || ''}" required>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Award Date <span class="text-danger">*</span></label>
-                            <input type="date" name="awards[${index}][award_date]" class="form-control" 
+                            <input type="date" name="awards[${index}][award_date]" class="form-control"
                                    value="${data.award_date || ''}" required>
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
                         <div class="col-md-4">
                             <label class="form-label">Awarded By</label>
-                            <input type="text" name="awards[${index}][awarded_by]" class="form-control" 
+                            <input type="text" name="awards[${index}][awarded_by]" class="form-control"
                                    placeholder="Awarding authority" value="${data.awarded_by || ''}">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Certificate Number</label>
-                            <input type="text" name="awards[${index}][certificateNumber]" class="form-control" 
+                            <input type="text" name="awards[${index}][certificateNumber]" class="form-control"
                                    placeholder="Certificate/document number" value="${data.certificateNumber || ''}">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Gazette Reference</label>
-                            <input type="text" name="awards[${index}][gazette_reference]" class="form-control" 
+                            <input type="text" name="awards[${index}][gazette_reference]" class="form-control"
                                    placeholder="Gazette reference" value="${data.gazette_reference || ''}">
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
                         <div class="col-md-12">
                             <label class="form-label">Citation</label>
-                            <textarea name="awards[${index}][citation]" class="form-control" rows="2" 
+                            <textarea name="awards[${index}][citation]" class="form-control" rows="2"
                                       placeholder="Reason for award or citation text">${data.citation || ''}</textarea>
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
                         <div class="col-md-12">
                             <label class="form-label">Remarks</label>
-                            <textarea name="awards[${index}][remarks]" class="form-control" rows="1" 
+                            <textarea name="awards[${index}][remarks]" class="form-control" rows="1"
                                       placeholder="Additional notes">${data.remarks || ''}</textarea>
                         </div>
                     </div>
@@ -4132,14 +3678,12 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
         `;
         container.insertAdjacentHTML('beforeend', html);
-        console.log('➕ Added award row #' + index);
     }
 
     function removeAwardRow(index) {
         const item = document.querySelector(`.award-item[data-index="${index}"]`);
         if (item && confirm('Are you sure you want to remove this award?')) {
             item.remove();
-            console.log('🗑️ Removed award row #' + index);
         }
     }
     window.removeAwardRow = removeAwardRow;
@@ -4166,19 +3710,19 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Incident Date <span class="text-danger">*</span></label>
-                            <input type="date" name="disciplinary[${index}][incident_date]" class="form-control" 
+                            <input type="date" name="disciplinary[${index}][incident_date]" class="form-control"
                                    value="${data.incident_date || ''}" required>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Case Reference</label>
-                            <input type="text" name="disciplinary[${index}][case_reference]" class="form-control" 
+                            <input type="text" name="disciplinary[${index}][case_reference]" class="form-control"
                                    placeholder="Case/file reference" value="${data.case_reference || ''}">
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
                         <div class="col-md-12">
                             <label class="form-label">Description <span class="text-danger">*</span></label>
-                            <textarea name="disciplinary[${index}][description]" class="form-control" rows="3" 
+                            <textarea name="disciplinary[${index}][description]" class="form-control" rows="3"
                                       placeholder="Detailed description of the incident" required>${data.description || ''}</textarea>
                         </div>
                     </div>
@@ -4198,24 +3742,24 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Disciplinary Authority</label>
-                            <input type="text" name="disciplinary[${index}][disciplinary_authority]" class="form-control" 
+                            <input type="text" name="disciplinary[${index}][disciplinary_authority]" class="form-control"
                                    placeholder="Authority who issued action" value="${data.disciplinary_authority || ''}">
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
                         <div class="col-md-3">
                             <label class="form-label">Start Date</label>
-                            <input type="date" name="disciplinary[${index}][startDate]" class="form-control disciplinary-start-date" 
+                            <input type="date" name="disciplinary[${index}][startDate]" class="form-control disciplinary-start-date"
                                    value="${data.startDate || ''}" onchange="calculateDisciplinaryDuration(${index})">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">End Date</label>
-                            <input type="date" name="disciplinary[${index}][endDate]" class="form-control disciplinary-end-date" 
+                            <input type="date" name="disciplinary[${index}][endDate]" class="form-control disciplinary-end-date"
                                    value="${data.endDate || ''}" onchange="calculateDisciplinaryDuration(${index})">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Duration (Days)</label>
-                            <input type="number" name="disciplinary[${index}][duration_days]" class="form-control disciplinary-duration" 
+                            <input type="number" name="disciplinary[${index}][duration_days]" class="form-control disciplinary-duration"
                                    value="${data.duration_days || ''}" readonly>
                         </div>
                         <div class="col-md-3">
@@ -4232,27 +3776,27 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="row g-3 mt-2">
                         <div class="col-md-6">
                             <label class="form-label">Appeal Details</label>
-                            <textarea name="disciplinary[${index}][appeal_details]" class="form-control" rows="2" 
+                            <textarea name="disciplinary[${index}][appeal_details]" class="form-control" rows="2"
                                       placeholder="Details of any appeal filed">${data.appeal_details || ''}</textarea>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Remarks</label>
-                            <textarea name="disciplinary[${index}][remarks]" class="form-control" rows="2" 
+                            <textarea name="disciplinary[${index}][remarks]" class="form-control" rows="2"
                                       placeholder="Additional notes">${data.remarks || ''}</textarea>
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
                         <div class="col-md-4">
                             <label class="form-label">Clearance Date</label>
-                            <input type="date" name="disciplinary[${index}][clearance_date]" class="form-control" 
+                            <input type="date" name="disciplinary[${index}][clearance_date]" class="form-control"
                                    value="${data.clearance_date || ''}">
                             <small class="text-muted">When record was cleared/expunged</small>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Confidential</label>
                             <select name="disciplinary[${index}][confidential]" class="form-select">
-                                <option value="1" ${data.confidential !== '0' ? 'selected' : ''}>Yes (Restricted)</option>
-                                <option value="0" ${data.confidential === '0' ? 'selected' : ''}>No (Visible)</option>
+                                <option value="1" ${data.confidential != '0' ? 'selected' : ''}>Yes (Restricted)</option>
+                                <option value="0" ${data.confidential == '0' ? 'selected' : ''}>No (Visible)</option>
                             </select>
                         </div>
                         <div class="col-md-4 d-flex align-items-end">
@@ -4265,14 +3809,12 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
         `;
         container.insertAdjacentHTML('beforeend', html);
-        console.log('➕ Added disciplinary row #' + index);
     }
 
     function removeDisciplinaryRow(index) {
         const item = document.querySelector(`.disciplinary-item[data-index="${index}"]`);
         if (item && confirm('Are you sure you want to remove this disciplinary record?')) {
             item.remove();
-            console.log('🗑️ Removed disciplinary row #' + index);
         }
     }
     window.removeDisciplinaryRow = removeDisciplinaryRow;
@@ -4283,7 +3825,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const startDate = disciplinary.querySelector('.disciplinary-start-date').value;
         const endDate = disciplinary.querySelector('.disciplinary-end-date').value;
-        
+
         if (startDate && endDate) {
             const start = new Date(startDate);
             const end = new Date(endDate);
@@ -4291,42 +3833,26 @@ document.addEventListener('DOMContentLoaded', function() {
             disciplinary.querySelector('.disciplinary-duration').value = Math.max(0, days);
         }
     }
-
-    // Function to load existing data when editing a staff member
-    function loadExistingData() {
-        const svcNo = '<?= htmlspecialchars($staff->svcNo ?? '') ?>';
-        if (svcNo) {
-            // Load existing operations, deployments, education, and skills
-            console.log('🔄 Loading existing data for service number:', svcNo);
-            
-            // For now, we'll add sample data - in production this would come from the database
-            // This can be populated from PHP when the page loads
-        }
-    }
+    window.calculateDisciplinaryDuration = calculateDisciplinaryDuration;
 
     // Function to validate dynamic fields before form submission
     function validateDynamicFields() {
-        console.log('🔍 Validating dynamic fields...');
         let isValid = true;
         const errors = [];
 
-        // Validate operations
         const operations = document.querySelectorAll('#operationsList .operation-item');
-        console.log(`📋 Validating ${operations.length} operations...`);
         operations.forEach((op, index) => {
-            const opIDField = op.querySelector('input[name*="[opID]"]');
-            if (opIDField && !opIDField.value.trim()) {
-                opIDField.classList.add('is-invalid');
-                errors.push(`Operation #${index + 1}: Operation ID is required`);
+            const opIdField = op.querySelector('select[name*="[opId]"]');
+            if (opIdField && !opIdField.value.trim()) {
+                opIdField.classList.add('is-invalid');
+                errors.push(`Operation #${index + 1}: an Operation must be selected`);
                 isValid = false;
-            } else if (opIDField) {
-                opIDField.classList.remove('is-invalid');
+            } else if (opIdField) {
+                opIdField.classList.remove('is-invalid');
             }
         });
 
-        // Validate deployments
         const deployments = document.querySelectorAll('#deploymentsList .deployment-item');
-        console.log(`🌍 Validating ${deployments.length} deployments...`);
         deployments.forEach((dep, index) => {
             const nameField = dep.querySelector('input[name*="[deployment_name]"]');
             if (nameField && !nameField.value.trim()) {
@@ -4338,17 +3864,14 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
 
-        // Validate education
         const education = document.querySelectorAll('#educationList .education-item');
-        console.log(`🎓 Validating ${education.length} education records...`);
         education.forEach((edu, index) => {
             const instIdField = edu.querySelector('input[name*="[instId]"]');
             const cseIdField = edu.querySelector('input[name*="[cseId]"]');
-            // Require either instId or cseId (at least one identifier)
             if ((!instIdField || !instIdField.value.trim()) && (!cseIdField || !cseIdField.value.trim())) {
                 if (instIdField) instIdField.classList.add('is-invalid');
                 if (cseIdField) cseIdField.classList.add('is-invalid');
-                errors.push(`Education #${index + 1}: Institution ID or Course ID is required`);
+                errors.push(`Education #${index + 1}: Institution or Course ID is required`);
                 isValid = false;
             } else {
                 if (instIdField) instIdField.classList.remove('is-invalid');
@@ -4356,9 +3879,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
 
-        // Validate skills
         const skills = document.querySelectorAll('#skillsList .skill-item');
-        console.log(`🎯 Validating ${skills.length} skills/courses...`);
         skills.forEach((skill, index) => {
             const nameField = skill.querySelector('input[name*="[course_name]"]');
             if (nameField && !nameField.value.trim()) {
@@ -4370,11 +3891,20 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
 
+        const postings = document.querySelectorAll('#postingsList .posting-item');
+        postings.forEach((posting, index) => {
+            const apptIdField = posting.querySelector('input[name*="[apptId]"]');
+            if (apptIdField && !apptIdField.value.trim()) {
+                apptIdField.classList.add('is-invalid');
+                errors.push(`Posting #${index + 1}: Appointment ID is required`);
+                isValid = false;
+            } else if (apptIdField) {
+                apptIdField.classList.remove('is-invalid');
+            }
+        });
+
         if (!isValid) {
-            console.error('❌ Dynamic field validation errors:', errors);
             alert('Please fix the following errors in the dynamic fields:\n\n' + errors.join('\n'));
-        } else {
-            console.log('✅ All dynamic fields are valid');
         }
 
         return isValid;
@@ -4409,9 +3939,6 @@ document.addEventListener('DOMContentLoaded', function() {
         addDisciplinaryRow();
     });
 
-    // Load existing data when page loads
-    loadExistingData();
-
     // Flash alerts for 5 seconds
     const alerts = document.querySelectorAll('.alert-success');
     alerts.forEach(function(alert) {
@@ -4421,7 +3948,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 5000);
     });
 
-    // Handle optional contact fields - clear if invalid
     // NRC auto-formatting
     function autoFormatNRC(nrc) {
         nrc = nrc.replace(/[^\d]/g, '');
@@ -4475,15 +4001,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const field = document.getElementById(fieldId);
         if (field) {
             field.addEventListener('blur', function() {
-                // If field is filled but invalid, show warning
                 if (this.value.trim() && !this.checkValidity()) {
                     const fieldType = this.type === 'email' ? 'email address' : 'phone number';
-                    console.warn(`⚠️ Invalid ${fieldType} format detected:`, this.value);
                     const confirmClear = confirm(`The ${fieldType} appears to be incomplete or invalid.\n\nCurrent value: ${this.value}\n\nWould you like to clear it? (Click Cancel to edit it)`);
                     if (confirmClear) {
                         this.value = '';
                         this.classList.remove('is-invalid');
-                        console.log(`✅ ${fieldType} field cleared`);
                     }
                 }
             });
@@ -4494,162 +4017,98 @@ document.addEventListener('DOMContentLoaded', function() {
     const editForm = document.getElementById('editStaffForm');
     if (editForm) {
         editForm.addEventListener('submit', function(e) {
-            console.log('🔍 Form submission initiated...');
-            
             // Remove HTML5 validation constraints for optional fields to prevent blocking
-            // Let PHP handle validation and data cleaning
             const optionalContactFields = ['email', 'tel', 'nokTel'];
             optionalContactFields.forEach(fieldId => {
                 const field = document.getElementById(fieldId);
                 if (field && field.value.trim() && !field.checkValidity()) {
-                    const fieldType = field.type === 'email' ? 'email' : 'phone';
-                    console.warn(`⚠️ Invalid ${fieldType} format detected (${fieldId}), removing validation constraint to allow submission`);
-                    // Remove the type constraint temporarily to bypass HTML5 validation
                     field.setAttribute('data-original-type', field.type);
                     field.type = 'text';
                 }
             });
-            
-            // Check if we have a valid staff member selected
+
             const staffId = document.querySelector('input[name="svcNo"]');
             if (!staffId || !staffId.value) {
                 e.preventDefault();
-                console.error('❌ No staff member selected');
                 alert('Error: No staff member selected. Please select a staff member first.');
                 return false;
             }
-            console.log('✅ Staff ID found:', staffId.value);
-            
-            // Validate basic form fields
+
             const formValidationResult = validateForm();
-            console.log('📝 Basic form validation:', formValidationResult ? '✅ Passed' : '❌ Failed');
-            
-            // Validate dynamic fields
             const dynamicValidationResult = validateDynamicFields();
-            console.log('📋 Dynamic fields validation:', dynamicValidationResult ? '✅ Passed' : '❌ Failed');
-            
+
             if (!formValidationResult || !dynamicValidationResult) {
                 e.preventDefault();
-                console.error('❌ Validation failed, form submission prevented');
-                alert('Please fix the validation errors before submitting. Check the console for details.');
+                alert('Please fix the validation errors before submitting.');
                 window.scrollTo(0, 0);
                 return false;
             }
-            
-            // Show confirmation with counts
+
             const opCount = document.querySelectorAll('#operationsList .operation-item').length;
             const depCount = document.querySelectorAll('#deploymentsList .deployment-item').length;
             const eduCount = document.querySelectorAll('#educationList .education-item').length;
             const skillCount = document.querySelectorAll('#skillsList .skill-item').length;
-            
-            console.log('📊 Item counts:', { operations: opCount, deployments: depCount, education: eduCount, skills: skillCount });
-            
+
             const summary = `You are about to update this staff member with:
 • ${opCount} operation(s)
-• ${depCount} deployment(s)  
+• ${depCount} deployment(s)
 • ${eduCount} education record(s)
 • ${skillCount} skill/course(s)
 
 Are you sure you want to proceed?`;
-            
+
             if (!confirm(summary)) {
                 e.preventDefault();
-                console.log('⚠️ User canceled submission');
                 return false;
             }
-            
-            console.log('✅ All validations passed, submitting form...');
-            // Form will submit naturally
         });
     }
-    
+
     // Validate button handler
     const validateButton = document.getElementById('validateFormBtn');
     if (validateButton) {
         validateButton.addEventListener('click', function() {
-            validateForm(true); // Show validation results
+            validateForm(true);
         });
     }
-    
+
     // Validate form function
     function validateForm(showResults = false) {
-        console.log('🔍 Validating form...');
         let isValid = true;
         let validationReport = [];
-        let emptyFields = [];
-        
-        // Basic validation for required fields
+
         const requiredFields = document.querySelectorAll('[required]');
-        console.log(`📝 Found ${requiredFields.length} required fields to validate`);
-        
         requiredFields.forEach(field => {
             if (!field.value.trim()) {
                 isValid = false;
                 field.classList.add('is-invalid');
-                const fieldName = field.name || field.id || 'Unknown field';
-                emptyFields.push(fieldName);
-                validationReport.push(`Required field "${fieldName}" is empty`);
                 const feedbackEl = document.getElementById(`${field.id}-error`);
                 if (feedbackEl) feedbackEl.textContent = 'This field is required';
             } else {
                 field.classList.remove('is-invalid');
             }
         });
-        
-        if (emptyFields.length > 0) {
-            console.error('❌ Empty required fields:', emptyFields);
-        } else {
-            console.log('✅ All required fields are filled');
-        }
-        
-        
-        // Check operations
-        const operationsCount = document.getElementById('operationsList')?.children.length || 0;
-        validationReport.push(`Operations: ${operationsCount} items found`);
-        
-        // Check deployments
-        const deploymentsCount = document.getElementById('deploymentsList')?.children.length || 0;
-        validationReport.push(`Deployments: ${deploymentsCount} items found`);
-        
-        // Check education
-        const educationCount = document.getElementById('educationList')?.children.length || 0;
-        validationReport.push(`Education: ${educationCount} items found`);
-        
-        // Check skills
-        const skillsCount = document.getElementById('skillsList')?.children.length || 0;
-        validationReport.push(`Skills: ${skillsCount} items found`);
-        
-        // Serialized form data check
+
         const formData = new FormData(editForm);
-        const formFieldsCount = Array.from(formData.entries()).length;
-        validationReport.push(`Total form fields: ${formFieldsCount}`);
-        
-        // Check CSRF token
         const csrfToken = formData.get('csrf_token');
         if (!csrfToken) {
             isValid = false;
             validationReport.push('CSRF token is missing');
-        } else {
-            validationReport.push(`CSRF token present: ${csrfToken.substring(0, 10)}...`);
         }
-        
-        // Check service number
+
         const svcNo = formData.get('svcNo');
         if (!svcNo) {
             isValid = false;
             validationReport.push('Service number is missing');
-        } else {
-            validationReport.push(`Service number: ${svcNo}`);
         }
-        
+
         if (showResults) {
             alert(`Validation Results:\n${validationReport.join('\n')}\n\nForm is ${isValid ? 'valid' : 'invalid'}`);
-            console.log('Validation report:', validationReport);
         }
-        
+
         return isValid;
     }
-    
+
     // Auto-dismiss alerts
     document.querySelectorAll('.alert-dismissible').forEach(alert => {
         setTimeout(() => {
@@ -4657,50 +4116,8 @@ Are you sure you want to proceed?`;
             bsAlert.close();
         }, 5000);
     });
-    
-    // CSV Export functionality
-    const exportCsvLink = document.querySelector('a[href="?export=csv"]');
-    if (exportCsvLink) {
-        exportCsvLink.addEventListener('click', function(e) {
-            e.preventDefault();
-            exportTableToCsv('staff_list.csv');
-        });
-    }
-    
-    function exportTableToCsv(filename) {
-        // Check if we have staff data
-        if (!allResults || allResults.length === 0) {
-            alert('No data available to export. Please search for staff first.');
-            return;
-        }
-        
-        // Generate CSV content
-        const headers = ['Service Number', 'Name', 'Rank', 'Unit', 'Status'];
-        
-        let csvContent = headers.join(',') + '\n';
-        
-        allResults.forEach(function(staff) {
-            const row = [
-                '"' + staff.svcNo.replace(/"/g, '""') + '"',
-                '"' + staff.name.replace(/"/g, '""') + '"',
-                '"' + staff.rank.replace(/"/g, '""') + '"',
-                '"' + staff.unit.replace(/"/g, '""') + '"',
-                '"' + staff.status.replace(/"/g, '""') + '"'
-            ];
-            csvContent += row.join(',') + '\n';
-        });
-        
-        // Create download link
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.setAttribute('href', url);
-        link.setAttribute('download', filename);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    }
+
+    // CSV Export functionality (server-side export already available via ?export=csv link)
 
     // Size field validation and user experience improvements
     const sizeFields = {
@@ -4710,12 +4127,10 @@ Are you sure you want to proceed?`;
         hdress: document.getElementById('hdress')
     };
 
-    // Add change event listeners for size fields
     Object.keys(sizeFields).forEach(fieldName => {
         const field = sizeFields[fieldName];
         if (field) {
             field.addEventListener('change', function() {
-                // Add visual feedback for selection
                 if (this.value) {
                     this.classList.add('border-success');
                     this.classList.remove('border-warning');
@@ -4723,72 +4138,43 @@ Are you sure you want to proceed?`;
                     this.classList.remove('border-success');
                     this.classList.add('border-warning');
                 }
-                
-                // Log size selection for audit purposes
-                console.log(`📏 Size updated: ${fieldName} = ${this.value}`);
             });
 
-            // Initialize visual state
             if (field.value) {
                 field.classList.add('border-success');
             }
         }
     });
 
-    // Validate size consistency (optional validation)
-    function validateSizeConsistency() {
-        const bootSize = parseInt(sizeFields.bsize?.value || '0');
-        const shoeSize = parseInt(sizeFields.ssize?.value || '0');
-        
-        if (bootSize > 0 && shoeSize > 0) {
-            const sizeDifference = Math.abs(bootSize - shoeSize);
-            if (sizeDifference > 2) {
-                console.warn('⚠️ Boot size and shoe size differ significantly. Please verify.');
-            }
-        }
-    }
-
-    // Add size consistency check when both sizes are selected
-    ['bsize', 'ssize'].forEach(fieldName => {
-        const field = sizeFields[fieldName];
-        if (field) {
-            field.addEventListener('change', validateSizeConsistency);
-        }
-    });
-
     // ==================== RETIREMENT DATE CALCULATOR ====================
-    /**
-     * Calculate and display retirement dates dynamically when DOB or attestDate changes
-     */
     function updateRetirementInfo() {
         const dobField = document.getElementById('DOB');
         const attestDateField = document.getElementById('attestDate');
-        
+
         if (!dobField || !attestDateField) return;
-        
+
         const dob = dobField.value;
         const attestDate = attestDateField.value;
-        
-        // Calculate runout date (age 65)
+
         let runoutHtml = '<span class="text-muted">N/A (Date of birth not recorded)</span>';
         if (dob) {
             try {
                 const dobDate = new Date(dob);
                 const runoutDate = new Date(dobDate);
                 runoutDate.setFullYear(dobDate.getFullYear() + 65);
-                
+
                 const now = new Date();
                 const isPast = runoutDate < now;
-                
+
                 if (!isPast) {
                     const diff = runoutDate - now;
                     const years = Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
                     const months = Math.floor((diff % (1000 * 60 * 60 * 24 * 365.25)) / (1000 * 60 * 60 * 24 * 30.44));
-                    
-                    const urgencyClass = years < 1 ? 'text-danger' : 
-                                       years <= 5 ? 'text-warning' : 
+
+                    const urgencyClass = years < 1 ? 'text-danger' :
+                                       years <= 5 ? 'text-warning' :
                                        years <= 10 ? 'text-info' : 'text-success';
-                    
+
                     runoutHtml = `
                         <div>${runoutDate.toLocaleDateString('en-GB', {day: 'numeric', month: 'short', year: 'numeric'})}</div>
                         <small class="${urgencyClass}">
@@ -4807,27 +4193,26 @@ Are you sure you want to proceed?`;
                 console.error('Error calculating runout date:', e);
             }
         }
-        
-        // Calculate early retirement date (20 years service)
+
         let earlyRetHtml = '<span class="text-muted">N/A (Enlistment date not recorded)</span>';
         if (attestDate) {
             try {
                 const enlistDate = new Date(attestDate);
                 const earlyRetDate = new Date(enlistDate);
                 earlyRetDate.setFullYear(enlistDate.getFullYear() + 20);
-                
+
                 const now = new Date();
                 const isPast = earlyRetDate < now;
-                
+
                 if (!isPast) {
                     const diff = earlyRetDate - now;
                     const years = Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
                     const months = Math.floor((diff % (1000 * 60 * 60 * 24 * 365.25)) / (1000 * 60 * 60 * 24 * 30.44));
-                    
-                    const urgencyClass = years < 1 ? 'text-danger' : 
-                                       years <= 5 ? 'text-warning' : 
+
+                    const urgencyClass = years < 1 ? 'text-danger' :
+                                       years <= 5 ? 'text-warning' :
                                        years <= 10 ? 'text-info' : 'text-success';
-                    
+
                     earlyRetHtml = `
                         <div>${earlyRetDate.toLocaleDateString('en-GB', {day: 'numeric', month: 'short', year: 'numeric'})}</div>
                         <small class="${urgencyClass}">
@@ -4846,28 +4231,34 @@ Are you sure you want to proceed?`;
                 console.error('Error calculating early retirement date:', e);
             }
         }
-        
-        // Update the display (find the retirement info divs and update them)
+
         const runoutDisplay = document.querySelector('[data-retirement="runout"]');
         const earlyRetDisplay = document.querySelector('[data-retirement="earlyRetirement"]');
-        
+
         if (runoutDisplay) runoutDisplay.innerHTML = runoutHtml;
         if (earlyRetDisplay) earlyRetDisplay.innerHTML = earlyRetHtml;
     }
-    
-    // Add event listeners to update retirement info when dates change
+
     const dobInput = document.getElementById('DOB');
     const attestDateInput = document.getElementById('attestDate');
-    
+
     if (dobInput) {
         dobInput.addEventListener('change', updateRetirementInfo);
     }
-    
+
     if (attestDateInput) {
         attestDateInput.addEventListener('change', updateRetirementInfo);
     }
-    
-    // Initial calculation on page load
+
+    const initialData = window.initialEditStaffData || {};
+    (initialData.operations || []).forEach(addOperationRow);
+    (initialData.deployments || []).forEach(addDeploymentRow);
+    (initialData.education || []).forEach(addEducationRow);
+    (initialData.skills || []).forEach(addSkillRow);
+    (initialData.postings || []).forEach(addPostingRow);
+    (initialData.awards || []).forEach(addAwardRow);
+    (initialData.disciplinary || []).forEach(addDisciplinaryRow);
+
     updateRetirementInfo();
 });
 </script>

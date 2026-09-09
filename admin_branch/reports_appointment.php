@@ -5,6 +5,7 @@ define('ARMIS_ADMIN_BRANCH', true);
 // Include admin branch authentication and database
 require_once __DIR__ . '/includes/auth.php';
 require_once dirname(__DIR__) . '/shared/database_connection.php';
+require_once __DIR__ . '/includes/db_helpers.php';
 
 // Require authentication
 requireAuth();
@@ -14,36 +15,8 @@ $moduleName = "Admin Branch";
 $moduleIcon = "users-cog";
 $currentPage = "reports";
 
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create_staff'],
-    ['title' => 'Edit Staff', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'user-edit', 'page' => 'edit_staff'],
-    ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/appointments.php', 'icon' => 'briefcase', 'page' => 'appointments'],
-    ['title' => 'Batch Appointments', 'url' => '/Armis2/admin_branch/batch_appointments.php', 'icon' => 'tasks', 'page' => 'batch_appointments'],
-    ['title' => 'Pending Approvals', 'url' => '/Armis2/admin_branch/pending_appointments.php', 'icon' => 'clock', 'page' => 'pending_appointments'],
-    ['title' => 'Appointment History', 'url' => '/Armis2/admin_branch/appointment_history.php', 'icon' => 'history', 'page' => 'appointment_history'],
-    ['title' => 'Appointment Types', 'url' => '/Armis2/admin_branch/appointment_types.php', 'icon' => 'clipboard-list', 'page' => 'appointment_types'],
-    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/medals.php', 'icon' => 'medal', 'page' => 'medals'],
-    [
-        'title' => 'Reports',
-        'icon' => 'chart-bar',
-        'page' => 'reports',
-        'children' => [
-            ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
-            ['title' => 'Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php'],
-            ['title' => 'Unit List', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Contracts', 'url' => '/Armis2/admin_branch/reports_contract.php'],
-            ['title' => 'Courses', 'url' => '/Armis2/admin_branch/reports_courses.php'],
-            ['title' => 'Deceased', 'url' => '/Armis2/admin_branch/reports_deceased.php'],
-            ['title' => 'Gender', 'url' => '/Armis2/admin_branch/reports_gender.php'],
-            ['title' => 'Marital', 'url' => '/Armis2/admin_branch/reports_marital.php'],
-            ['title' => 'Rank', 'url' => '/Armis2/admin_branch/reports_rank.php'],
-            ['title' => 'Retired', 'url' => '/Armis2/admin_branch/reports_retired.php'],
-            ['title' => 'Trade', 'url' => '/Armis2/admin_branch/reports_trade.php'],
-            ['title' => 'Corps', 'url' => '/Armis2/admin_branch/reports_corps.php']
-        ]
-    ],
-];
+$sidebarLinks = []; // set by shared nav include below
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 $pdo = getDbConnection();
 
@@ -56,9 +29,9 @@ function formatSentenceCase($name) {
 function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory, $selectedAppt) {
     // Use canonical `rank` table
     $rankSql = "SELECT DISTINCT r.rankId AS id, COALESCE(r.rankId, r.rankId) AS name FROM `rank` r JOIN staff s ON s.rankId = r.rankId WHERE s.svcStatus = 'Active'";
-    $unitSql = "SELECT DISTINCT u.unitId, u.name FROM unit u JOIN staff s ON s.unitId = u.unitId WHERE s.svcStatus = 'Active'";
+    $unitSql = "SELECT DISTINCT u.unitId as id, u.unitId AS name FROM unit u JOIN staff s ON s.unitId = u.unitId WHERE s.svcStatus = 'Active'";
     $catSql = "SELECT DISTINCT s.category FROM staff s WHERE s.category IS NOT NULL AND s.category <> '' AND s.svcStatus = 'Active'";
-    $apptSql = "SELECT DISTINCT s.appt FROM staff s WHERE s.appt IS NOT NULL AND s.appt <> '' AND s.svcStatus = 'Active'";
+    $apptSql = "SELECT DISTINCT s.apptId as appt FROM staff s WHERE s.apptId IS NOT NULL AND s.apptId <> '' AND s.svcStatus = 'Active'";
     
     $rankParams = [];
     $unitParams = [];
@@ -74,7 +47,7 @@ function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory
         $rankParams[] = $selectedCategory;
     }
     if ($selectedAppt) {
-        $rankSql .= " AND s.appt = ?";
+        $rankSql .= " AND s.apptId = ?";
         $rankParams[] = $selectedAppt;
     }
     if ($selectedRank) {
@@ -86,7 +59,7 @@ function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory
         $unitParams[] = $selectedCategory;
     }
     if ($selectedAppt) {
-        $unitSql .= " AND s.appt = ?";
+        $unitSql .= " AND s.apptId = ?";
         $unitParams[] = $selectedAppt;
     }
     if ($selectedUnit) {
@@ -98,7 +71,7 @@ function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory
         $catParams[] = $selectedRank;
     }
     if ($selectedAppt) {
-        $catSql .= " AND s.appt = ?";
+        $catSql .= " AND s.apptId = ?";
         $catParams[] = $selectedAppt;
     }
     if ($selectedUnit) {
@@ -114,10 +87,10 @@ function getDynamicOptions($pdo, $selectedRank, $selectedUnit, $selectedCategory
         $apptParams[] = $selectedCategory;
     }
 
-    $ranks = fetchAll($rankSql . " ORDER BY r.level ASC, name ASC", $rankParams);
-    $units = fetchAll($unitSql . " ORDER BY u.name ASC", $unitParams);
+    $ranks = fetchAll($rankSql . " ORDER BY r.rankIndex ASC, name ASC", $rankParams);
+    $units = fetchAll($unitSql . " ORDER BY u.unitId ASC", $unitParams);
     $categories = fetchAll($catSql . " ORDER BY s.category ASC", $catParams);
-    $appointments = fetchAll($apptSql . " ORDER BY s.appt ASC", $apptParams);
+    $appointments = fetchAll($apptSql . " ORDER BY s.apptId ASC", $apptParams);
 
     return [$ranks, $units, $categories, $appointments];
 }
@@ -136,12 +109,12 @@ $page = max(1, intval($_GET['page'] ?? 1));
 $offset = ($page - 1) * $per_page;
 
 $sortable_columns = [
-    'appt' => 's.appt',
-    'rank' => 'r.level',
+    'appt' => 's.apptId',
+    'rank' => 'r.rankIndex',
     'svcNo' => 's.svcNo',
     'surname' => 's.lName',
     'fName' => 's.fName',
-    'unit' => 'u.name',
+    'unit' => 'u.unitId',
     'category' => 's.category',
     'DOB' => 's.DOB',
     'attestDate' => 's.attestDate'
@@ -150,7 +123,7 @@ $sort_col = $_GET['sort_col'] ?? '';
 $sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
 
 // Normalize rank display to use canonical rank fields
-$sql = "SELECT s.*, COALESCE(r.rankId, r.rankId) as rankName, r.rankId as rankAbbr, r.level as rankIndex, COALESCE(u.code, u.name) as unitName, u.code as unitCode
+$sql = "SELECT s.*, COALESCE(r.rankId, r.rankId) as rankName, r.rankId as rankAbbr, r.rankIndex as rankIndex, COALESCE(u.unitId, u.unitId) as unitName, u.unitId as unitCode
     FROM staff s
     LEFT JOIN `rank` r ON s.rankId = r.rankId
     LEFT JOIN unit u ON s.unitId = u.unitId
@@ -181,14 +154,14 @@ if ($filter_category !== '') {
     $count_params[] = $filter_category;
 }
 if ($filter_appt !== '') {
-    $sql .= " AND s.appt = ?";
-    $count_sql .= " AND s.appt = ?";
+    $sql .= " AND s.apptId = ?";
+    $count_sql .= " AND s.apptId = ?";
     $params[] = $filter_appt;
     $count_params[] = $filter_appt;
 }
 if ($search !== '') {
-    $sql .= " AND (s.appt LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR COALESCE(r.rankId, r.rankId) LIKE ? OR COALESCE(u.code, u.name) LIKE ? OR s.category LIKE ?)";
-    $count_sql .= " AND (s.appt LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR COALESCE(r.rankId, r.rankId) LIKE ? OR COALESCE(u.code, u.name) LIKE ? OR s.category LIKE ?)";
+    $sql .= " AND (s.apptId LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR COALESCE(r.rankId, r.rankId) LIKE ? OR COALESCE(u.unitId, u.unitId) LIKE ? OR s.category LIKE ?)";
+    $count_sql .= " AND (s.apptId LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR COALESCE(r.rankId, r.rankId) LIKE ? OR COALESCE(u.unitId, u.unitId) LIKE ? OR s.category LIKE ?)";
     for ($i = 0; $i < 7; $i++) {
         $params[] = "%$search%";
         $count_params[] = "%$search%";
@@ -204,7 +177,7 @@ if ($sort_col && isset($sortable_columns[$sort_col])) {
     // Personnel without ranks (NULL rankId) are listed last
     $sql .= " ORDER BY 
         CASE WHEN s.rankId IS NULL THEN 1 ELSE 0 END,
-        r.level ASC,
+        r.rankIndex ASC,
         s.subWef ASC,
         s.tempWef ASC,
         s.attestDate ASC,

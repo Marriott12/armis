@@ -10,33 +10,8 @@ $currentPage = "reports";
 $moduleName = "Admin Branch";
 $moduleIcon = "users-cog";
 
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'],
-    ['title' => 'Create Staff', 'url' => '/Armis2/admin_branch/create_staff.php', 'icon' => 'user-plus', 'page' => 'create'],
-    ['title' => 'Promotions', 'url' => '/Armis2/admin_branch/promote_staff.php', 'icon' => 'arrow-up', 'page' => 'promotions'],
-    ['title' => 'Medals', 'url' => '/Armis2/admin_branch/assign_medal.php', 'icon' => 'medal', 'page' => 'medals'],
-    [
-        'title' => 'Reports',
-        'icon' => 'chart-bar',
-        'page' => 'reports',
-        'children' => [
-            ['title' => 'Seniority', 'url' => '/Armis2/admin_branch/reports_seniority.php'],
-            ['title' => 'Unit List', 'url' => '/Armis2/admin_branch/reports_units.php'],
-            ['title' => 'Appointments', 'url' => '/Armis2/admin_branch/reports_appointment.php'],
-            ['title' => 'Contracts', 'url' => '/Armis2/admin_branch/reports_contract.php'],
-            ['title' => 'Courses', 'url' => '/Armis2/admin_branch/reports_courses.php'],
-            ['title' => 'Deceased', 'url' => '/Armis2/admin_branch/reports_deceased.php'],
-            ['title' => 'Gender', 'url' => '/Armis2/admin_branch/reports_gender.php'],
-            ['title' => 'Marital', 'url' => '/Armis2/admin_branch/reports_marital.php'],
-            ['title' => 'Rank', 'url' => '/Armis2/admin_branch/reports_rank.php'],
-            ['title' => 'Retired', 'url' => '/Armis2/admin_branch/reports_retired.php'],
-            ['title' => 'Trade', 'url' => '/Armis2/admin_branch/reports_trade.php'],
-            ['title' => 'Corps', 'url' => '/Armis2/admin_branch/reports_corps.php'],
-            ['title' => 'Units', 'url' => '/Armis2/admin_branch/reports_units.php'],
-        ]
-    ],
-];
+$sidebarLinks = []; // set by shared nav include below
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 $pdo = getDbConnection();
 
@@ -47,8 +22,8 @@ function formatSentenceCase($name) {
 }
 
 function getUnitOptions($pdo) {
-    $unitSql = "SELECT unitId as id, code as name FROM unit ORDER BY code ASC";
-    $catSql  = "SELECT DISTINCT " . getRankCategoryCaseSQL('r') . " as id, " . getRankCategoryCaseSQL('r') . " as name FROM `rank` r JOIN staff s ON s.rankId = r.rankId WHERE r.level IS NOT NULL ORDER BY r.level ASC";
+    $unitSql = "SELECT unitId as id, unitId as name FROM unit ORDER BY unitId ASC";
+    $catSql  = "SELECT DISTINCT " . getRankCategoryCaseSQL('r') . " as id, " . getRankCategoryCaseSQL('r') . " as name FROM `rank` r JOIN staff s ON s.rankId = r.rankId WHERE r.rankIndex IS NOT NULL ORDER BY r.rankIndex ASC";
     $rankSql = "SELECT DISTINCT r.rankId as id, r.rankId as name FROM `rank` r JOIN staff s ON s.rankId = r.rankId ORDER BY r.rankId ASC";
     
     $stmt = $pdo->query($unitSql);
@@ -71,12 +46,12 @@ list($units, $categories, $ranks) = getUnitOptions($pdo);
 
 // Sorting functionality
 $sortable_columns = [
-    'unit' => 'u.code',
-    'rank' => 'r.level',
+    'unit' => 'u.unitId',
+    'rank' => 'r.rankIndex',
     'svcNo' => 's.svcNo',
     'surname' => 's.lName',
     'fName' => 's.fName',
-    'category' => 'r.level',
+    'category' => 'r.rankIndex',
     'DOB' => 's.DOB',
     'attestDate' => 's.attestDate'
 ];
@@ -84,7 +59,7 @@ $sort_col = $_GET['sort_col'] ?? '';
 $sort_dir = strtolower($_GET['sort_dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
 
 $params = [];
-$sql = "SELECT s.*, COALESCE(r.rankId, s.rankId) as rankName, r.rankId as rankAbbr, r.level as rankLevel, " . getRankCategoryCaseSQL('r') . " as category, u.code as unitCode FROM staff s
+$sql = "SELECT s.*, COALESCE(r.rankId, s.rankId) as rankName, r.rankId as rankAbbr, r.rankIndex as rankLevel, " . getRankCategoryCaseSQL('r') . " as category, u.unitId as unitCode FROM staff s
     LEFT JOIN `rank` r ON s.rankId = r.rankId
         LEFT JOIN unit u ON s.unitId = u.unitId
         WHERE 1=1";
@@ -95,7 +70,7 @@ if ($filter_category !== '')  {
 }
 if ($filter_rank !== '')      { $sql .= " AND s.rankId = ?"; $params[] = $filter_rank; }
 if ($search !== '') {
-    $sql .= " AND (u.code LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR COALESCE(r.rankId, r.rankId) LIKE ?)";
+    $sql .= " AND (u.unitId LIKE ? OR s.svcNo LIKE ? OR s.lName LIKE ? OR s.fName LIKE ? OR COALESCE(r.rankId, r.rankId) LIKE ?)";
     for ($i = 0; $i < 5; $i++) $params[] = "%$search%";
 }
 
@@ -108,7 +83,7 @@ if ($sort_col && isset($sortable_columns[$sort_col])) {
     // Personnel without ranks (NULL rankId) are listed last
     $order_clause = " ORDER BY 
         CASE WHEN s.rankId IS NULL THEN 1 ELSE 0 END,
-        r.level ASC,
+        r.rankIndex ASC,
         s.subWef ASC,
         s.tempWef ASC,
         s.attestDate ASC,
@@ -175,7 +150,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     <select name="category" id="categoryFilter" class="form-select">
                         <option value="">Category</option>
                         <?php foreach ($categories as $cat): ?>
-                            <option value="<?= htmlspecialchars($cat->category) ?>" <?= ($filter_category == $cat->category) ? 'selected' : '' ?>><?= htmlspecialchars($cat->category) ?></option>
+                            <option value="<?= htmlspecialchars($cat->name) ?>" <?= ($filter_category == $cat->name) ? 'selected' : '' ?>><?= htmlspecialchars($cat->name) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>

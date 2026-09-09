@@ -24,14 +24,7 @@ $moduleName = "System Reports";
 $moduleIcon = "chart-bar";
 $currentPage = "reports";
 
-$sidebarLinks = [
-    ['title' => 'Dashboard', 'url' => '/Armis2/admin/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-    ['title' => 'User Management', 'url' => '/Armis2/admin/users.php', 'icon' => 'users', 'page' => 'users'],
-    ['title' => 'System Settings', 'url' => '/Armis2/admin/settings.php', 'icon' => 'cogs', 'page' => 'settings'],
-    ['title' => 'Database Management', 'url' => '/Armis2/admin/database.php', 'icon' => 'database', 'page' => 'database'],
-    ['title' => 'Security Center', 'url' => '/Armis2/admin/security.php', 'icon' => 'shield-alt', 'page' => 'security'],
-    ['title' => 'System Reports', 'url' => '/Armis2/admin/reports.php', 'icon' => 'chart-bar', 'page' => 'reports']
-];
+require_once __DIR__ . '/includes/sidebar_nav.php';
 
 // Check if user is logged in and has admin privileges
 if (!isset($_SESSION['user_id'])) {
@@ -41,34 +34,277 @@ if (!isset($_SESSION['user_id'])) {
 
 // Check if user has access to admin module
 requireModuleAccess('admin');
+require_once dirname(__DIR__) . '/shared/csrf.php';
+
+// --- Report export (GET, triggers a file download) ---
+// Real CSV generation from live data — previously every "Generate"/
+// "View"/"Download" action in this page was a JS alert() with no
+// backend at all.
+if (isset($_GET['export'])) {
+    $reportType = $_GET['export'];
+    $format = $_GET['format'] ?? 'csv';
+    $range = $_GET['range'] ?? '30days';
+
+    $data = generateReportData($pdo, $reportType, $range);
+    if ($data === null) {
+        http_response_code(400);
+        die('Unknown or unavailable report type: ' . htmlspecialchars($reportType));
+    }
+
+    try {
+        $stmt = $pdo->prepare('INSERT INTO generated_reports (report_type, format, date_range, generated_by) VALUES (?, ?, ?, ?)');
+        $stmt->execute([$reportType, $format, $range, $_SESSION['user_id'] ?? null]);
+    } catch (PDOException $e) {
+        error_log('generated_reports write failed (has the migration been run?): ' . $e->getMessage());
+    }
+
+    $filename = 'armis_' . $reportType . '_' . date('Y-m-d') . '.csv';
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    $out = fopen('php://output', 'w');
+    fputcsv($out, $data['headers']);
+    foreach ($data['rows'] as $row) {
+        fputcsv($out, $row);
+    }
+    fclose($out);
+    logAccess('admin', 'report_export', true);
+    exit;
+}
+
+// --- Delete a report-history entry (POST) ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_report_entry') {
+    require_csrf();
+    $reportId = (int) ($_POST['report_id'] ?? 0);
+    if ($reportId > 0) {
+        $stmt = $pdo->prepare('DELETE FROM generated_reports WHERE id = ?');
+        $stmt->execute([$reportId]);
+    }
+    header('Location: /Armis2/admin/reports.php');
+    exit;
+}
+
+/**
+ * Real report data for each of the sub-report types linked from this
+ * page. Returns ['headers' => [...], 'rows' => [[...], ...]] or null
+ * for an unknown type. A couple of the original sub-types
+ * (response_times) have no real data source anywhere in this app (no
+ * APM/performance-timing table exists) — rather than fake it, those
+ * are omitted from the switch and return null, which the export
+ * handler turns into a clear "unavailable" response instead of a
+ * silent fake success.
+ */
+function generateReportData(PDO $pdo, string $type, string $range): ?array {
+    $days = match ($range) {
+        '7days' => 7,
+        '90days' => 90,
+        '1year' => 365,
+        default => 30,
+    };
+
+    switch ($type) {
+        case 'security':
+        case 'login_activity':
+        case 'access_log':
+            // FIX: previously queried activity_log, which only
+            // reflects admin_branch usage (see
+            // shared/access_log_reader.php), not app-wide login/access
+            // activity. access.log is the comprehensive, correct
+            // source — same fix as admin/security.php's "Active
+            // Sessions" needed.
+            require_once dirname(__DIR__) . '/shared/access_log_reader.php';
+            $entries = array_reverse(readAccessLogEntries(time() - ($days * 86400))); // most recent first
+            $rows = array_map(fn($e) => [
+                $e['timestamp'] ?? '',
+                $e['username'] ?? '',
+                $e['module'] ?? '',
+                $e['action'] ?? '',
+                !empty($e['success']) ? 'Success' : 'Failed',
+                $e['ip'] ?? '',
+            ], $entries);
+            return [
+                'headers' => ['Date/Time', 'Username', 'Module', 'Action', 'Result', 'IP Address'],
+                'rows' => $rows,
+            ];
+
+        case 'failed_attempts':
+            // Real, but from a different source: login failures are
+            // recorded in logs/access.log (JSON lines), not the
+            // activity_log DB table, which only logs actions taken
+            // after a successful login.
+            $rows = [];
+            $accessLogPath = dirname(__DIR__) . '/logs/access.log';
+            if (is_readable($accessLogPath)) {
+                $cutoff = time() - ($days * 86400);
+                $handle = fopen($accessLogPath, 'r');
+                while ($handle && ($line = fgets($handle)) !== false) {
+                    $entry = json_decode($line, true);
+                    if (!$entry || !empty($entry['success'])) continue;
+                    if (strtotime($entry['timestamp'] ?? '') < $cutoff) continue;
+                    $rows[] = [$entry['timestamp'] ?? '', $entry['username'] ?? '', $entry['module'] ?? '', $entry['action'] ?? '', $entry['ip'] ?? ''];
+                }
+                if ($handle) fclose($handle);
+            }
+            return ['headers' => ['Date/Time', 'Username', 'Module', 'Action', 'IP Address'], 'rows' => $rows];
+
+        case 'user_permissions':
+            $stmt = $pdo->query("SELECT svcNo, username, role, accStatus FROM staff WHERE username IS NOT NULL AND username != '' ORDER BY username");
+            return ['headers' => ['Service No', 'Username', 'Role', 'Account Status'], 'rows' => $stmt->fetchAll(PDO::FETCH_NUM)];
+
+        case 'password_audit':
+            // Real, meaningful signal already tracked in the DB:
+            // accounts still on their original temp password
+            // (isFirstLogin=1) never completed the forced first-login
+            // password change.
+            $stmt = $pdo->query("
+                SELECT svcNo, username, role, accStatus, dateCreated
+                FROM staff WHERE isFirstLogin = 1 AND username IS NOT NULL AND username != ''
+                ORDER BY dateCreated ASC
+            ");
+            return ['headers' => ['Service No', 'Username', 'Role', 'Account Status', 'Created'], 'rows' => $stmt->fetchAll(PDO::FETCH_NUM)];
+
+        case 'performance':
+        case 'database_performance':
+            $stmt = $pdo->query("
+                SELECT table_name AS t, table_rows AS r, ROUND((data_length + index_length) / 1024 / 1024, 2) AS mb
+                FROM information_schema.TABLES WHERE table_schema = DATABASE() ORDER BY mb DESC
+            ");
+            return ['headers' => ['Table', 'Rows', 'Size (MB)'], 'rows' => $stmt->fetchAll(PDO::FETCH_NUM)];
+
+        case 'system_usage':
+            // FIX: same activity_log undercounting issue — access.log
+            // is the real, app-wide source.
+            require_once dirname(__DIR__) . '/shared/access_log_reader.php';
+            $entries = readAccessLogEntries(time() - ($days * 86400));
+            $byDay = [];
+            foreach ($entries as $e) {
+                if (empty($e['success'])) continue;
+                $day = date('Y-m-d', $e['_time']);
+                $byDay[$day]['users'][$e['username'] ?? $e['user_id'] ?? 'unknown'] = true;
+                $byDay[$day]['actions'] = ($byDay[$day]['actions'] ?? 0) + 1;
+            }
+            krsort($byDay);
+            $rows = array_map(fn($day, $data) => [$day, count($data['users']), $data['actions']], array_keys($byDay), $byDay);
+            return ['headers' => ['Date', 'Active Users', 'Actions'], 'rows' => $rows];
+
+        case 'resource_utilization':
+            $diskFree = disk_free_space(dirname(__DIR__));
+            $diskTotal = disk_total_space(dirname(__DIR__));
+            return [
+                'headers' => ['Metric', 'Value'],
+                'rows' => [
+                    ['PHP Memory Usage (MB)', number_format(memory_get_usage(true) / 1024 / 1024, 1)],
+                    ['Disk Free (GB)', $diskFree ? number_format($diskFree / 1024 / 1024 / 1024, 1) : 'N/A'],
+                    ['Disk Total (GB)', $diskTotal ? number_format($diskTotal / 1024 / 1024 / 1024, 1) : 'N/A'],
+                    ['Server Load (1min)', function_exists('sys_getloadavg') ? (sys_getloadavg()[0] ?? 'N/A') : 'N/A'],
+                ],
+            ];
+
+        case 'personnel':
+        case 'staff_summary':
+            $stmt = $pdo->query("SELECT svcStatus, COUNT(*) as c FROM staff GROUP BY svcStatus");
+            return ['headers' => ['Status', 'Count'], 'rows' => $stmt->fetchAll(PDO::FETCH_NUM)];
+
+        case 'rank_distribution':
+            $stmt = $pdo->query("
+                SELECT s.rankId, COUNT(*) as c FROM staff s WHERE s.svcStatus = 'Active'
+                GROUP BY s.rankId ORDER BY c DESC
+            ");
+            return ['headers' => ['Rank', 'Count'], 'rows' => $stmt->fetchAll(PDO::FETCH_NUM)];
+
+        case 'unit_strength':
+            $stmt = $pdo->query("
+                SELECT u.unitId, COUNT(s.svcNo) as c FROM unit u LEFT JOIN staff s ON s.unitId = u.unitId AND s.svcStatus = 'Active'
+                GROUP BY u.unitId ORDER BY c DESC
+            ");
+            return ['headers' => ['Unit', 'Active Staff'], 'rows' => $stmt->fetchAll(PDO::FETCH_NUM)];
+
+        case 'training_status':
+            $stmt = $pdo->query("SELECT status, COUNT(*) as c FROM training_records GROUP BY status");
+            return ['headers' => ['Status', 'Count'], 'rows' => $stmt->fetchAll(PDO::FETCH_NUM)];
+
+        default:
+            return null; // includes 'response_times' — no real data source exists for this anywhere in the app
+    }
+}
 
 // Log access
 logAccess('admin', 'reports_view', true);
 
-// Sample report data (would come from actual queries in production)
+// FIX: previously all hardcoded ("Sample report data (would come from
+// actual queries in production)") — genuine queries now.
+require_once dirname(__DIR__) . '/shared/access_log_reader.php';
+
 $systemStats = [
-    'total_users' => 247,
-    'active_sessions' => 47,
-    'total_staff' => 1823,
-    'pending_approvals' => 12
+    'total_users' => (int) $pdo->query("SELECT COUNT(*) FROM staff")->fetchColumn(),
+    // FIX: previously queried the activity_log DB table, which only
+    // reflects admin_branch usage (see shared/access_log_reader.php) —
+    // access.log is the real, app-wide source, same definition of
+    // "active" the app uses elsewhere (e.g. admin/security.php).
+    'active_sessions' => count(getActiveUsersFromAccessLog((int) SESSION_TIMEOUT)),
+    'total_staff' => (int) $pdo->query("SELECT COUNT(*) FROM staff WHERE svcStatus = 'Active'")->fetchColumn(),
+    'pending_approvals' => (int) $pdo->query("SELECT COUNT(*) FROM staff WHERE accStatus = 'Pending'")->fetchColumn(),
 ];
 
-$monthlyStats = [
-    ['month' => 'Jan', 'users' => 45, 'logins' => 1250, 'errors' => 15],
-    ['month' => 'Feb', 'users' => 52, 'logins' => 1380, 'errors' => 12],
-    ['month' => 'Mar', 'users' => 48, 'logins' => 1420, 'errors' => 8],
-    ['month' => 'Apr', 'users' => 61, 'logins' => 1550, 'errors' => 10],
-    ['month' => 'May', 'users' => 58, 'logins' => 1480, 'errors' => 6],
-    ['month' => 'Jun', 'users' => 67, 'logins' => 1650, 'errors' => 9]
-];
+// Last 6 months of real activity, from access.log (see above for why
+// not activity_log).
+$monthlyStats = [];
+$sixMonthsAgo = strtotime('-6 months');
+$monthlyByYm = [];
+foreach (readAccessLogEntries($sixMonthsAgo) as $entry) {
+    if (empty($entry['success'])) continue;
+    $ym = date('Y-m', $entry['_time']);
+    $monthlyByYm[$ym]['month'] = date('M', $entry['_time']);
+    $monthlyByYm[$ym]['users'][$entry['username'] ?? $entry['user_id'] ?? 'unknown'] = true;
+    $monthlyByYm[$ym]['actions'] = ($monthlyByYm[$ym]['actions'] ?? 0) + 1;
+}
+ksort($monthlyByYm);
+$monthlyRows = [];
+foreach ($monthlyByYm as $ym => $data) {
+    $monthlyRows[] = ['ym' => $ym, 'month' => $data['month'], 'users' => count($data['users']), 'actions' => $data['actions']];
+}
+// Real PHP error count per month, parsed from the actual error log
+// (logs/php_errors.log), keyed the same way as the activity rows above.
+$errorCounts = [];
+$errorLogPath = dirname(__DIR__) . '/logs/php_errors.log';
+if (is_readable($errorLogPath)) {
+    $handle = fopen($errorLogPath, 'r');
+    if ($handle) {
+        while (($line = fgets($handle)) !== false) {
+            if (preg_match('/^\[(\d{1,2})-(\w{3})-(\d{4})/', $line, $m)) {
+                $ym = date('Y-m', strtotime("{$m[1]} {$m[2]} {$m[3]}"));
+                $errorCounts[$ym] = ($errorCounts[$ym] ?? 0) + 1;
+            }
+        }
+        fclose($handle);
+    }
+}
+foreach ($monthlyRows as $row) {
+    $monthlyStats[] = [
+        'month' => $row['month'],
+        'users' => (int) $row['users'],
+        'logins' => (int) $row['actions'], // activity_log doesn't distinguish "login" specifically — total logged actions
+        'errors' => $errorCounts[$row['ym']] ?? 0,
+    ];
+}
 
-$recentReports = [
-    ['name' => 'User Activity Report', 'generated' => '2024-01-15 09:30:00', 'type' => 'Security', 'size' => '2.3 MB'],
-    ['name' => 'System Performance Report', 'generated' => '2024-01-14 15:45:00', 'type' => 'Performance', 'size' => '1.8 MB'],
-    ['name' => 'Database Backup Report', 'generated' => '2024-01-14 02:00:00', 'type' => 'Maintenance', 'size' => '892 KB'],
-    ['name' => 'Security Audit Report', 'generated' => '2024-01-13 11:20:00', 'type' => 'Security', 'size' => '3.1 MB'],
-    ['name' => 'Staff Statistics Report', 'generated' => '2024-01-12 16:15:00', 'type' => 'Personnel', 'size' => '1.2 MB']
-];
+// Real report-generation history — see generated_reports table
+// (database/migrations/2026_08_28_add_generated_reports_table.sql).
+// Reports are generated on demand (no files persisted to disk); this
+// is an audit trail of what was generated, when, and by whom.
+$recentReports = [];
+try {
+    $reportsStmt = $pdo->query("
+        SELECT gr.id, gr.report_type, gr.format, gr.date_range, gr.created_at, s.fName, s.lName
+        FROM generated_reports gr
+        LEFT JOIN staff s ON gr.generated_by = s.svcNo
+        ORDER BY gr.created_at DESC
+        LIMIT 20
+    ");
+    $recentReports = $reportsStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    // Migration not run yet — show an empty list rather than fatal-erroring the page.
+    error_log('generated_reports read failed (has the migration been run?): ' . $e->getMessage());
+}
 
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';
@@ -269,44 +505,46 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <table class="table table-striped table-hover">
                             <thead>
                                 <tr>
-                                    <th>Report Name</th>
+                                    <th>Report Type</th>
                                     <th>Generated</th>
-                                    <th>Type</th>
-                                    <th>Size</th>
+                                    <th>Generated By</th>
+                                    <th>Format</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
+                                <?php if (empty($recentReports)): ?>
+                                <tr><td colspan="5" class="text-center text-muted">No reports generated yet.</td></tr>
+                                <?php endif; ?>
                                 <?php foreach ($recentReports as $report): ?>
                                 <tr>
                                     <td>
-                                        <strong><?= htmlspecialchars($report['name']) ?></strong>
-                                    </td>
-                                    <td><?= date('M j, Y H:i', strtotime($report['generated'])) ?></td>
-                                    <td>
                                         <?php
-                                        $typeClass = match($report['type']) {
-                                            'Security' => 'danger',
-                                            'Performance' => 'success',
-                                            'Personnel' => 'info',
-                                            'Maintenance' => 'warning',
-                                            default => 'secondary'
+                                        $typeClass = match ($report['report_type']) {
+                                            'security' => 'danger',
+                                            'performance' => 'success',
+                                            'personnel' => 'info',
+                                            default => 'secondary',
                                         };
                                         ?>
-                                        <span class="badge bg-<?= $typeClass ?>"><?= $report['type'] ?></span>
+                                        <span class="badge bg-<?= $typeClass ?>"><?= htmlspecialchars(ucfirst($report['report_type'])) ?></span>
                                     </td>
-                                    <td><?= $report['size'] ?></td>
+                                    <td><?= date('M j, Y H:i', strtotime($report['created_at'])) ?></td>
+                                    <td><?= htmlspecialchars(trim(($report['fName'] ?? '') . ' ' . ($report['lName'] ?? '')) ?: 'Unknown') ?></td>
+                                    <td><?= htmlspecialchars(strtoupper($report['format'])) ?></td>
                                     <td>
                                         <div class="btn-group btn-group-sm">
-                                            <button class="btn btn-outline-primary" onclick="viewReport('<?= $report['name'] ?>')">
-                                                <i class="fas fa-eye"></i>
-                                            </button>
-                                            <button class="btn btn-outline-success" onclick="downloadReport('<?= $report['name'] ?>')">
+                                            <a class="btn btn-outline-success" href="/Armis2/admin/reports.php?export=<?= urlencode($report['report_type']) ?>&format=<?= urlencode($report['format']) ?>&range=<?= urlencode($report['date_range']) ?>" title="Download (regenerates fresh data)">
                                                 <i class="fas fa-download"></i>
-                                            </button>
-                                            <button class="btn btn-outline-danger" onclick="deleteReport('<?= $report['name'] ?>')">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
+                                            </a>
+                                            <form method="POST" style="display:inline;" onsubmit="return confirm('Remove this entry from report history?');">
+                                                <?= csrf_field() ?>
+                                                <input type="hidden" name="action" value="delete_report_entry">
+                                                <input type="hidden" name="report_id" value="<?= (int) $report['id'] ?>">
+                                                <button type="submit" class="btn btn-outline-danger" title="Remove from history">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </form>
                                         </div>
                                     </td>
                                 </tr>
@@ -354,11 +592,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     <div class="mb-3">
                         <label for="format" class="form-label">Output Format</label>
                         <select class="form-select" id="format" required>
-                            <option value="pdf">PDF</option>
-                            <option value="excel">Excel</option>
                             <option value="csv">CSV</option>
-                            <option value="html">HTML</option>
                         </select>
+                        <small class="form-text text-muted">PDF/Excel/HTML export aren't built yet — CSV is the only genuinely implemented format right now (mpdf and phpoffice/phpspreadsheet are already available as dependencies if these are wanted later).</small>
                     </div>
                 </form>
             </div>
@@ -420,33 +656,27 @@ function generateReport() {
 }
 
 function scheduleReport() {
-    alert('Report scheduling interface would be displayed.');
+    // FIX: previously alert('...would be displayed'). Report
+    // scheduling (recurring, emailed reports) is a real feature but a
+    // much larger one (needs a scheduler/cron integration) — being
+    // honest that it isn't built yet rather than faking a working UI.
+    armisNotifications.info('Not yet available', 'Scheduled/recurring reports are planned but not built yet. Use "Generate Report" for on-demand exports.');
+}
+
+function exportReport(type, range = '30days', format = 'csv') {
+    window.location.href = `/Armis2/admin/reports.php?export=${encodeURIComponent(type)}&format=${encodeURIComponent(format)}&range=${encodeURIComponent(range)}`;
 }
 
 function generateSecurityReport(type) {
-    alert('Generating security report: ' + type);
+    exportReport(type);
 }
 
 function generatePerformanceReport(type) {
-    alert('Generating performance report: ' + type);
+    exportReport(type);
 }
 
 function generatePersonnelReport(type) {
-    alert('Generating personnel report: ' + type);
-}
-
-function viewReport(name) {
-    alert('Viewing report: ' + name);
-}
-
-function downloadReport(name) {
-    alert('Downloading report: ' + name);
-}
-
-function deleteReport(name) {
-    if (confirm('Are you sure you want to delete the report: ' + name + '?')) {
-        alert('Report would be deleted: ' + name);
-    }
+    exportReport(type);
 }
 
 function submitReportGeneration() {
@@ -455,9 +685,9 @@ function submitReportGeneration() {
         const reportType = document.getElementById('reportType').value;
         const dateRange = document.getElementById('dateRange').value;
         const format = document.getElementById('format').value;
-        
-        alert(`Generating ${reportType} report for ${dateRange} in ${format} format...`);
-        
+
+        exportReport(reportType, dateRange, format);
+
         const modal = bootstrap.Modal.getInstance(document.getElementById('reportModal'));
         modal.hide();
     } else {
