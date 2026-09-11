@@ -176,11 +176,13 @@ try {
     }
 
     // ==================== LANGUAGE SKILLS ====================
-    // No `staff_languages` table (or equivalent) exists anywhere in the schema, so there is
-    // no real data source for this section yet. Deliberately left empty rather than reading
-    // from a nonexistent table and always showing a fake "0 languages" result.
-    $languageRecords = [];
-    $languagesTracked = false;
+    // FIX: this comment used to claim no staff_languages table (or
+    // equivalent) existed anywhere in the schema, and left this
+    // permanently empty — stale; the table exists and
+    // profile_manager.php's getLanguageRecords() already queries it
+    // correctly (same method training.php now uses to display and
+    // edit these records).
+    $languageRecords = $profileManager->getLanguageRecords();
 
     // ==================== PROFILE COMPLETENESS (real-time, computed from the live row) ====================
     $completenessFields = [
@@ -421,27 +423,18 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 
                 <div class="col-lg-8 mb-4">
                     <div class="card dashboard-card h-100">
-                        <div class="card-header">
-                            <h5 class="mb-0"><i class="fas fa-info-circle"></i> Personal Information</h5>
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0"><i class="fas fa-info-circle"></i> Contact &amp; Personal Snapshot</h5>
+                            <a href="service.php" class="small">View full service record &rarr;</a>
                         </div>
                         <div class="card-body">
+                            <!-- FIX: this card used to also repeat Service
+                                 Number/Rank/Corps/Trade/Years of Service —
+                                 all of which service.php already owns as
+                                 its own dedicated card. Trimmed to the
+                                 personal/contact facts that aren't shown
+                                 as a summary anywhere else. -->
                             <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label text-muted small">Service Number</label>
-                                    <p class="fw-bold"><?= htmlspecialchars($userData->svcNo ?? 'Not Available') ?></p>
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label text-muted small">Current Rank</label>
-                                    <p class="fw-bold"><?= htmlspecialchars($userData->displayRank ?? 'N/A') ?></p>
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label text-muted small">Corps</label>
-                                    <p class="fw-bold"><?= htmlspecialchars($userData->corps ?? 'Not set') ?></p>
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label text-muted small">Trade</label>
-                                    <p class="fw-bold"><?= htmlspecialchars($userData->trade ?? 'Not set') ?></p>
-                                </div>
                                 <div class="col-md-6 mb-3">
                                     <label class="form-label text-muted small">Official Email</label>
                                     <p class="fw-bold"><?= htmlspecialchars($userData->email ?? 'Not provided') ?></p>
@@ -460,21 +453,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                     </p>
                                 </div>
                                 <div class="col-md-6 mb-3">
-                                    <label class="form-label text-muted small">Years of Service</label>
-                                    <p class="fw-bold">
-                                        <?= htmlspecialchars($userData->serviceYears ?? 'N/A') ?>
-                                        <?php if (isset($userData->attestDate) && $userData->attestDate): ?>
-                                            <small class="text-muted">(Since <?= date('M Y', strtotime($userData->attestDate)) ?>)</small>
-                                        <?php endif; ?>
-                                    </p>
-                                </div>
-                                <div class="col-md-6 mb-3">
                                     <label class="form-label text-muted small">Marital Status</label>
                                     <p class="fw-bold"><?= htmlspecialchars($userData->marital ?? 'Not set') ?></p>
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label text-muted small">Retirement Age</label>
-                                    <p class="fw-bold">60 years</p>
                                 </div>
                             </div>
                         </div>
@@ -552,95 +532,34 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                 </div>
             </div>
 
-            <!-- Education & Courses (real data from staff_course) -->
+            <!-- Education & Language teaser — full detail (and the only
+                 place to add/edit these) now lives on training.php, not
+                 duplicated here as a second full table. -->
             <div class="row mb-4">
                 <div class="col-12">
                     <div class="card dashboard-card">
-                        <div class="card-header">
-                            <h5 class="mb-0"><i class="fas fa-graduation-cap"></i> Education &amp; Course History</h5>
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0"><i class="fas fa-graduation-cap"></i> Education &amp; Languages</h5>
+                            <a href="/Armis2/users/training.php" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-arrow-right"></i> View / Manage
+                            </a>
                         </div>
                         <div class="card-body">
-                            <?php if (empty($educationRecords)): ?>
+                            <?php if (empty($educationRecords) && empty($languageRecords)): ?>
                                 <?php renderEmptyState(
                                     'graduation-cap',
-                                    'No education or course records found',
-                                    '/Armis2/users/personal.php',
+                                    'No education or language records yet',
+                                    '/Armis2/users/training.php',
                                     'plus',
-                                    'Add Education Records',
+                                    'Add Records',
                                     'primary'
                                 ); ?>
                             <?php else: ?>
-                                <div class="table-responsive">
-                                    <table class="table table-hover align-middle">
-                                        <thead class="table-light">
-                                            <tr>
-                                                <th><i class="fas fa-university"></i> Institution</th>
-                                                <th><i class="fas fa-award"></i> Qualification</th>
-                                                <th><i class="fas fa-calendar"></i> Period</th>
-                                                <th><i class="fas fa-star"></i> Grade</th>
-                                                <th><i class="fas fa-check-circle"></i> Result</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <?php foreach ($educationRecords as $edu): ?>
-                                            <tr>
-                                                <td>
-                                                    <strong><?= htmlspecialchars($edu['instId'] ?? 'N/A') ?></strong>
-                                                    <?php if (!empty($edu['institutionLocation'])): ?>
-                                                        <br><small class="text-muted"><?= htmlspecialchars($edu['institutionLocation']) ?></small>
-                                                    <?php endif; ?>
-                                                </td>
-                                                <td>
-                                                    <?= htmlspecialchars($edu['qualification'] ?? 'N/A') ?>
-                                                    <?php if (!empty($edu['isHighest'])): ?>
-                                                        <span class="badge bg-warning text-dark ms-1"><i class="fas fa-star"></i> Highest</span>
-                                                    <?php endif; ?>
-                                                </td>
-                                                <td>
-                                                    <?php if (!empty($edu['cseStart'])): ?>
-                                                        <?= date('Y', strtotime($edu['cseStart'])) ?>
-                                                        <?= !empty($edu['cseEnd']) ? ' - ' . date('Y', strtotime($edu['cseEnd'])) : ' - Present' ?>
-                                                    <?php else: ?>
-                                                        N/A
-                                                    <?php endif; ?>
-                                                </td>
-                                                <td>
-                                                    <?php if (!empty($edu['grade'])): ?>
-                                                        <span class="badge bg-success"><?= htmlspecialchars($edu['grade']) ?></span>
-                                                    <?php else: ?>
-                                                        <span class="text-muted">N/A</span>
-                                                    <?php endif; ?>
-                                                </td>
-                                                <td><?= htmlspecialchars($edu['result'] ?? 'N/A') ?></td>
-                                            </tr>
-                                            <?php endforeach; ?>
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <div class="text-end mt-3">
-                                    <a href="/Armis2/users/personal.php" class="btn btn-sm btn-outline-primary">
-                                        <i class="fas fa-edit"></i> Manage Education Records
-                                    </a>
-                                </div>
+                                <p class="mb-0">
+                                    <strong><?= count($educationRecords) ?></strong> education record<?= count($educationRecords) === 1 ? '' : 's' ?>
+                                    and <strong><?= count($languageRecords) ?></strong> language<?= count($languageRecords) === 1 ? '' : 's' ?> on file.
+                                </p>
                             <?php endif; ?>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Language Skills -->
-            <div class="row mb-4">
-                <div class="col-12">
-                    <div class="card dashboard-card">
-                        <div class="card-header">
-                            <h5 class="mb-0"><i class="fas fa-language"></i> Language Skills</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="language-coming-soon">
-                                <i class="fas fa-language fa-2x mb-2"></i>
-                                <p class="mb-0">Language skills aren't tracked in the system yet.</p>
-                                <small>This section will populate automatically once language records are added to the database.</small>
-                            </div>
                         </div>
                     </div>
                 </div>

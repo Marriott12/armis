@@ -569,11 +569,11 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                         <table class="table table-borderless">
                                             <tr>
                                                 <td><strong>Full Name:</strong></td>
-                                                <td><?php echo htmlspecialchars($personalInfo->fName ?? '') . ' ' . htmlspecialchars($personalInfo->lName ?? ''); ?></td>
+                                                <td><?php echo htmlspecialchars($personalInfo->fName ?? '') . ' ' . htmlspecialchars($personalInfo->mName ?? '') . ' ' . htmlspecialchars($personalInfo->lName ?? ''); ?></td>
                                             </tr>
                                             <tr>
                                                 <td><strong>Date of Birth:</strong></td>
-                                                <td><?php echo isset($personalInfo->dob) && $personalInfo->dob ? date('d M Y', strtotime($personalInfo->dob)) : 'Not specified'; ?></td>
+                                                <td><?php echo isset($personalInfo->DOB) && $personalInfo->DOB ? date('d M Y', strtotime($personalInfo->DOB)) : 'Not specified'; ?></td>
                                             </tr>
                                             <tr>
                                                 <td><strong>Gender:</strong></td>
@@ -581,7 +581,7 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                             </tr>
                                             <tr>
                                                 <td><strong>Marital Status:</strong></td>
-                                                <td><?php echo htmlspecialchars($personalInfo->marital_status ?? 'Not specified'); ?></td>
+                                                <td><?php echo htmlspecialchars($personalInfo->marital ?? 'Not specified'); ?></td>
                                             </tr>
                                         </table>
                                     </div>
@@ -594,11 +594,11 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                             </tr>
                                             <tr>
                                                 <td><strong>Phone:</strong></td>
-                                                <td><?php echo htmlspecialchars($personalInfo->phone ?? 'Not specified'); ?></td>
+                                                <td><?php echo htmlspecialchars($personalInfo->tel ?? 'Not specified'); ?></td>
                                             </tr>
                                             <tr>
                                                 <td><strong>Employment Date:</strong></td>
-                                                <td><?php echo isset($personalInfo->employment_date) && $personalInfo->employment_date ? date('d M Y', strtotime($personalInfo->employment_date)) : 'Not specified'; ?></td>
+                                                <td><?php echo isset($personalInfo->attestDate) && $personalInfo->attestDate ? date('d M Y', strtotime($personalInfo->attestDate)) : 'Not specified'; ?></td>
                                             </tr>
                                         </table>
                                     </div>
@@ -1617,7 +1617,7 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                             <h3 class="completion-percentage"><?php echo isset($userStats['profile_completion']) ? $userStats['profile_completion'] : 0; ?>%</h3>
                                             <p class="text-muted">Profile Completion</p>
                                             <?php if ($userStats['profile_completion'] < 100): ?>
-                                            <a href="profile.php" class="btn btn-sm btn-primary mt-2">
+                                            <a href="personal.php" class="btn btn-sm btn-primary mt-2">
                                                 <i class="fas fa-edit me-1"></i> Complete Profile
                                             </a>
                                             <?php else: ?>
@@ -1692,7 +1692,7 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                                         </div>
                                         <?php if ($userStats['profile_completion'] < 100): ?>
                                         <div class="mt-3">
-                                            <a href="profile.php" class="btn btn-sm btn-primary">
+                                            <a href="personal.php" class="btn btn-sm btn-primary">
                                                 <i class="fas fa-edit me-1"></i> Complete Profile
                                             </a>
                                         </div>

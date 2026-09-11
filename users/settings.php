@@ -21,12 +21,14 @@ $sidebarLinks = $userNavigationItems;
 
 // Load user profile data
 require_once __DIR__ . '/profile_manager.php';
+require_once dirname(__DIR__) . '/shared/csrf.php';
 
 $successMessage = '';
 $errorMessage = '';
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     try {
         $profileManager = new UserProfileManager($_SESSION['user_id']);
         
@@ -65,6 +67,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 case 'export_data':
                     // Trigger data export
                     $successMessage = "Data export request submitted. You will receive an email when ready.";
+                    break;
+
+                case 'upload_photo':
+                    // FIX: previously a pure client-side mock — the JS
+                    // used setTimeout() to fake a delay and never sent
+                    // the file to the server at all. Real handling now,
+                    // using profile_manager.php's already-existing (but
+                    // previously never-called) uploadProfilePhoto().
+                    // personal.php had its own separate, also-broken
+                    // attempt at this (a real form submit with no
+                    // server-side handler behind it) — removed in favor
+                    // of this one, working, real implementation.
+                    if (!empty($_FILES['profilePhoto'])) {
+                        $photoResult = $profileManager->uploadProfilePhoto($_FILES['profilePhoto']);
+                        if ($photoResult['success']) {
+                            $successMessage = $photoResult['message'];
+                        } else {
+                            $errorMessage = $photoResult['message'];
+                        }
+                    } else {
+                        $errorMessage = 'No photo was selected.';
+                    }
+                    break;
+
+                case 'remove_photo':
+                    // FIX: also previously a client-side-only mock.
+                    $photoResult = $profileManager->removeProfilePhoto();
+                    if ($photoResult['success']) {
+                        $successMessage = $photoResult['message'];
+                    } else {
+                        $errorMessage = $photoResult['message'];
+                    }
                     break;
             }
         }
@@ -167,6 +201,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 </div>
                                 <div class="card-body">
                                     <form method="POST">
+                                        <?= csrf_field() ?>
                                         <input type="hidden" name="action" value="change_password">
                                         
                                         <div class="mb-3">
@@ -215,6 +250,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 </div>
                                 <div class="card-body">
                                     <form method="POST">
+                                        <?= csrf_field() ?>
                                         <input type="hidden" name="action" value="update_notifications">
                                         
                                         <div class="mb-3">
@@ -263,6 +299,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 </div>
                                 <div class="card-body">
                                     <form method="POST">
+                                        <?= csrf_field() ?>
                                         <input type="hidden" name="action" value="update_privacy">
                                         
                                         <div class="mb-3">
@@ -357,6 +394,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                             <h6>Export Your Data</h6>
                                             <p class="text-muted">Download a complete copy of your profile data and records.</p>
                                             <form method="POST">
+                                                <?= csrf_field() ?>
                                                 <input type="hidden" name="action" value="export_data">
                                                 <button type="submit" class="btn btn-outline-primary">
                                                     <i class="fas fa-download"></i> Request Data Export
@@ -433,29 +471,42 @@ function uploadPhoto() {
     uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
     uploadBtn.disabled = true;
     
-    // Simulate upload (in real implementation, use fetch to upload)
-    setTimeout(() => {
-        // Update preview
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            document.getElementById('current-photo').src = e.target.result;
-        };
-        reader.readAsDataURL(file);
-        
-        // Restore button
-        uploadBtn.innerHTML = originalText;
-        uploadBtn.disabled = false;
-        
-        alert('Photo uploaded successfully!');
-    }, 2000);
+    // FIX: previously used setTimeout() to fake a delay and never
+    // actually sent the file anywhere — a real fetch() now, to the
+    // real upload_photo handler in this file's PHP.
+    fetch(window.location.href, {
+        method: 'POST',
+        body: formData,
+    })
+        .then(res => res.text())
+        .then(() => {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('current-photo').src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+            uploadBtn.innerHTML = originalText;
+            uploadBtn.disabled = false;
+            // Reload so the success/error banner (rendered server-side)
+            // is visible, and the sidebar/header avatar refreshes too.
+            window.location.reload();
+        })
+        .catch(() => {
+            uploadBtn.innerHTML = originalText;
+            uploadBtn.disabled = false;
+            alert('Upload failed. Please try again.');
+        });
 }
 
 function removePhoto() {
-    if (confirm('Are you sure you want to remove your profile photo?')) {
-        document.getElementById('current-photo').src = '/Armis2/shared/default-avatar.png';
-        document.getElementById('profilePhoto').value = '';
-        alert('Profile photo removed successfully!');
+    if (!confirm('Are you sure you want to remove your profile photo?')) {
+        return;
     }
+    const formData = new FormData();
+    formData.append('action', 'remove_photo');
+    fetch(window.location.href, { method: 'POST', body: formData })
+        .then(() => window.location.reload())
+        .catch(() => alert('Could not remove photo. Please try again.'));
 }
 
 // Tab navigation
