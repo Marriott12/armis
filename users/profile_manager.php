@@ -519,47 +519,6 @@ class UserProfileManager {
     }
 
     /**
-     * Remove the current profile photo (file + DB reference), reverting
-     * to the default avatar. Symmetric with uploadProfilePhoto() above.
-     */
-    public function removeProfilePhoto() {
-        try {
-            if (empty($this->userSvcNo)) {
-                $this->loadUserInfo();
-            }
-            if (empty($this->userSvcNo)) {
-                return ['success' => false, 'message' => 'User service number not available'];
-            }
-
-            $uploadDir = dirname(__DIR__) . '/uploads/profile_photos/';
-            $existingFiles = glob($uploadDir . $this->userSvcNo . '.*');
-            $removed = false;
-            foreach ($existingFiles as $existingFile) {
-                if (is_file($existingFile)) {
-                    unlink($existingFile);
-                    $removed = true;
-                }
-            }
-
-            try {
-                $stmt = $this->pdo->prepare("UPDATE staff SET profilePhoto = NULL WHERE svcNo = ?");
-                $stmt->execute([$this->userId]);
-            } catch (PDOException $e) {
-                error_log("Could not clear profilePhoto column: " . $e->getMessage());
-            }
-
-            if ($removed) {
-                $this->logActivity('photo_update', 'Profile photo removed');
-            }
-
-            return ['success' => true, 'message' => 'Profile photo removed successfully'];
-        } catch (Exception $e) {
-            error_log("Error removing profile photo: " . $e->getMessage());
-            return ['success' => false, 'message' => 'Removal failed: ' . $e->getMessage()];
-        }
-    }
-
-    /**
      * Upload and process CV file
      */
     public function uploadCV($file) {

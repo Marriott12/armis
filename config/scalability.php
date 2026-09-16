@@ -1,292 +1,336 @@
 <?php
+declare(strict_types=1);
+
 /**
- * ARMIS Scalability Configuration
- * Optimized for handling 1M+ users efficiently
- * 
- * This configuration provides database connection pooling,
- * caching strategies, and performance optimizations
+ * ARMIS scalability/runtime layer.
+ *
+ * The application can run fully on a single WAMP host. Redis, a CDN,
+ * read replicas and a load balancer are optional production capabilities;
+ * they are enabled only through environment variables and are health-checked
+ * before being reported as active.
  */
 
-// Database Configuration for High Load
-class ScalabilityConfig {
-    
-    // Database connection pooling settings
-    const DB_POOL_SIZE = 20;
-    const DB_MAX_CONNECTIONS = 100;
-    const DB_CONNECTION_TIMEOUT = 30;
-    
-    // Redis caching configuration
-    const REDIS_HOST = 'localhost';
-    const REDIS_PORT = 6379;
-    const REDIS_PASSWORD = null;
-    const CACHE_TTL = 3600; // 1 hour default
-    
-    // Session management for scale
-    const SESSION_HANDLER = 'redis'; // Options: 'files', 'database', 'redis'
-    const SESSION_LIFETIME = 28800; // 8 hours
-    
-    // Performance settings
-    const ENABLE_QUERY_CACHE = true;
-    const ENABLE_PAGE_CACHE = true;
-    const ENABLE_GZIP_COMPRESSION = true;
-    const MAX_EXECUTION_TIME = 60;
-    const MEMORY_LIMIT = '512M';
-    
-    // Load balancing and clustering
-    const LOAD_BALANCER_ENABLED = false;
-    const READ_REPLICA_HOSTS = [
-        // 'replica1.example.com',
-        // 'replica2.example.com'
-    ];
-    
-    // Security for high-scale deployment
-    const RATE_LIMIT_REQUESTS = 100; // per minute per IP
-    const ENABLE_DDOS_PROTECTION = true;
-    const MAX_LOGIN_ATTEMPTS = 5;
-    const LOGIN_LOCKOUT_TIME = 900; // 15 minutes
-    
-    // File upload limits for CV and documents
-    const MAX_UPLOAD_SIZE = '10M';
-    const ALLOWED_FILE_TYPES = ['pdf', 'doc', 'docx', 'jpg', 'png'];
-    
-    // Database optimization settings
-    public static function getDatabaseConfig() {
-        return [
-            'charset' => 'utf8mb4',
-            'collation' => 'utf8mb4_unicode_ci',
-            'options' => [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                PDO::ATTR_EMULATE_PREPARES => false,
-                PDO::ATTR_PERSISTENT => true, // Connection pooling
-                PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => false, // For large result sets
-                PDO::MYSQL_ATTR_INIT_COMMAND => "SET sql_mode='STRICT_TRANS_TABLES'"
-            ]
-        ];
+require_once dirname(__DIR__) . '/shared/env.php';
+
+if (!function_exists('armis_bool_env')) {
+    function armis_bool_env(string $key, bool $default = false): bool
+    {
+        $value = env_get($key, $default ? '1' : '0');
+        return in_array(strtolower(trim((string)$value)), ['1', 'true', 'yes', 'on'], true);
     }
-    
-    // Caching strategy for frequently accessed data
-    public static function getCacheKeys() {
-        return [
-            'user_profile' => 'user_profile_{user_id}',
-            'user_permissions' => 'user_perms_{user_id}',
-            'staff_list' => 'staff_list_{page}_{filters}',
-            'rank_structure' => 'rank_structure',
-            'unit_list' => 'unit_list',
-            'training_courses' => 'training_courses',
-            'reports_cache' => 'report_{type}_{date}_{filters}'
-        ];
+}
+
+if (!function_exists('armis_int_env')) {
+    function armis_int_env(string $key, int $default): int
+    {
+        $value = env_get($key, (string)$default);
+        return is_numeric($value) ? (int)$value : $default;
     }
-    
-    // Performance monitoring
-    public static function getPerformanceConfig() {
+}
+
+class ScalabilityConfig
+{
+    public const DB_PERSISTENT = true;
+    public const DB_CONNECTION_TIMEOUT = 10;
+
+    public const REDIS_HOST = 'localhost';
+    public const REDIS_PORT = 6379;
+    public const REDIS_PASSWORD = null;
+    public const CACHE_TTL = 3600;
+
+    public const ENABLE_QUERY_CACHE = true;
+    public const ENABLE_PAGE_CACHE = false;
+    public const ENABLE_GZIP_COMPRESSION = true;
+    public const MAX_EXECUTION_TIME = 60;
+    public const MEMORY_LIMIT = '512M';
+
+    public const CDN_ENABLED = false;
+    public const CDN_BASE_URL = '';
+
+    public const LOAD_BALANCER_ENABLED = false;
+    public const READ_REPLICA_HOSTS = [];
+
+    public const RATE_LIMIT_REQUESTS = 100;
+    public const ENABLE_DDOS_PROTECTION = true;
+    public const MAX_LOGIN_ATTEMPTS = 5;
+    public const LOGIN_LOCKOUT_TIME = 900;
+
+    public static function redisEnabled(): bool
+    {
+        return armis_bool_env('REDIS_ENABLED', false);
+    }
+
+    public static function redisHost(): string
+    {
+        return (string)env_get('REDIS_HOST', self::REDIS_HOST);
+    }
+
+    public static function redisPort(): int
+    {
+        return armis_int_env('REDIS_PORT', self::REDIS_PORT);
+    }
+
+    public static function redisPassword(): ?string
+    {
+        $value = env_get('REDIS_PASSWORD', '');
+        return $value === '' ? null : $value;
+    }
+
+    public static function cdnEnabled(): bool
+    {
+        return armis_bool_env('CDN_ENABLED', self::CDN_ENABLED);
+    }
+
+    public static function cdnBaseUrl(): string
+    {
+        return rtrim((string)env_get('CDN_BASE_URL', self::CDN_BASE_URL), '/');
+    }
+
+    public static function loadBalancerEnabled(): bool
+    {
+        return armis_bool_env('LOAD_BALANCER_ENABLED', self::LOAD_BALANCER_ENABLED);
+    }
+
+    public static function readReplicaHosts(): array
+    {
+        $raw = trim((string)env_get('DB_READ_REPLICAS', ''));
+        if ($raw === '') {
+            return [];
+        }
+        $hosts = array_map('trim', preg_split('/[,;]+/', $raw) ?: []);
+        return array_values(array_filter($hosts, static fn($host) => $host !== ''));
+    }
+
+    public static function getPerformanceConfig(): array
+    {
         return [
-            'enable_profiling' => false, // Enable only in development
+            'enable_profiling' => armis_bool_env('PERFORMANCE_PROFILING', false),
             'log_slow_queries' => true,
-            'slow_query_threshold' => 2.0, // seconds
+            'slow_query_threshold' => (float)env_get('SLOW_QUERY_THRESHOLD', '2.0'),
             'enable_memory_monitoring' => true,
-            'max_memory_usage' => '256M'
+            'max_memory_usage' => '256M',
         ];
     }
-    
-    // Security headers for production
-    public static function setSecurityHeaders() {
+
+    public static function setSecurityHeaders(): void
+    {
+        if (headers_sent()) {
+            return;
+        }
         header('X-Content-Type-Options: nosniff');
         header('X-Frame-Options: DENY');
-        header('X-XSS-Protection: 1; mode=block');
-        header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
         header('Referrer-Policy: strict-origin-when-cross-origin');
-        header('Content-Security-Policy: default-src \'self\'; script-src \'self\' \'unsafe-inline\' cdn.jsdelivr.net cdnjs.cloudflare.com; style-src \'self\' \'unsafe-inline\' cdn.jsdelivr.net cdnjs.cloudflare.com; img-src \'self\' data:; font-src \'self\' cdnjs.cloudflare.com; connect-src \'self\' cdn.jsdelivr.net cdnjs.cloudflare.com;');
+        header('Permissions-Policy: geolocation=(), microphone=(), camera=()');
+        // HSTS is meaningful only over HTTPS; never advertise it on localhost HTTP.
+        if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
+            header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+        }
     }
-    
-    // Database indices for performance (SQL commands)
-    public static function getOptimizationIndices() {
-        return [
-            "CREATE INDEX idx_staff_svcno ON staff(svcNo)",
-            "CREATE INDEX idx_staff_unit ON staff(unitID)",
-            "CREATE INDEX idx_staff_rank ON staff(rankID)",
-            "CREATE INDEX idx_staff_status ON staff(svcStatus)",
-            "CREATE INDEX idx_staff_name ON staff(firstName, lastName)",
-            "CREATE INDEX idx_users_email ON users(email)",
-            "CREATE INDEX idx_users_last_login ON users(lastLogin)",
-            "CREATE INDEX idx_training_user ON training_records(user_id)",
-            "CREATE INDEX idx_training_date ON training_records(completion_date)",
-            "CREATE INDEX idx_medals_user ON staff_medals(svcNo)",
-            "CREATE INDEX idx_promotions_user ON staff_promotions(svcNo)",
-            "CREATE INDEX idx_promotions_date ON staff_promotions(datePromoted)"
-        ];
+
+    public static function assetUrl(string $path): string
+    {
+        $path = '/' . ltrim($path, '/');
+        if (self::cdnEnabled() && self::cdnBaseUrl() !== '') {
+            return self::cdnBaseUrl() . $path;
+        }
+        return rtrim((string)env_get('ARMIS_BASE_URL', 'http://localhost/Armis2'), '/') . $path;
     }
 }
 
-// Initialize scalability features
-if (class_exists('ScalabilityConfig')) {
-    // Set memory and execution limits
-    ini_set('memory_limit', ScalabilityConfig::MEMORY_LIMIT);
-    ini_set('max_execution_time', ScalabilityConfig::MAX_EXECUTION_TIME);
-    
-    // Enable compression if supported
-    if (ScalabilityConfig::ENABLE_GZIP_COMPRESSION && !ob_get_level()) {
-        ob_start('ob_gzhandler');
-    }
-    
-    // Set security headers
-    ScalabilityConfig::setSecurityHeaders();
-}
+// Runtime PHP settings are intentionally best-effort.
+@ini_set('memory_limit', (string)env_get('ARMIS_MEMORY_LIMIT', ScalabilityConfig::MEMORY_LIMIT));
+@ini_set('max_execution_time', (string)armis_int_env('ARMIS_MAX_EXECUTION_TIME', ScalabilityConfig::MAX_EXECUTION_TIME));
 
-// Simple caching class for high-performance operations
-class ARMISCache {
-    private static $redis = null;
-    
-    public static function init() {
-        if (class_exists('Redis') && self::$redis === null) {
-            try {
-                self::$redis = new Redis();
-                self::$redis->connect(ScalabilityConfig::REDIS_HOST, ScalabilityConfig::REDIS_PORT);
-                if (ScalabilityConfig::REDIS_PASSWORD) {
-                    self::$redis->auth(ScalabilityConfig::REDIS_PASSWORD);
-                }
-            } catch (Exception $e) {
-                error_log("Redis connection failed: " . $e->getMessage());
-                self::$redis = null;
-            }
+// Prefer Apache/mod_deflate in production. PHP gzip is a safe fallback when available.
+if (ScalabilityConfig::ENABLE_GZIP_COMPRESSION && !headers_sent() && !ob_get_level() && function_exists('ob_gzhandler')) {
+    @ob_start('ob_gzhandler');
+}
+ScalabilityConfig::setSecurityHeaders();
+
+/** File-backed fallback cache. It keeps ARMIS functional when Redis is absent. */
+class ARMISFileCache
+{
+    private static function directory(): string
+    {
+        $dir = dirname(__DIR__) . '/cache';
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0775, true);
         }
+        return $dir;
     }
-    
-    public static function get($key) {
-        self::init();
-        if (self::$redis) {
-            try {
-                $data = self::$redis->get($key);
-                return $data ? unserialize($data) : false;
-            } catch (Exception $e) {
-                error_log("Cache get failed: " . $e->getMessage());
-                return false;
-            }
-        }
-        return false;
+
+    private static function filename(string $key): string
+    {
+        return self::directory() . '/' . hash('sha256', $key) . '.cache';
     }
-    
-    public static function set($key, $value, $ttl = null) {
-        self::init();
-        if (self::$redis) {
-            try {
-                $ttl = $ttl ?: ScalabilityConfig::CACHE_TTL;
-                return self::$redis->setex($key, $ttl, serialize($value));
-            } catch (Exception $e) {
-                error_log("Cache set failed: " . $e->getMessage());
-                return false;
-            }
+
+    public static function get(string $key)
+    {
+        $file = self::filename($key);
+        if (!is_file($file)) {
+            return false;
         }
-        return false;
+        $payload = @file_get_contents($file);
+        if ($payload === false) {
+            return false;
+        }
+        $data = json_decode($payload, true);
+        if (!is_array($data) || !isset($data['expires'], $data['value'])) {
+            return false;
+        }
+        if ((int)$data['expires'] < time()) {
+            @unlink($file);
+            return false;
+        }
+        return $data['value'];
     }
-    
-    public static function delete($key) {
-        self::init();
-        if (self::$redis) {
-            try {
-                return self::$redis->del($key);
-            } catch (Exception $e) {
-                error_log("Cache delete failed: " . $e->getMessage());
-                return false;
-            }
-        }
-        return false;
+
+    public static function set(string $key, $value, int $ttl = ScalabilityConfig::CACHE_TTL): bool
+    {
+        $payload = json_encode(['expires' => time() + max(1, $ttl), 'value' => $value], JSON_UNESCAPED_SLASHES);
+        return $payload !== false && @file_put_contents(self::filename($key), $payload, LOCK_EX) !== false;
     }
-    
-    public static function clear($pattern = '*') {
-        self::init();
-        if (self::$redis) {
-            try {
-                $keys = self::$redis->keys($pattern);
-                if ($keys) {
-                    return self::$redis->del($keys);
-                }
-                return true;
-            } catch (Exception $e) {
-                error_log("Cache clear failed: " . $e->getMessage());
-                return false;
-            }
-        }
-        return false;
+
+    public static function delete(string $key): bool
+    {
+        $file = self::filename($key);
+        return !is_file($file) || @unlink($file);
     }
 }
 
-// Performance monitoring class
-class PerformanceMonitor {
-    private static $startTime;
-    private static $startMemory;
-    
-    public static function start() {
+/** Redis cache with a safe file-cache fallback. */
+class ARMISCache
+{
+    private static ?Redis $redis = null;
+    private static bool $redisAttempted = false;
+
+    private static function redis(): ?Redis
+    {
+        if (self::$redisAttempted) {
+            return self::$redis;
+        }
+        self::$redisAttempted = true;
+
+        if (!ScalabilityConfig::redisEnabled() || !class_exists('Redis')) {
+            return null;
+        }
+
+        try {
+            $redis = new Redis();
+            $redis->connect(ScalabilityConfig::redisHost(), ScalabilityConfig::redisPort(), 1.5);
+            if (ScalabilityConfig::redisPassword()) {
+                $redis->auth(ScalabilityConfig::redisPassword());
+            }
+            $redis->ping();
+            self::$redis = $redis;
+        } catch (Throwable $e) {
+            error_log('ARMIS Redis unavailable: ' . $e->getMessage());
+            self::$redis = null;
+        }
+        return self::$redis;
+    }
+
+    public static function backend(): string
+    {
+        return self::redis() instanceof Redis ? 'redis' : 'file';
+    }
+
+    public static function get(string $key)
+    {
+        $redis = self::redis();
+        if ($redis) {
+            try {
+                $value = $redis->get($key);
+                if ($value === false) return false;
+                $decoded = json_decode((string)$value, true);
+                return json_last_error() === JSON_ERROR_NONE ? $decoded : $value;
+            } catch (Throwable $e) {
+                error_log('ARMIS Redis get failed: ' . $e->getMessage());
+            }
+        }
+        return ARMISFileCache::get($key);
+    }
+
+    public static function set(string $key, $value, ?int $ttl = null): bool
+    {
+        $ttl = $ttl ?? ScalabilityConfig::CACHE_TTL;
+        $redis = self::redis();
+        if ($redis) {
+            try {
+                $payload = json_encode($value, JSON_UNESCAPED_SLASHES);
+                if ($payload !== false) return (bool)$redis->setex($key, max(1, $ttl), $payload);
+            } catch (Throwable $e) {
+                error_log('ARMIS Redis set failed: ' . $e->getMessage());
+            }
+        }
+        return ARMISFileCache::set($key, $value, $ttl);
+    }
+
+    public static function delete(string $key): bool
+    {
+        $redis = self::redis();
+        if ($redis) {
+            try { return (bool)$redis->del($key); } catch (Throwable $e) { error_log('ARMIS Redis delete failed: ' . $e->getMessage()); }
+        }
+        return ARMISFileCache::delete($key);
+    }
+}
+
+class PerformanceMonitor
+{
+    private static float $startTime = 0.0;
+    private static int $startMemory = 0;
+
+    public static function start(): void
+    {
         self::$startTime = microtime(true);
         self::$startMemory = memory_get_usage(true);
     }
-    
-    public static function end($operation = 'unknown') {
-        $endTime = microtime(true);
-        $endMemory = memory_get_usage(true);
-        
-        $executionTime = $endTime - self::$startTime;
-        $memoryUsed = $endMemory - self::$startMemory;
-        
-        // Log slow operations
-        if ($executionTime > ScalabilityConfig::getPerformanceConfig()['slow_query_threshold']) {
-            error_log("Slow operation detected: {$operation} took {$executionTime}s and used " . 
-                     number_format($memoryUsed / 1024 / 1024, 2) . "MB");
+
+    public static function end(string $operation = 'unknown'): array
+    {
+        $executionTime = microtime(true) - self::$startTime;
+        $memoryUsed = memory_get_usage(true) - self::$startMemory;
+        $threshold = ScalabilityConfig::getPerformanceConfig()['slow_query_threshold'];
+        if ($executionTime > $threshold) {
+            error_log(sprintf('ARMIS slow request: %s %.4fs %.2fMB', $operation, $executionTime, $memoryUsed / 1048576));
         }
-        
         return [
             'execution_time' => $executionTime,
             'memory_used' => $memoryUsed,
-            'peak_memory' => memory_get_peak_usage(true)
+            'peak_memory' => memory_get_peak_usage(true),
         ];
     }
 }
 
-// Rate limiting for API endpoints
-class RateLimiter {
-    public static function checkLimit($identifier, $limit = null, $window = 60) {
-        $limit = $limit ?: ScalabilityConfig::RATE_LIMIT_REQUESTS;
-        $key = "rate_limit:{$identifier}:" . floor(time() / $window);
-        
-        $current = ARMISCache::get($key) ?: 0;
-        
-        if ($current >= $limit) {
-            return false;
-        }
-        
-        ARMISCache::set($key, $current + 1, $window);
+class RateLimiter
+{
+    public static function checkLimit(string $identifier, ?int $limit = null, int $window = 60): bool
+    {
+        $limit = $limit ?: armis_int_env('RATE_LIMIT_REQUESTS', ScalabilityConfig::RATE_LIMIT_REQUESTS);
+        $key = 'rate_limit:' . hash('sha256', $identifier) . ':' . floor(time() / $window);
+        $current = (int)(ARMISCache::get($key) ?: 0);
+        if ($current >= $limit) return false;
+        ARMISCache::set($key, $current + 1, $window + 2);
         return true;
     }
 }
 
-// Auto-start performance monitoring for all requests
 PerformanceMonitor::start();
-
-// Register shutdown function to log performance data
-register_shutdown_function(function() {
-    $stats = PerformanceMonitor::end($_SERVER['REQUEST_URI'] ?? 'unknown');
-    
-    // Log to performance log file for analysis
-    $logEntry = date('Y-m-d H:i:s') . " - " . 
-                ($_SERVER['REQUEST_URI'] ?? 'unknown') . " - " .
-                "Time: " . number_format($stats['execution_time'], 4) . "s - " .
-                "Memory: " . number_format($stats['memory_used'] / 1024 / 1024, 2) . "MB" . PHP_EOL;
-    
-    // Ensure logs directory exists
-    $logDir = dirname(__FILE__) . '/logs';
-    if (!is_dir($logDir)) {
-        mkdir($logDir, 0755, true);
-    }
-    
-    $logFile = $logDir . '/performance.log';
-    
-    // Only log if we can write to the file
+register_shutdown_function(static function (): void {
     try {
-        file_put_contents($logFile, $logEntry, FILE_APPEND | LOCK_EX);
-    } catch (Exception $e) {
-        // Silently fail if logging isn't available
-        error_log("ARMIS Performance logging failed: " . $e->getMessage());
+        $stats = PerformanceMonitor::end($_SERVER['REQUEST_URI'] ?? 'unknown');
+        $logDir = dirname(__DIR__) . '/logs';
+        if (!is_dir($logDir)) @mkdir($logDir, 0775, true);
+        $entry = json_encode([
+            'ts' => date('c'),
+            'request' => $_SERVER['REQUEST_URI'] ?? 'unknown',
+            'time_ms' => round($stats['execution_time'] * 1000, 2),
+            'memory_mb' => round($stats['memory_used'] / 1048576, 2),
+            'peak_memory_mb' => round($stats['peak_memory'] / 1048576, 2),
+        ], JSON_UNESCAPED_SLASHES) . PHP_EOL;
+        @file_put_contents($logDir . '/performance.log', $entry, FILE_APPEND | LOCK_EX);
+    } catch (Throwable $e) {
+        error_log('ARMIS performance logging failed: ' . $e->getMessage());
     }
 });
-
-?>

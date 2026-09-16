@@ -104,174 +104,100 @@ if (function_exists('logAccess')) {
 function getSystemStats() {
     global $pdo;
     $stats = [
-        'users' => 0,
-        'staff' => 0,
-        'active_modules' => 7,
-        'tables' => 0,
-        'storage' => '0 MB',
-        'lastLogin' => 'Unknown'
+        'login_accounts' => 0,
+        'active_logins' => 0,
+        'login_attempts' => 0,
+        'successful_logins' => 0,
+        'failed_logins' => 0,
+        'db_health' => 'Unknown',
+        'db_size' => 0,
+        'load' => 'N/A'
     ];
-    
+
     try {
-        if (!isset($pdo) || !$pdo) {
-            return $stats;
-        }
-        
-        // Check what tables exist first
-        $stmt = $pdo->query("SHOW TABLES");
-        $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
-        
-        // Get staff count - try different possible column names
-        $staffCount = 0;
-        if (in_array('staff', $tables)) {
-            try {
-                // Try different status column names
-                $statusColumns = ['status', 'svcStatus', 'accStatus'];
-                $statusQuery = null;
-                
-                foreach ($statusColumns as $col) {
-                    try {
-                        $stmt = $pdo->query("SELECT COUNT(*) as total FROM staff WHERE $col = 'active' LIMIT 1");
-                        $statusQuery = "SELECT COUNT(*) as total FROM staff WHERE $col = 'active'";
-                        break;
-                    } catch (Exception $e) {
-                        continue;
-                    }
-                }
-                
-                // If no status column works, just count all records
-                if (!$statusQuery) {
-                    $statusQuery = "SELECT COUNT(*) as total FROM staff";
-                }
-                
-                $stmt = $pdo->query($statusQuery);
-                $staffCount = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
-            } catch (Exception $e) {
-                $staffCount = 0;
+        // ARMIS credentials live on staff; there is no canonical users table.
+        $stmt = $pdo->query("SELECT COUNT(*) FROM staff
+                             WHERE accStatus = 'Active'
+                               AND username IS NOT NULL AND username <> ''
+                               AND password IS NOT NULL AND password <> ''");
+        $stats['login_accounts'] = (int)$stmt->fetchColumn();
+
+        // A true PHP session registry is not currently part of the canonical schema.
+        // Use successful authentication events in the last 30 minutes as an honest
+        // indicator of recently active authenticated users, rather than inventing sessions.
+        $stmt = $pdo->query("SELECT COUNT(DISTINCT COALESCE(NULLIF(user_id, 0), username))
+                             FROM activity_log
+                             WHERE action = 'login_success'
+                               AND createdAt >= DATE_SUB(NOW(), INTERVAL 30 MINUTE)");
+        $stats['active_logins'] = (int)$stmt->fetchColumn();
+
+        $stmt = $pdo->query("SELECT
+                                COUNT(*) AS total_attempts,
+                                SUM(action = 'login_success') AS successful_logins,
+                                SUM(action = 'login_failed') AS failed_logins
+                             FROM activity_log
+                             WHERE action IN ('login_success', 'login_failed')");
+        $loginStats = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $stats['login_attempts'] = (int)($loginStats['total_attempts'] ?? 0);
+        $stats['successful_logins'] = (int)($loginStats['successful_logins'] ?? 0);
+        $stats['failed_logins'] = (int)($loginStats['failed_logins'] ?? 0);
+
+        // Calculate actual database size from the current database, not a hardcoded value.
+        $stmt = $pdo->prepare("SELECT COALESCE(SUM(data_length + index_length), 0)
+                               FROM information_schema.tables
+                               WHERE table_schema = DATABASE()");
+        $stmt->execute();
+        $stats['db_size'] = (int)$stmt->fetchColumn();
+
+        $stmt = $pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()");
+        $stats['db_health'] = ((int)$stmt->fetchColumn() > 0) ? 'Good' : 'Poor';
+
+        // Windows/WAMP does not reliably expose a Linux-style load average.
+        // If PHP provides it, use it; otherwise display N/A rather than fake CPU data.
+        if (function_exists('sys_getloadavg')) {
+            $load = sys_getloadavg();
+            if (is_array($load) && isset($load[0])) {
+                $stats['load'] = number_format((float)$load[0], 2);
             }
         }
-        $stats['users'] = $staffCount;
-        $stats['staff'] = $staffCount;
-        
-        // Get active sessions - try different approaches
-        $sessionCount = 0;
-        if (in_array('users', $tables)) {
-            try {
-                $stmt = $pdo->query("SELECT COUNT(*) as total FROM users WHERE lastLogin > DATE_SUB(NOW(), INTERVAL 1 HOUR)");
-                $sessionCount = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
-            } catch (Exception $e) {
-                // If lastLogin doesn't exist, try other approaches
-                try {
-                    $stmt = $pdo->query("SELECT COUNT(*) as total FROM users");
-                    $sessionCount = max(1, intval($stmt->fetch(PDO::FETCH_ASSOC)['total'] * 0.2)); // Approximate 20% active
-                } catch (Exception $e) {
-                    $sessionCount = 1; // At least current user
-                }
-            }
-        } else {
-            $sessionCount = 1; // At least current user
-        }
-        $stats['sessions'] = $sessionCount;
-        
-        // Database health check
-        try {
-            $stmt = $pdo->query("SHOW TABLE STATUS");
-            $tableStatus = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            $stats['db_health'] = count($tableStatus) > 0 ? 'Good' : 'Poor';
-            $stats['db_size'] = 0;
-            foreach ($tableStatus as $table) {
-                $stats['db_size'] += ($table['Data_length'] ?? 0) + ($table['Index_length'] ?? 0);
-            }
-        } catch (Exception $e) {
-            $stats['db_health'] = 'Unknown';
-            $stats['db_size'] = 0;
-        }
-        
-        
-        return $stats;
-    } catch (Exception $e) {
-        error_log("Error in getSystemStats: " . $e->getMessage());
-        // Return safe default values
-        return [
-            'users' => 0,
-            'staff' => 0,
-            'sessions' => 1,
-            'db_health' => 'Unknown',
-            'db_size' => 0
-        ];
+    } catch (Throwable $e) {
+        error_log('Error in getSystemStats: ' . $e->getMessage());
     }
+
+    return $stats;
 }
 
 function getRecentActivity() {
     global $pdo;
     try {
-        $activities = [];
-        
-        // Check what tables exist
-        $stmt = $pdo->query("SHOW TABLES");
-        $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
-        
-        // Get recent user activities if users table exists
-        if (in_array('users', $tables)) {
-            try {
-                $stmt = $pdo->prepare("SELECT username, createdAt, 'User Registration' as activity_type FROM users ORDER BY createdAt DESC LIMIT 5");
-                $stmt->execute();
-                $user_activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                $activities = array_merge($activities, $user_activities);
-            } catch (Exception $e) {
-                // Column might not exist, skip
-            }
-        }
-        
-        // Get recent staff activities if staff table exists
-        if (in_array('staff', $tables)) {
-            try {
-                // Try different name column combinations
-                $nameQueries = [
-                    "SELECT CONCAT(COALESCE(fName, fname, ''), ' ', COALESCE(lName, lname, '')) as username, createdAt, 'Staff Added' as activity_type FROM staff ORDER BY createdAt DESC LIMIT 5",
-                    "SELECT CONCAT(COALESCE(fname, ''), ' ', COALESCE(lname, '')) as username, createdAt, 'Staff Added' as activity_type FROM staff ORDER BY createdAt DESC LIMIT 5",
-                    "SELECT username, createdAt, 'Staff Activity' as activity_type FROM staff ORDER BY createdAt DESC LIMIT 5"
-                ];
-                
-                foreach ($nameQueries as $query) {
-                    try {
-                        $stmt = $pdo->prepare($query);
-                        $stmt->execute();
-                        $staff_activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                        $activities = array_merge($activities, $staff_activities);
-                        break;
-                    } catch (Exception $e) {
-                        continue;
-                    }
-                }
-            } catch (Exception $e) {
-                // Skip if no valid query works
-            }
-        }
-        
-        // If no activities found, return sample data
-        if (empty($activities)) {
-            return [
-                ['username' => 'admin', 'createdAt' => date('Y-m-d H:i:s'), 'activity_type' => 'System Login'],
-                ['username' => 'system', 'createdAt' => date('Y-m-d H:i:s', strtotime('-1 hour')), 'activity_type' => 'Database Backup'],
-                ['username' => 'admin', 'createdAt' => date('Y-m-d H:i:s', strtotime('-2 hours')), 'activity_type' => 'Settings Update'],
-            ];
-        }
-        
-        // Sort by createdAt and limit to 10
-        usort($activities, function($a, $b) {
-            return strtotime($b['createdAt']) - strtotime($a['createdAt']);
-        });
-        
-        return array_slice($activities, 0, 10);
-    } catch (Exception $e) {
-        error_log("Recent activity error: " . $e->getMessage());
-        // Return sample data
-        return [
-            ['username' => 'admin', 'createdAt' => date('Y-m-d H:i:s'), 'activity_type' => 'System Login'],
-            ['username' => 'system', 'createdAt' => date('Y-m-d H:i:s', strtotime('-1 hour')), 'activity_type' => 'Database Backup'],
-        ];
+        // Recent activity must come from the real audit/activity stream.
+        $stmt = $pdo->query("SELECT username, action, details, ip_address, createdAt
+                             FROM activity_log
+                             ORDER BY createdAt DESC, id DESC
+                             LIMIT 10");
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        error_log('Recent activity error: ' . $e->getMessage());
+        return [];
     }
+}
+
+function activityLabel($action) {
+    $labels = [
+        'login_success' => 'System Login',
+        'login_failed' => 'Failed Login Attempt',
+        'admin_branch_dashboard_access' => 'Admin Branch Access',
+        'dashboard_view' => 'Dashboard Access',
+        'backup_database' => 'Database Backup',
+        'settings_update' => 'Settings Update'
+    ];
+    return $labels[$action] ?? ucwords(str_replace(['_', '-'], ' ', (string)$action));
+}
+
+function activityBadgeClass($action) {
+    if ($action === 'login_failed') return 'bg-danger';
+    if ($action === 'login_success') return 'bg-success';
+    return 'bg-info';
 }
 
 function formatBytes($bytes, $precision = 2) {
@@ -355,13 +281,11 @@ try {
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-center">
                                 <div>
-                                    <h6 class="card-title text-white-50">Total Users</h6>
-                                    <h2 class="mb-0"><?= number_format($systemStats['users']) ?></h2>
-                                    <small class="text-white-75">Active accounts</small>
+                                    <h6 class="card-title text-white-50">Login Accounts</h6>
+                                    <h2 class="mb-0"><?= number_format($systemStats['login_accounts']) ?></h2>
+                                    <small class="text-white-75">Active accounts with credentials</small>
                                 </div>
-                                <div class="text-white-50">
-                                    <i class="fas fa-users fa-2x"></i>
-                                </div>
+                                <div class="text-white-50"><i class="fas fa-user-shield fa-2x"></i></div>
                             </div>
                         </div>
                     </div>
@@ -371,13 +295,25 @@ try {
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-center">
                                 <div>
-                                    <h6 class="card-title text-white-50">Active Sessions</h6>
-                                    <h2 class="mb-0"><?= number_format($systemStats['sessions']) ?></h2>
-                                    <small class="text-white-75">Online users</small>
+                                    <h6 class="card-title text-white-50">Active Users</h6>
+                                    <h2 class="mb-0"><?= number_format($systemStats['active_logins']) ?></h2>
+                                    <small class="text-white-75">Successful logins in last 30 min</small>
                                 </div>
-                                <div class="text-white-50">
-                                    <i class="fas fa-circle fa-2x"></i>
+                                <div class="text-white-50"><i class="fas fa-user-check fa-2x"></i></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-xl-3 col-lg-6">
+                    <div class="card bg-dark text-white h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="card-title text-white-50">Login Attempts</h6>
+                                    <h2 class="mb-0"><?= number_format($systemStats['login_attempts']) ?></h2>
+                                    <small class="text-white-75"><?= number_format($systemStats['successful_logins']) ?> successful · <?= number_format($systemStats['failed_logins']) ?> failed</small>
                                 </div>
+                                <div class="text-white-50"><i class="fas fa-sign-in-alt fa-2x"></i></div>
                             </div>
                         </div>
                     </div>
@@ -388,45 +324,38 @@ try {
                             <div class="d-flex justify-content-between align-items-center">
                                 <div>
                                     <h6 class="card-title text-white-50">Database Health</h6>
-                                    <h2 class="mb-0"><?= $systemStats['db_health'] ?></h2>
+                                    <h2 class="mb-0"><?= htmlspecialchars($systemStats['db_health']) ?></h2>
                                     <small class="text-white-75"><?= formatBytes($systemStats['db_size']) ?></small>
                                 </div>
-                                <div class="text-white-50">
-                                    <i class="fas fa-database fa-2x"></i>
-                                </div>
+                                <div class="text-white-50"><i class="fas fa-database fa-2x"></i></div>
                             </div>
                         </div>
                     </div>
                 </div>
                 <div class="col-xl-3 col-lg-6">
-                    <div class="card bg-warning text-white h-100">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 class="card-title text-white-50">System Load</h6>
-                                    <h2 class="mb-0"><?= $systemStats['load'] ?></h2>
-                                    <small class="text-white-75">CPU utilization</small>
-                                </div>
-                                <div class="text-white-50">
-                                    <i class="fas fa-tachometer-alt fa-2x"></i>
-                                </div>
-                            </div>
-                        </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-xl-3 col-lg-6">
-                    <div class="card bg-info text-white h-100">
+                    <div class="card bg-secondary text-white h-100">
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-center">
                                 <div>
                                     <h6 class="card-title text-white-50">Database Size</h6>
-                                    <h2 class="mb-0">2.4GB</h2>
-                                    <small class="text-white-75">+50MB this week</small>
+                                    <h2 class="mb-0"><?= formatBytes($systemStats['db_size']) ?></h2>
+                                    <small class="text-white-75">Current database footprint</small>
                                 </div>
-                                <div class="text-white-50">
-                                    <i class="fas fa-database fa-2x"></i>
+                                <div class="text-white-50"><i class="fas fa-server fa-2x"></i></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-xl-3 col-lg-6">
+                    <div class="card bg-warning text-dark h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="card-title text-dark-50">System Load</h6>
+                                    <h2 class="mb-0"><?= htmlspecialchars($systemStats['load']) ?></h2>
+                                    <small class="text-dark-50">Load average when supported</small>
                                 </div>
+                                <div class="text-dark-50"><i class="fas fa-tachometer-alt fa-2x"></i></div>
                             </div>
                         </div>
                     </div>
@@ -533,15 +462,12 @@ try {
                                 <?php foreach ($recentActivity as $activity): ?>
                                 <div class="list-group-item admin-list-group-item d-flex justify-content-between align-items-center">
                                     <div>
-                                        <h6 class="mb-1"><?= htmlspecialchars($activity['activity_type']) ?></h6>
-                                        <p class="mb-1 text-muted small">User: <?= htmlspecialchars($activity['username']) ?></p>
+                                        <h6 class="mb-1"><?= htmlspecialchars(activityLabel($activity['action'] ?? 'activity')) ?></h6>
+                                        <p class="mb-1 text-muted small">User: <?= htmlspecialchars($activity['username'] ?? 'unknown') ?></p>
                                         <small class="text-muted"><?= timeAgo($activity['createdAt']) ?></small>
                                     </div>
-                                    <?php
-                                    $badgeClass = $activity['activity_type'] === 'User Registration' ? 'bg-info' : 'bg-success';
-                                    ?>
-                                    <span class="badge admin-badge <?= $badgeClass ?>">
-                                        <?= $activity['activity_type'] === 'User Registration' ? 'Info' : 'Success' ?>
+                                    <span class="badge admin-badge <?= activityBadgeClass($activity['action'] ?? '') ?>">
+                                        <?= ($activity['action'] ?? '') === 'login_failed' ? 'Failed' : (($activity['action'] ?? '') === 'login_success' ? 'Success' : 'Activity') ?>
                                     </span>
                                 </div>
                                 <?php endforeach; ?>
@@ -585,14 +511,14 @@ try {
                             </h5>
                         </div>
                         <div class="card-body">
-                            <div class="alert alert-warning alert-sm">
-                                <strong>Disk Space:</strong> 85% used on server
-                            </div>
                             <div class="alert alert-info alert-sm">
-                                <strong>Updates:</strong> 3 security updates available
+                                <strong>Authentication:</strong> <?= number_format($systemStats['failed_logins']) ?> failed login attempts are recorded in the activity log.
                             </div>
-                            <div class="alert alert-success alert-sm">
-                                <strong>Backup:</strong> Last backup successful
+                            <div class="alert <?= $systemStats['db_health'] === 'Good' ? 'alert-success' : 'alert-danger' ?> alert-sm">
+                                <strong>Database:</strong> <?= htmlspecialchars($systemStats['db_health']) ?> — <?= formatBytes($systemStats['db_size']) ?> currently in use.
+                            </div>
+                            <div class="alert alert-secondary alert-sm">
+                                <strong>System Load:</strong> <?= htmlspecialchars($systemStats['load']) ?><?= $systemStats['load'] === 'N/A' ? ' (not exposed by this Windows/PHP environment)' : '' ?>.
                             </div>
                         </div>
                     </div>

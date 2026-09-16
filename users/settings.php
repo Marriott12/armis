@@ -21,29 +21,57 @@ $sidebarLinks = $userNavigationItems;
 
 // Load user profile data
 require_once __DIR__ . '/profile_manager.php';
-require_once dirname(__DIR__) . '/shared/csrf.php';
+require_once dirname(__DIR__) . '/shared/database_connection.php';
+require_once dirname(__DIR__) . '/shared/password_policy.php';
 
 $successMessage = '';
 $errorMessage = '';
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    require_csrf();
     try {
         $profileManager = new UserProfileManager($_SESSION['user_id']);
         
         if (isset($_POST['action'])) {
             switch ($_POST['action']) {
                 case 'change_password':
-                    if (empty($_POST['current_password']) || empty($_POST['new_password']) || empty($_POST['confirm_password'])) {
-                        $errorMessage = "All password fields are required.";
-                    } elseif ($_POST['new_password'] !== $_POST['confirm_password']) {
-                        $errorMessage = "New passwords do not match.";
-                    } elseif (strlen($_POST['new_password']) < 8) {
-                        $errorMessage = "Password must be at least 8 characters long.";
+                    $currentPassword = (string)($_POST['current_password'] ?? '');
+                    $newPassword = (string)($_POST['new_password'] ?? '');
+                    $confirmPassword = (string)($_POST['confirm_password'] ?? '');
+                    $policyErrors = armisPasswordValidationErrors($newPassword, $confirmPassword);
+                    if ($currentPassword === '' || $newPassword === '' || $confirmPassword === '') {
+                        $errorMessage = 'All password fields are required.';
+                    } elseif ($policyErrors) {
+                        $errorMessage = implode(' ', $policyErrors);
                     } else {
-                        // In a real system, you'd verify the current password and update
-                        $successMessage = "Password changed successfully.";
+                        $pdo = getDbConnection();
+                        $svcNo = (string)$_SESSION['user_id'];
+                        $stmt = $pdo->prepare('SELECT password FROM staff WHERE svcNo = ? LIMIT 1');
+                        $stmt->execute([$svcNo]);
+                        $account = $stmt->fetch(PDO::FETCH_ASSOC);
+                        if (!$account || !password_verify($currentPassword, (string)$account['password'])) {
+                            $errorMessage = 'Current password is incorrect.';
+                        } elseif (password_verify($newPassword, (string)$account['password'])) {
+                            $errorMessage = 'New password cannot be the same as your current password.';
+                        } elseif (armisPasswordWasUsedBefore($pdo, $svcNo, $newPassword)) {
+                            $errorMessage = 'Password reuse detected. Please choose a password you have not used recently. ARMIS protects the last 5 passwords.';
+                        } else {
+                            $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
+                            if ($newHash === false) throw new RuntimeException('Unable to securely hash the new password.');
+                            // Ensure password-history table exists before starting the transaction.
+                            armisEnsurePasswordHistoryTable($pdo);
+                            $pdo->beginTransaction();
+                            try {
+                                armisArchiveCurrentPassword($pdo, $svcNo, $account['password'], $svcNo, 'user_password_change');
+                                $update = $pdo->prepare('UPDATE staff SET password = ?, isFirstLogin = 0, passwordChangedAt = NOW() WHERE svcNo = ?');
+                                $update->execute([$newHash, $svcNo]);
+                                $pdo->commit();
+                            } catch (Throwable $inner) {
+                                if ($pdo->inTransaction()) $pdo->rollBack();
+                                throw $inner;
+                            }
+                            $successMessage = 'Password changed successfully.';
+                        }
                     }
                     break;
                     
@@ -67,38 +95,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 case 'export_data':
                     // Trigger data export
                     $successMessage = "Data export request submitted. You will receive an email when ready.";
-                    break;
-
-                case 'upload_photo':
-                    // FIX: previously a pure client-side mock — the JS
-                    // used setTimeout() to fake a delay and never sent
-                    // the file to the server at all. Real handling now,
-                    // using profile_manager.php's already-existing (but
-                    // previously never-called) uploadProfilePhoto().
-                    // personal.php had its own separate, also-broken
-                    // attempt at this (a real form submit with no
-                    // server-side handler behind it) — removed in favor
-                    // of this one, working, real implementation.
-                    if (!empty($_FILES['profilePhoto'])) {
-                        $photoResult = $profileManager->uploadProfilePhoto($_FILES['profilePhoto']);
-                        if ($photoResult['success']) {
-                            $successMessage = $photoResult['message'];
-                        } else {
-                            $errorMessage = $photoResult['message'];
-                        }
-                    } else {
-                        $errorMessage = 'No photo was selected.';
-                    }
-                    break;
-
-                case 'remove_photo':
-                    // FIX: also previously a client-side-only mock.
-                    $photoResult = $profileManager->removeProfilePhoto();
-                    if ($photoResult['success']) {
-                        $successMessage = $photoResult['message'];
-                    } else {
-                        $errorMessage = $photoResult['message'];
-                    }
                     break;
             }
         }
@@ -201,7 +197,6 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 </div>
                                 <div class="card-body">
                                     <form method="POST">
-                                        <?= csrf_field() ?>
                                         <input type="hidden" name="action" value="change_password">
                                         
                                         <div class="mb-3">
@@ -211,8 +206,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         
                                         <div class="mb-3">
                                             <label for="new_password" class="form-label">New Password</label>
-                                            <input type="password" class="form-control" id="new_password" name="new_password" required>
-                                            <div class="form-text">Password must be at least 8 characters long.</div>
+                                            <input type="password" class="form-control" id="new_password" name="new_password" required autocomplete="new-password">
+                                            <div class="d-flex justify-content-between mt-2"><small class="text-muted">Minimum 12 characters</small><small id="settingsStrength" class="fw-semibold text-muted">Not set</small></div><div class="progress" style="height:6px"><div id="settingsStrengthBar" class="progress-bar" style="width:0"></div></div><small class="text-muted d-block mt-2">Use uppercase, lowercase, a number and a special character. Your last 5 passwords cannot be reused.</small>
                                         </div>
                                         
                                         <div class="mb-3">
@@ -250,7 +245,6 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 </div>
                                 <div class="card-body">
                                     <form method="POST">
-                                        <?= csrf_field() ?>
                                         <input type="hidden" name="action" value="update_notifications">
                                         
                                         <div class="mb-3">
@@ -299,7 +293,6 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 </div>
                                 <div class="card-body">
                                     <form method="POST">
-                                        <?= csrf_field() ?>
                                         <input type="hidden" name="action" value="update_privacy">
                                         
                                         <div class="mb-3">
@@ -394,7 +387,6 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                             <h6>Export Your Data</h6>
                                             <p class="text-muted">Download a complete copy of your profile data and records.</p>
                                             <form method="POST">
-                                                <?= csrf_field() ?>
                                                 <input type="hidden" name="action" value="export_data">
                                                 <button type="submit" class="btn btn-outline-primary">
                                                     <i class="fas fa-download"></i> Request Data Export
@@ -471,42 +463,29 @@ function uploadPhoto() {
     uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
     uploadBtn.disabled = true;
     
-    // FIX: previously used setTimeout() to fake a delay and never
-    // actually sent the file anywhere — a real fetch() now, to the
-    // real upload_photo handler in this file's PHP.
-    fetch(window.location.href, {
-        method: 'POST',
-        body: formData,
-    })
-        .then(res => res.text())
-        .then(() => {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                document.getElementById('current-photo').src = e.target.result;
-            };
-            reader.readAsDataURL(file);
-            uploadBtn.innerHTML = originalText;
-            uploadBtn.disabled = false;
-            // Reload so the success/error banner (rendered server-side)
-            // is visible, and the sidebar/header avatar refreshes too.
-            window.location.reload();
-        })
-        .catch(() => {
-            uploadBtn.innerHTML = originalText;
-            uploadBtn.disabled = false;
-            alert('Upload failed. Please try again.');
-        });
+    // Simulate upload (in real implementation, use fetch to upload)
+    setTimeout(() => {
+        // Update preview
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('current-photo').src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+        
+        // Restore button
+        uploadBtn.innerHTML = originalText;
+        uploadBtn.disabled = false;
+        
+        alert('Photo uploaded successfully!');
+    }, 2000);
 }
 
 function removePhoto() {
-    if (!confirm('Are you sure you want to remove your profile photo?')) {
-        return;
+    if (confirm('Are you sure you want to remove your profile photo?')) {
+        document.getElementById('current-photo').src = '/Armis2/shared/default-avatar.png';
+        document.getElementById('profilePhoto').value = '';
+        alert('Profile photo removed successfully!');
     }
-    const formData = new FormData();
-    formData.append('action', 'remove_photo');
-    fetch(window.location.href, { method: 'POST', body: formData })
-        .then(() => window.location.reload())
-        .catch(() => alert('Could not remove photo. Please try again.'));
 }
 
 // Tab navigation

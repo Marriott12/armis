@@ -661,18 +661,6 @@ td:has(.text-muted):hover .text-muted {
                                         </div>
                                     </div>
                                 </div>
-                                <div class="col-6 col-lg-3">
-                                    <div class="p-3 rounded h-100 border" style="border-color: #ffc107 !important;">
-                                        <div style="font-size: 0.75rem; color: #6c757d; text-transform: uppercase; letter-spacing: 0.03em;">
-                                            Contract Personnel <i class="fas fa-info-circle" title="Subset of Officers/Soldiers currently on contract status"></i>
-                                        </div>
-                                        <div style="font-size: 1.9rem; font-weight: 800; color: #b8860b;" id="strength-contract-total"><?php echo htmlspecialchars($osContractTotal); ?></div>
-                                        <div style="font-size: 0.75rem; color: #6c757d;" id="strength-contract-breakdown">
-                                            <i class="fas fa-male me-1"></i><?php echo htmlspecialchars($osContractMale); ?> (<?php echo strengthPct($osContractMale, $osContractTotal); ?>%)
-                                            &nbsp;<i class="fas fa-female me-1"></i><?php echo htmlspecialchars($osContractFemale); ?> (<?php echo strengthPct($osContractFemale, $osContractTotal); ?>%)
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -935,7 +923,7 @@ td:has(.text-muted):hover .text-muted {
                                 <div class="col-lg-6">
                                     <div class="card h-100 border-primary">
                                         <div class="card-header bg-primary text-white py-2">
-                                            <i class="fas fa-shield-alt me-2"></i>Officers (Gen &ndash; OCdt)
+                                            <i class="fas fa-shield-alt me-2"></i>Officers
                                         </div>
                                         <div class="card-body">
                                             <div class="rank-chart-holder">
@@ -948,7 +936,7 @@ td:has(.text-muted):hover .text-muted {
                                 <div class="col-lg-6">
                                     <div class="card h-100 border-info">
                                         <div class="card-header bg-info text-white py-2">
-                                            <i class="fas fa-users me-2"></i>Soldiers (WOI &ndash; Pte)
+                                            <i class="fas fa-users me-2"></i>Soldiers
                                         </div>
                                         <div class="card-body">
                                             <div class="rank-chart-holder">
@@ -1173,69 +1161,6 @@ td:has(.text-muted):hover .text-muted {
                     </div>
                 </div>
             </div>
-
-            <!-- =================================================================
-                 SECTION 5: QUICK ACTIONS
-            ================================================================== -->
-            <div class="row g-3 mb-4">
-                <div class="col-12">
-                    <div class="card shadow-sm h-100">
-                        <div class="card-header d-flex justify-content-between align-items-center p-2 bg-light">
-                            <h5 class="card-title h6 mb-0">
-                                <i class="fas fa-bolt text-warning"></i> Quick Actions
-                            </h5>
-                        </div>
-                        <div class="card-body p-2 p-md-3">
-                            <div class="row g-2">
-                                <div class="col-6 col-sm-3">
-                                    <a href="/Armis2/admin_branch/create_staff.php" class="text-decoration-none">
-                                        <div class="card bg-light h-100 action-card">
-                                            <div class="card-body p-2 text-center">
-                                                <i class="fas fa-user-plus text-success mb-2"></i>
-                                                <p class="card-text mb-0 small">Add Staff</p>
-                                            </div>
-                                        </div>
-                                    </a>
-                                </div>
-
-                                <div class="col-6 col-sm-3">
-                                    <a href="/Armis2/admin_branch/edit_staff.php" class="text-decoration-none">
-                                        <div class="card bg-light h-100 action-card">
-                                            <div class="card-body p-2 text-center">
-                                                <i class="fas fa-search text-primary mb-2"></i>
-                                                <p class="card-text mb-0 small">Search Staff</p>
-                                            </div>
-                                        </div>
-                                    </a>
-                                </div>
-
-                                <div class="col-6 col-sm-3">
-                                    <a href="/Armis2/admin_branch/promote_staff.php" class="text-decoration-none">
-                                        <div class="card bg-light h-100 action-card">
-                                            <div class="card-body p-2 text-center">
-                                                <i class="fas fa-arrow-up text-info mb-2"></i>
-                                                <p class="card-text mb-0 small">Promotions</p>
-                                            </div>
-                                        </div>
-                                    </a>
-                                </div>
-
-                                <div class="col-6 col-sm-3">
-                                    <a href="#" class="text-decoration-none" data-bs-toggle="modal" data-bs-target="#reportsModal">
-                                        <div class="card bg-light h-100 action-card">
-                                            <div class="card-body p-2 text-center">
-                                                <i class="fas fa-file-alt text-secondary mb-2"></i>
-                                                <p class="card-text mb-0 small">Reports</p>
-                                            </div>
-                                        </div>
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <!-- END Quick Actions -->
 
         </div>
     </div>

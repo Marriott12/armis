@@ -46,7 +46,7 @@ $sidebarLinks = [
 
 if (hasPermission(PERM_VIEW_STAFF)) {
     $sidebarLinks[] = ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'];
-    $sidebarLinks[] = ['title' => 'Advanced Search', 'url' => '/Armis2/admin_branch/advanced_search.php', 'icon' => 'search', 'page' => 'search'];
+    $sidebarLinks[] = ['title' => 'Search Personnel', 'url' => '/Armis2/admin_branch/advanced_search.php', 'icon' => 'search', 'page' => 'search'];
 }
 
 if (hasPermission(PERM_CREATE_STAFF)) {

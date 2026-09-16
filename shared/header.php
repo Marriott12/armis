@@ -168,17 +168,17 @@ header('X-Response-Time: ' . (microtime(true) - $startTime));
     <!-- Non-critical CSS loaded asynchronously -->
     <link rel="preload" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
-    <link rel="preload" href="/Armis2/shared/armis-styles.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <link rel="preload" href="<?= htmlspecialchars(ScalabilityConfig::assetUrl('/shared/armis-styles.css'), ENT_QUOTES) ?>" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
-        <link href="/Armis2/shared/armis-styles.css" rel="stylesheet">
+        <link href="<?= htmlspecialchars(ScalabilityConfig::assetUrl('/shared/armis-styles.css'), ENT_QUOTES) ?>" rel="stylesheet">
     </noscript>
     <?php if (!empty($moduleStylesheet)): ?>
     <link href="<?= htmlspecialchars($moduleStylesheet, ENT_QUOTES) ?>" rel="stylesheet">
     <?php endif; ?>
-    <link rel="icon" type="image/x-icon" href="/Armis2/favicon.ico">
-    <link rel="apple-touch-icon" href="/Armis2/logo.png">
+    <link rel="icon" type="image/x-icon" href="<?= htmlspecialchars(ScalabilityConfig::assetUrl('/favicon.ico'), ENT_QUOTES) ?>">
+    <link rel="apple-touch-icon" href="<?= htmlspecialchars(ScalabilityConfig::assetUrl('/logo.png'), ENT_QUOTES) ?>">
 
     <!-- Performance monitoring and loader -->
     <script>
@@ -198,8 +198,8 @@ header('X-Response-Time: ' . (microtime(true) - $startTime));
             }
         }
     </script>
-    <script src="/Armis2/shared/js/csrf-fetch.js"></script>
-    <script src="/Armis2/shared/js/notification-bell.js" defer></script>
+    <script src="<?= htmlspecialchars(ScalabilityConfig::assetUrl('/shared/js/csrf-fetch.js'), ENT_QUOTES) ?>"></script>
+    <script src="<?= htmlspecialchars(ScalabilityConfig::assetUrl('/shared/js/notification-bell.js'), ENT_QUOTES) ?>" defer></script>
 </head>
 <body>
     <!-- Page Loader -->

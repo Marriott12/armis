@@ -5,6 +5,38 @@ session_start();
 require_once __DIR__ . '/shared/database_connection.php';
 require_once __DIR__ . '/shared/csrf.php';
 
+
+/**
+ * Record an authentication attempt in the canonical ARMIS activity_log.
+ * Passwords are never written to the log. The activity_log.user_id column
+ * is legacy INT, while ARMIS staff.svcNo is the canonical account key, so
+ * numeric service numbers are preserved and non-numeric identifiers use 0;
+ * the submitted/login username remains in activity_log.username.
+ */
+function armisLogLoginAttempt(string $action, string $username, ?string $svcNo = null, string $details = ''): void
+{
+    try {
+        $pdo = getDbConnection();
+        $legacyUserId = ($svcNo !== null && ctype_digit($svcNo)) ? (int)$svcNo : 0;
+        $safeUsername = trim($username) !== '' ? trim($username) : '(unknown)';
+        $sql = "INSERT INTO activity_log
+                (user_id, username, action, details, ip_address, user_agent, createdAt)
+                VALUES (?, ?, ?, ?, ?, ?, NOW())";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+            $legacyUserId,
+            mb_substr($safeUsername, 0, 50),
+            $action,
+            mb_substr($details, 0, 2000),
+            $_SERVER['REMOTE_ADDR'] ?? null,
+            $_SERVER['HTTP_USER_AGENT'] ?? null,
+        ]);
+    } catch (Throwable $e) {
+        // Authentication must never fail merely because audit logging fails.
+        error_log('ARMIS login audit logging failed: ' . $e->getMessage());
+    }
+}
+
 /**
  * Validate return URL to prevent open redirect vulnerabilities
  */
@@ -48,6 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $blockReason = $blockStmt->fetchColumn();
             if ($blockReason !== false) {
                 $error = 'Access denied from this network.';
+                armisLogLoginAttempt('login_failed', (string)($_POST['username'] ?? ''), null, 'Authentication blocked: source IP is blocked.');
                 error_log("Login blocked - IP $clientIp is on the block list ($blockReason)");
                 goto login_blocked;
             }
@@ -70,6 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $roleCheck = strtolower($checkStmt->fetchColumn() ?: '');
             if (!str_contains($roleCheck, 'admin')) {
                 $error = 'The system is currently in emergency lockdown. Only administrators can log in.';
+                armisLogLoginAttempt('login_failed', (string)($_POST['username'] ?? ''), null, 'Authentication blocked: emergency lockdown is active.');
                 error_log("Login blocked - emergency lockdown active, non-admin role '$roleCheck'");
                 goto login_blocked;
             }
@@ -97,6 +131,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'rank' => $user['rank_name'] ?? 'Unknown'
                 ];
                 
+                // Record the successful credential verification even though the user
+                // is immediately redirected to the mandatory temporary-password change.
+                armisLogLoginAttempt(
+                    'login_success',
+                    (string)$user['username'],
+                    (string)$user['svcNo'],
+                    'Authentication successful; temporary password change required.'
+                );
+
                 // Redirect to password change page
                 header('Location: /Armis2/change_temp_password.php');
                 exit();
@@ -161,6 +204,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             
+            armisLogLoginAttempt(
+                'login_success',
+                (string)$user['username'],
+                (string)$user['svcNo'],
+                'Authentication successful.'
+            );
+
             // Track login redirect in session
             $_SESSION['last_login_time'] = time();
             $_SESSION['login_redirect'] = $dashboardUrl;
@@ -176,12 +226,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: ' . $dashboardUrl);
             exit();
         } else {
-            // No user found or password mismatch - log attempt and show error
+            // No user found or password mismatch - persist the failed authentication
+            // attempt in the canonical activity log without storing the password.
+            armisLogLoginAttempt('login_failed', $username, null, 'Authentication failed: invalid username or password.');
             error_log(sprintf("Failed login attempt for username='%s' from IP=%s", $username, $_SERVER['REMOTE_ADDR'] ?? 'unknown'));
             $error = 'Invalid username or password';
         }
         
     } else {
+        armisLogLoginAttempt('login_failed', $username, null, 'Authentication failed: username or password was not supplied.');
         $error = 'Please enter both username and password';
     }
 

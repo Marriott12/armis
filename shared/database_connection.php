@@ -26,17 +26,53 @@ if (!defined('DB_CHARSET')) define('DB_CHARSET', env_get('DB_CHARSET', 'utf8mb4'
  * @return PDO
  * @throws PDOException
  */
-function getDbConnection()
+function armisCreatePdo(string $host): PDO
+{
+    $dsn = sprintf('mysql:host=%s;dbname=%s;charset=%s', $host, DB_NAME, DB_CHARSET);
+    $opts = [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES => false,
+        PDO::ATTR_PERSISTENT => (bool)(filter_var(env_get('DB_PERSISTENT', '1'), FILTER_VALIDATE_BOOLEAN)),
+        PDO::ATTR_TIMEOUT => 10,
+    ];
+    return new PDO($dsn, DB_USER, DB_PASS, $opts);
+}
+
+/**
+ * Get the primary PDO connection. Persistent PDO connections reduce connection
+ * setup overhead; they are not a client-side connection pool.
+ */
+function getDbConnection(): PDO
 {
     static $pdo = null;
     if ($pdo === null) {
-        $dsn = sprintf('mysql:host=%s;dbname=%s;charset=%s', DB_HOST, DB_NAME, DB_CHARSET);
-        $opts = [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false,
-        ];
-        $pdo = new PDO($dsn, DB_USER, DB_PASS, $opts);
+        $pdo = armisCreatePdo(DB_HOST);
+    }
+    return $pdo;
+}
+
+/**
+ * Get a read connection. If DB_READ_REPLICAS is configured, replicas are
+ * selected round-robin per PHP worker/request. Otherwise the primary is used.
+ */
+function getReadDbConnection(): PDO
+{
+    static $pdo = null;
+    static $index = 0;
+    if ($pdo instanceof PDO) return $pdo;
+
+    $raw = trim((string)env_get('DB_READ_REPLICAS', ''));
+    $replicas = $raw === '' ? [] : array_values(array_filter(array_map('trim', preg_split('/[,;]+/', $raw) ?: [])));
+    if (!$replicas) return getDbConnection();
+
+    $host = $replicas[$index % count($replicas)];
+    $index++;
+    try {
+        $pdo = armisCreatePdo($host);
+    } catch (Throwable $e) {
+        error_log('ARMIS read replica unavailable (' . $host . '): ' . $e->getMessage());
+        $pdo = getDbConnection();
     }
     return $pdo;
 }

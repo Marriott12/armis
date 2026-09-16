@@ -123,6 +123,11 @@ if ($isCLI) {
     }
     
 } else {
+    // Browser access is intentionally routed to the canonical ARMIS admin UI.
+    // This legacy utility remains available for controlled CLI recovery only.
+    header('Location: admin/users.php');
+    exit;
+    
     // === WEB MODE ===
     
     // Simple authentication check (must be logged in as admin)

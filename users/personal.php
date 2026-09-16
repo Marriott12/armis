@@ -89,9 +89,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $userData) {
                 $errors[] = $result['message'];
             }
 
-            // FIX: education/language record processing removed from
-            // here — that data now lives exclusively on training.php
-            // (see the note there), which owns saving it.
+            // Update education and language sections in the same form submission
+            $educationData = $_POST['education'] ?? [];
+            $educationResult = $profileManager->updateEducationRecords($educationData);
+            if ($educationResult['success']) {
+                $successMessages[] = $educationResult['message'];
+                $educationRecords = $profileManager->getEducationRecords();
+            } else {
+                $errors[] = $educationResult['message'];
+            }
+
+            $languageData = $_POST['languages'] ?? [];
+            $languageResult = $profileManager->updateLanguageRecords($languageData);
+            if ($languageResult['success']) {
+                $successMessages[] = $languageResult['message'];
+                $languageRecords = $profileManager->getLanguageRecords();
+            } else {
+                $errors[] = $languageResult['message'];
+            }
 
             if (empty($errors) && !empty($successMessages)) {
                 $success = implode(' ', $successMessages);
@@ -336,16 +351,32 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         <input type="tel" class="form-control" name="tel" value="<?= htmlspecialchars($userData->tel ?? '') ?>">
                                     </div>
                                 </div>
-                                <!-- FIX: education/language editing (with its own
-                                     ~350 lines of duplicated JS) and a broken, non-functional
-                                     "children" mini-form used to live inline here, duplicating
-                                     training.php and family.php respectively. Removed in favor
-                                     of one clear owner per kind of record. -->
-                                <div class="alert alert-info d-flex align-items-start gap-2">
-                                    <i class="fa fa-info-circle mt-1"></i>
-                                    <div>
-                                        Manage your <a href="training.php">education and language records</a> on the Training History page,
-                                        and your <a href="family.php">family members</a> (including children) on the Family Members page.
+                                <!-- Academic Information -->
+                                <div class="row">
+                                    <div class="col-12 mb-3">
+                                        <label class="form-label fw-bold">
+                                            <i class="fa fa-graduation-cap me-2"></i>Education History
+                                        </label>
+                                        <div id="educationContainer" class="border rounded p-3 bg-light">
+                                            <div id="educationList">
+                                                <!-- Education records will be populated here -->
+                                            </div>
+                                            <button type="button" class="btn btn-outline-primary btn-sm mt-2" onclick="addEducationRecord()">
+                                                <i class="fa fa-plus me-1"></i>Add Education Record
+                                            </button>
+                                        </div>
+                                        <small class="text-muted">Add your educational qualifications starting from the highest level.</small>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-12 mb-3">
+                                        <label class="form-label fw-bold">
+                                            <i class="fa fa-language text-info me-1"></i>Languages
+                                        </label>
+                                        <div id="languageList"></div>
+                                        <button type="button" class="btn btn-outline-primary btn-sm mt-2" onclick="addLanguageRecord()">
+                                            <i class="fa fa-plus me-1"></i>Add Language
+                                        </button>
                                     </div>
                                 </div>
                                 <div class="text-end">
@@ -367,12 +398,356 @@ document.addEventListener('DOMContentLoaded', function() {
             spouseSection.style.display = '';
         } else {
             spouseSection.style.display = 'none';
+            // Clear spouse fields if not married
             spouseSection.querySelectorAll('input').forEach(function(input) { input.value = ''; });
         }
     }
     if (marital) {
         toggleSpouseSection();
         marital.addEventListener('change', toggleSpouseSection);
+    }
+// --- Enhanced Dynamic Education Fields ---
+let educationIndex = 0;
+
+function addEducationRecord(existingData = null) {
+    const container = document.getElementById('educationList');
+    const index = educationIndex++;
+    
+    const educationDiv = document.createElement('div');
+    educationDiv.className = 'education-record border rounded p-3 mb-3 bg-white position-relative';
+    educationDiv.dataset.index = index;
+    
+    educationDiv.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0 text-primary">
+                <i class="fa fa-graduation-cap me-1"></i>Education Record ${index + 1}
+            </h6>
+            <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeEducationRecord(this)" title="Remove this education record">
+                <i class="fa fa-trash"></i>
+            </button>
+        </div>
+        
+        ${existingData?.id ? `<input type="hidden" name="education[${index}][id]" value="${existingData.id}">` : ''}
+        
+        <div class="row">
+            <div class="col-md-6 mb-2">
+                <label class="form-label">Institution/School <span class="text-danger">*</span></label>
+                <input type="text" name="education[${index}][institution]" class="form-control" 
+                       value="${existingData?.institution || ''}" 
+                       placeholder="e.g., University of Zambia" required>
+                <div class="invalid-feedback">Please provide the institution name</div>
+            </div>
+            <div class="col-md-6 mb-2">
+                <label class="form-label">Qualification <span class="text-danger">*</span></label>
+                <input type="text" name="education[${index}][qualification]" class="form-control" 
+                       value="${existingData?.qualification || ''}" 
+                       placeholder="e.g., Bachelor of Science" required>
+                <div class="invalid-feedback">Please provide the qualification</div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-6 mb-2">
+                <label class="form-label">Course ID</label>
+                <input type="text" name="education[${index}][course_id]" class="form-control" value="${existingData?.course_id || ''}" placeholder="Course identifier">
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-4 mb-2">
+                <label class="form-label">Education Level</label>
+                <select name="education[${index}][level]" class="form-select">
+                    <option value="">Select Level</option>
+                    <option value="Primary" ${existingData?.level === 'Primary' ? 'selected' : ''}>Primary Education</option>
+                    <option value="Secondary" ${existingData?.level === 'Secondary' ? 'selected' : ''}>Secondary Education</option>
+                    <option value="Certificate" ${existingData?.level === 'Certificate' ? 'selected' : ''}>Certificate</option>
+                    <option value="Diploma" ${existingData?.level === 'Diploma' ? 'selected' : ''}>Diploma</option>
+                    <option value="Degree" ${existingData?.level === 'Degree' ? 'selected' : ''}>Bachelor's Degree</option>
+                    <option value="Masters" ${existingData?.level === 'Masters' ? 'selected' : ''}>Master's Degree</option>
+                    <option value="PhD" ${existingData?.level === 'PhD' ? 'selected' : ''}>PhD/Doctorate</option>
+                    <option value="Other" ${existingData?.level === 'Other' ? 'selected' : ''}>Other</option>
+                </select>
+            </div>
+            <div class="col-md-4 mb-2">
+                <label class="form-label">Field of Study</label>
+                <input type="text" name="education[${index}][field_of_study]" class="form-control" 
+                       value="${existingData?.field_of_study || ''}" 
+                       placeholder="e.g., Computer Science">
+            </div>
+            <div class="col-md-4 mb-2">
+                <label class="form-label">Status</label>
+                <select name="education[${index}][status]" class="form-select">
+                    <option value="Completed" ${existingData?.status === 'Completed' ? 'selected' : ''}>Completed</option>
+                    <option value="In Progress" ${existingData?.status === 'In Progress' ? 'selected' : ''}>In Progress</option>
+                    <option value="Discontinued" ${existingData?.status === 'Discontinued' ? 'selected' : ''}>Discontinued</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-3 mb-2">
+                <label class="form-label">Year Started</label>
+                <input type="number" name="education[${index}][year_started]" class="form-control" 
+                       value="${existingData?.year_started || ''}" 
+                       min="1950" max="${new Date().getFullYear()}" 
+                       placeholder="e.g., 2015">
+            </div>
+            <div class="col-md-3 mb-2">
+                <label class="form-label">Year Completed</label>
+                <input type="number" name="education[${index}][year_completed]" class="form-control" 
+                       value="${existingData?.year_completed || ''}" 
+                       min="1950" max="${new Date().getFullYear() + 10}" 
+                       placeholder="e.g., 2019">
+            </div>
+            <div class="col-md-3 mb-2">
+                <label class="form-label">Grade/Result</label>
+                <input type="text" name="education[${index}][grade_obtained]" class="form-control" 
+                       value="${existingData?.grade_obtained || ''}" 
+                       placeholder="e.g., First Class, 3.8 GPA">
+            </div>
+            <div class="col-md-3 mb-2 d-flex align-items-end">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" 
+                           name="education[${index}][is_highest]" value="1" 
+                           ${existingData?.is_highest_qualification ? 'checked' : ''}>
+                    <label class="form-check-label">
+                        Highest Qualification
+                    </label>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    container.appendChild(educationDiv);
+    
+    // Add form validation
+    const form = educationDiv.closest('form');
+    if (form) {
+        form.classList.add('needs-validation');
+    }
+}
+
+function removeEducationRecord(button) {
+    if (confirm('Are you sure you want to remove this education record?')) {
+        button.closest('.education-record').remove();
+        updateEducationNumbers();
+    }
+}
+
+function updateEducationNumbers() {
+    const records = document.querySelectorAll('.education-record');
+    records.forEach((record, index) => {
+        const header = record.querySelector('h6');
+        if (header) {
+            header.innerHTML = `<i class="fa fa-graduation-cap me-1"></i>Education Record ${index + 1}`;
+        }
+    });
+}
+
+// Load existing education records
+function loadEducationRecords() {
+    const existingEducation = <?= json_encode($educationRecords, JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    if (existingEducation && existingEducation.length > 0) {
+        existingEducation.forEach(edu => {
+            addEducationRecord(edu);
+        });
+    } else {
+        // Add one empty record if no existing records
+        addEducationRecord();
+    }
+}
+
+// Initialize education records when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadEducationRecords();
+});
+
+// --- Enhanced Dynamic Language Fields ---
+let languageIndex = 0;
+
+function addLanguageRecord(existingData = null) {
+    const container = document.getElementById('languageList');
+    const index = languageIndex++;
+    
+    const languageDiv = document.createElement('div');
+    languageDiv.className = 'language-record border rounded p-3 mb-3 bg-white position-relative';
+    languageDiv.dataset.index = index;
+    
+    languageDiv.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0 text-info">
+                <i class="fa fa-language me-1"></i>Language ${index + 1}
+            </h6>
+            <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeLanguageRecord(this)" title="Remove this language">
+                <i class="fa fa-trash"></i>
+            </button>
+        </div>
+        
+        ${existingData?.id ? `<input type="hidden" name="languages[${index}][id]" value="${existingData.id}">` : ''}
+        
+        <div class="row">
+            <div class="col-md-4 mb-2">
+                <label class="form-label">Language <span class="text-danger">*</span></label>
+                <input type="text" name="languages[${index}][language_name]" class="form-control" 
+                       value="${existingData?.language_name || ''}" 
+                       placeholder="e.g., English, Bemba, Nyanja" required>
+                <div class="invalid-feedback">Please provide the language name</div>
+            </div>
+            <div class="col-md-4 mb-2">
+                <label class="form-label">Proficiency Level</label>
+                <select name="languages[${index}][proficiency_level]" class="form-select">
+                    <option value="">Select Level</option>
+                    <option value="Basic" ${existingData?.proficiency_level === 'Basic' ? 'selected' : ''}>Basic</option>
+                    <option value="Intermediate" ${existingData?.proficiency_level === 'Intermediate' ? 'selected' : ''}>Intermediate</option>
+                    <option value="Advanced" ${existingData?.proficiency_level === 'Advanced' ? 'selected' : ''}>Advanced</option>
+                    <option value="Fluent" ${existingData?.proficiency_level === 'Fluent' ? 'selected' : ''}>Fluent</option>
+                    <option value="Native" ${existingData?.proficiency_level === 'Native' ? 'selected' : ''}>Native</option>
+                </select>
+            </div>
+            <div class="col-md-4 mb-2">
+                <label class="form-label">Skills</label>
+                <div class="row g-2 mt-1">
+                    <div class="col-6">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" 
+                                   name="languages[${index}][can_read]" value="1" 
+                                   ${existingData?.can_read ? 'checked' : ''}>
+                            <label class="form-check-label">Read</label>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" 
+                                   name="languages[${index}][can_write]" value="1" 
+                                   ${existingData?.can_write ? 'checked' : ''}>
+                            <label class="form-check-label">Write</label>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" 
+                                   name="languages[${index}][can_speak]" value="1" 
+                                   ${existingData?.can_speak ? 'checked' : ''}>
+                            <label class="form-check-label">Speak</label>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" 
+                                   name="languages[${index}][can_understand]" value="1" 
+                                   ${existingData?.can_understand ? 'checked' : ''}>
+                            <label class="form-check-label">Understand</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    container.appendChild(languageDiv);
+    
+    // Add form validation
+    const form = languageDiv.closest('form');
+    if (form) {
+        form.classList.add('needs-validation');
+    }
+}
+
+function removeLanguageRecord(button) {
+    if (confirm('Are you sure you want to remove this language?')) {
+        button.closest('.language-record').remove();
+        updateLanguageNumbers();
+    }
+}
+
+function updateLanguageNumbers() {
+    const records = document.querySelectorAll('.language-record');
+    records.forEach((record, index) => {
+        const header = record.querySelector('h6');
+        if (header) {
+            header.innerHTML = `<i class="fa fa-language me-1"></i>Language ${index + 1}`;
+        }
+    });
+}
+
+// Load existing language records
+function loadLanguageRecords() {
+    const existingLanguages = <?= json_encode($languageRecords, JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    if (existingLanguages && existingLanguages.length > 0) {
+        existingLanguages.forEach(lang => {
+            addLanguageRecord(lang);
+        });
+    } else {
+        // Add one empty record if no existing records
+        addLanguageRecord();
+    }
+}
+
+// Remove handler for all dynamic sections
+function addDynamicRemoveHandler(listId) {
+    document.getElementById(listId).addEventListener('click', function(e) {
+        if (e.target.closest('.btn-remove-block')) {
+            e.target.closest('.row').remove();
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Load dynamic records
+    loadEducationRecords();
+    loadLanguageRecords();
+    
+    // Add handlers for any remaining dynamic sections
+    addDynamicRemoveHandler('educationList');
+    addDynamicRemoveHandler('languageList');
+    
+    // Add form validation
+    const form = document.querySelector('form.needs-validation');
+    if (form) {
+        form.addEventListener('submit', function(event) {
+            if (!form.checkValidity()) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            form.classList.add('was-validated');
+        });
+    }
+});
+});
+// Show children details fields if number of children > 0
+document.addEventListener('DOMContentLoaded', function() {
+    function renderChildrenFields(count) {
+        const container = document.getElementById('childrenDetails');
+        container.innerHTML = '';
+        if (count > 0) {
+            for (let i = 1; i <= count; i++) {
+                container.innerHTML += `
+                <div class="row mb-2">
+                    <div class="col-md-4 mb-1">
+                        <label class="form-label">Child #${i} Name</label>
+                        <input type="text" class="form-control" name="child_name[]" placeholder="Full Name">
+                    </div>
+                    <div class="col-md-4 mb-1">
+                        <label class="form-label">Child #${i} DOB</label>
+                        <input type="date" class="form-control" name="child_dob[]">
+                    </div>
+                    <div class="col-md-4 mb-1">
+                        <label class="form-label">Child #${i} Gender</label>
+                        <select class="form-select" name="child_gender[]">
+                            <option value="">Select</option>
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                        </select>
+                    </div>
+                </div>`;
+            }
+        }
+    }
+    const childrenInput = document.getElementById('childrenCount');
+    if (childrenInput) {
+        renderChildrenFields(parseInt(childrenInput.value) || 0);
+        childrenInput.addEventListener('input', function() {
+            renderChildrenFields(parseInt(this.value) || 0);
+        });
     }
 });
 </script>
@@ -392,20 +767,19 @@ document.addEventListener('DOMContentLoaded', function() {
                                      alt="Profile Picture" 
                                      class="rounded-circle mb-2" 
                                      id="profileImage"
-                                     style="width: 120px; height: 120px; object-fit: cover; border: 3px solid #dee2e6;">
+                                     style="width: 120px; height: 120px; object-fit: cover; cursor: pointer; border: 3px solid #dee2e6;"
+                                     onclick="document.getElementById('photoInput').click()">
                                 
-                                <!-- FIX: this used to have its own photo
-                                     upload form here — a real <form> that
-                                     submitted, but with no server-side
-                                     handler anywhere behind it (silently
-                                     did nothing). Photo upload is now
-                                     handled in one real place: Account
-                                     Settings. -->
-                                <div>
-                                    <a href="settings.php#profile-photo" class="btn btn-sm btn-outline-primary mt-1">
+                                <!-- Photo Upload Form -->
+                                <form method="POST" enctype="multipart/form-data" id="photoForm" class="mt-2">
+                                    <input type="file" id="photoInput" name="profilePhoto" accept="image/*" style="display: none;" onchange="previewAndUpload(this)">
+                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('photoInput').click()">
                                         <i class="fas fa-camera"></i> Change Photo
-                                    </a>
-                                </div>
+                                    </button>
+                                    <button type="submit" name="upload_photo" id="uploadBtn" class="btn btn-sm btn-success d-none">
+                                        <i class="fas fa-upload"></i> Upload
+                                    </button>
+                                </form>
                                 
                                 <h5 class="mt-2"><?= htmlspecialchars($userData->fullName ?? 'N/A') ?></h5>
                                 <p class="text-muted"><?= htmlspecialchars($userData->displayRank ?? 'N/A') ?></p>
@@ -638,6 +1012,39 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 
 <script>
+function previewAndUpload(input) {
+    if (input.files && input.files[0]) {
+        const file = input.files[0];
+        // Check file size (5MB limit)
+        if (file.size > 5 * 1024 * 1024) {
+            alert('File size must be less than 5MB');
+            input.value = '';
+            return;
+        }
+        // Check file type
+        if (!file.type.startsWith('image/')) {
+            alert('Please select an image file');
+            input.value = '';
+            return;
+        }
+        // Show preview
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('profileImage').src = e.target.result;
+            document.getElementById('uploadBtn').classList.remove('d-none');
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+// Auto-submit form on photo selection (optional)
+document.getElementById('photoForm').addEventListener('submit', function(e) {
+    if (!document.getElementById('photoInput').files[0]) {
+        e.preventDefault();
+        alert('Please select a photo first');
+    }
+});
+
 function addContact() {
     const contactList = document.getElementById('contactList');
     const index = contactList.querySelectorAll('.row').length;

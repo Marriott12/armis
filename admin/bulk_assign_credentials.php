@@ -29,6 +29,7 @@ require_once dirname(__DIR__) . '/config.php';
 require_once dirname(__DIR__) . '/shared/database_connection.php';
 require_once dirname(__DIR__) . '/shared/rank_levels.php';
 require_once dirname(__DIR__) . '/shared/rbac.php';
+require_once dirname(__DIR__) . '/shared/password_policy.php';
 
 if (!isset($_SESSION['user_id'])) {
     header('Location: ' . dirname($_SERVER['PHP_SELF']) . '/../login.php');
@@ -40,7 +41,6 @@ requireBranchAdmin(); // system-admin only - this creates login credentials for 
 
 $pdo = getDbConnection();
 
-const DEFAULT_PASSWORD = 'Armis@2026';
 const EXCLUDED_SVCNO = '007414'; // Marriott - stays as-is per explicit instruction
 
 if (!isset($_SESSION['csrf_token'])) {
@@ -49,6 +49,41 @@ if (!isset($_SESSION['csrf_token'])) {
 $csrfToken = $_SESSION['csrf_token'];
 
 $result = null;
+
+function armisGenerateBulkTemporaryPassword(): string
+{
+    $upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    $lower = 'abcdefghijkmnopqrstuvwxyz';
+    $digits = '23456789';
+    $special = '@#$%';
+    $all = $upper . $lower . $digits . $special;
+    $password = $upper[random_int(0, strlen($upper) - 1)]
+        . $lower[random_int(0, strlen($lower) - 1)]
+        . $digits[random_int(0, strlen($digits) - 1)]
+        . $special[random_int(0, strlen($special) - 1)];
+    for ($i = 4; $i < 16; $i++) {
+        $password .= $all[random_int(0, strlen($all) - 1)];
+    }
+    return str_shuffle($password);
+}
+
+function armisBulkCredentialStoreDir(): string
+{
+    $dir = dirname(__DIR__) . '/cache/generated_bulk_credentials';
+    if (!is_dir($dir)) @mkdir($dir, 0700, true);
+    return $dir;
+}
+
+function armisStoreBulkCredentials(array $credentials): ?string
+{
+    if (!$credentials) return null;
+    $token = bin2hex(random_bytes(32));
+    $path = armisBulkCredentialStoreDir() . '/' . $token . '.json';
+    $payload = json_encode(['created_at'=>time(), 'expires_at'=>time()+3600, 'credentials'=>$credentials], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+    if ($payload === false || @file_put_contents($path, $payload, LOCK_EX) === false) return null;
+    @chmod($path, 0600);
+    return $token;
+}
 
 /**
  * Fetch the currently eligible list: Active (svcStatus), no username yet,
@@ -92,45 +127,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'apply
     } elseif (empty($selected)) {
         $result = ['ok' => false, 'message' => 'No accounts were selected.'];
     } else {
-        $hashedPassword = password_hash(DEFAULT_PASSWORD, PASSWORD_DEFAULT);
-        $updateStmt = $pdo->prepare("
-            UPDATE staff
-            SET username = :username,
-                password = :password,
-                accStatus = 'Active',
-                isFirstLogin = 1,
-                passwordChangedAt = NULL
-            WHERE svcNo = :svcNo
-              AND (username IS NULL OR username = '')
-              AND svcStatus = 'Active'
-              AND svcNo <> :excluded
-        ");
-
-        // Re-check every submitted svcNo against a fresh eligibility fetch -
-        // a checked box is a UI convenience, not something the server trusts.
+        // Generate a unique temporary password for every account. No shared/default
+        // password is used; each account must change it on first login.
+        $toProcess = [];
         $currentlyEligible = array_column(fetchEligible($pdo), null, 'svcNo');
-        $toProcess = array_values(array_intersect($selected, array_keys($currentlyEligible)));
+        foreach ($selected as $svcNo) {
+            if (isset($currentlyEligible[$svcNo])) {
+                $toProcess[] = $svcNo;
+            }
+        }
 
-        $count = 0;
+        $credentials = [];
         $pdo->beginTransaction();
         try {
+            $updateStmt = $pdo->prepare("
+                UPDATE staff
+                SET username = :username,
+                    password = :password,
+                    accStatus = 'Active',
+                    isFirstLogin = 1,
+                    passwordChangedAt = NULL
+                WHERE svcNo = :svcNo
+                  AND (username IS NULL OR username = '')
+                  AND svcStatus = 'Active'
+                  AND svcNo <> :excluded
+            ");
+
             foreach ($toProcess as $svcNo) {
+                $tempPassword = armisGenerateBulkTemporaryPassword();
+                $validationErrors = armisPasswordValidationErrors($tempPassword, $tempPassword);
+                if ($validationErrors) {
+                    throw new RuntimeException('Generated temporary password did not satisfy the ARMIS password policy.');
+                }
+                $hashedPassword = password_hash($tempPassword, PASSWORD_DEFAULT);
+                if ($hashedPassword === false) {
+                    throw new RuntimeException('Unable to securely hash a generated temporary password.');
+                }
                 $updateStmt->execute([
                     'username' => $svcNo,
                     'password' => $hashedPassword,
                     'svcNo' => $svcNo,
                     'excluded' => EXCLUDED_SVCNO,
                 ]);
-                $count += $updateStmt->rowCount();
+                if ($updateStmt->rowCount() > 0) {
+                    $credentials[] = ['svcNo' => $svcNo, 'username' => $svcNo, 'password' => $tempPassword];
+                }
             }
+
             $pdo->commit();
+            $count = count($credentials);
             $skipped = count($selected) - $count;
-            $msg = "Assigned login credentials to $count staff member(s). Default password: " . DEFAULT_PASSWORD . " — everyone must change it on first login.";
+            $msg = "Assigned unique temporary login credentials to $count staff member(s). Each account must change its password on first login.";
             if ($skipped > 0) {
                 $msg .= " ($skipped selected account(s) were skipped - no longer eligible.)";
             }
             $result = ['ok' => true, 'message' => $msg];
-            logAccess('admin', 'bulk_credential_assignment', true, "Assigned credentials to $count accounts");
+            $credentialToken = armisStoreBulkCredentials($credentials);
+            $_SESSION['armis_bulk_credentials_token'] = $credentialToken;
+            logAccess('admin', 'bulk_credential_assignment', true, "Assigned unique temporary credentials to $count accounts");
 
             $eligible = fetchEligible($pdo);
             $seenRanks = [];
@@ -181,7 +235,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
         <div class="card-body">
           <h5><i class="fas fa-triangle-exclamation text-warning"></i> Before you run this</h5>
           <ul class="mb-0">
-            <li>Default password will be: <code><?= htmlspecialchars(DEFAULT_PASSWORD) ?></code> (same for everyone, hashed individually per account)</li>
+            <li>Each selected account receives a unique, securely generated temporary password and must change it on first login.</li>
             <li><code>isFirstLogin</code> is set to <code>1</code> for every affected account, forcing a password change on next login</li>
             <li>Only <strong>Active</strong> staff with no existing username are listed — Retired/Deceased/Discharged/AWOL are skipped, and any account that already has a username is left untouched</li>
             <li>Only <strong>checked</strong> rows are affected - uncheck anyone you want to leave out of this run</li>
@@ -338,7 +392,7 @@ function confirmSubmit() {
         alert('Select at least one account first.');
         return false;
     }
-    return confirm('Assign svcNo/Armis@2026 login credentials to ' + n + ' selected account(s)?');
+    return confirm('Assign unique temporary login credentials to ' + n + ' selected account(s)? Each account must change its password on first login.');
 }
 </script>
 

@@ -1,372 +1,223 @@
 <?php
+declare(strict_types=1);
+
 /**
- * ARMIS System Health Check
- * Comprehensive system monitoring for 1M+ user scalability
+ * ARMIS System Health & Scalability Console
+ * URL: /Armis2/admin/health.php
  */
-
-// Include scalability configuration
 require_once dirname(__DIR__) . '/config/scalability.php';
-
-// Include database connection
 require_once dirname(__DIR__) . '/shared/database_connection.php';
 
-// Start session if not already started
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Authentication check - admin only
 if (!isset($_SESSION['user_id'])) {
     header('Location: ' . dirname($_SERVER['PHP_SELF']) . '/../login.php');
-    exit();
+    exit;
 }
 
-// Simple health checks
-$healthChecks = [];
+$role = strtolower((string)($_SESSION['role'] ?? ''));
+if (!in_array($role, ['admin', 'superadmin'], true)) {
+    http_response_code(403);
+    exit('Forbidden');
+}
 
-// Database connectivity
+function healthStatus(bool $ok, string $okMessage, string $failMessage, string $failLevel = 'WARNING'): array
+{
+    return ['status' => $ok ? 'OK' : $failLevel, 'message' => $ok ? $okMessage : $failMessage];
+}
+
+$healthChecks = [];
+$scalability = [];
+
+// 1. Database / real schema health
 try {
     $db = getDbConnection();
-    $healthChecks['database'] = ['status' => 'OK', 'message' => 'Database connection successful'];
-} catch (Exception $e) {
-    $healthChecks['database'] = ['status' => 'ERROR', 'message' => 'Database connection failed: ' . $e->getMessage()];
-}
-
-// PHP Configuration
-$healthChecks['php_version'] = [
-    'status' => version_compare(PHP_VERSION, '7.4.0', '>=') ? 'OK' : 'WARNING',
-    'message' => 'PHP ' . PHP_VERSION
-];
-
-$healthChecks['memory_limit'] = [
-    'status' => (int)str_replace(['M', 'G'], ['', '000'], ini_get('memory_limit')) >= 256 ? 'OK' : 'WARNING',
-    'message' => 'Memory limit: ' . ini_get('memory_limit')
-];
-
-$healthChecks['max_execution_time'] = [
-    'status' => ini_get('max_execution_time') >= 30 ? 'OK' : 'WARNING',
-    'message' => 'Max execution time: ' . ini_get('max_execution_time') . 's'
-];
-
-// File permissions
-$criticalPaths = [
-    dirname(__DIR__) . '/logs',
-    dirname(__DIR__) . '/uploads',
-    dirname(__DIR__) . '/cache'
-];
-
-foreach ($criticalPaths as $path) {
-    $pathName = basename($path);
-    if (is_dir($path) && is_writable($path)) {
-        $healthChecks["writable_$pathName"] = ['status' => 'OK', 'message' => "$pathName directory is writable"];
-    } else {
-        $healthChecks["writable_$pathName"] = ['status' => 'ERROR', 'message' => "$pathName directory not writable or missing"];
+    $db->query('SELECT 1')->fetchColumn();
+    $tables = ['staff','rank','unit','appointment','appointment_type','staff_appointment','staff_promotion','branches','roles','role_modules','activity_log','honors','staff_awards','staff_medical_records','training_records'];
+    $missing = [];
+    $stmt = $db->prepare('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?');
+    foreach ($tables as $table) {
+        $stmt->execute([$table]);
+        if ((int)$stmt->fetchColumn() !== 1) $missing[] = $table;
     }
+    $healthChecks['database'] = healthStatus(!$missing, 'Primary database connected; all core ARMIS tables are present.', 'Missing core tables: ' . implode(', ', $missing), 'ERROR');
+} catch (Throwable $e) {
+    $healthChecks['database'] = ['status' => 'ERROR', 'message' => 'Database connection failed. See ARMIS logs for the exception.'];
 }
 
-// Redis availability (if configured)
-if (class_exists('Redis')) {
+// 2. PHP/runtime
+$healthChecks['php_version'] = healthStatus(version_compare(PHP_VERSION, '8.0.0', '>='), 'PHP ' . PHP_VERSION, 'PHP ' . PHP_VERSION . ' is below the supported runtime target.');
+$healthChecks['pdo_mysql'] = healthStatus(extension_loaded('pdo_mysql'), 'PDO MySQL extension loaded.', 'PDO MySQL extension is not loaded.', 'ERROR');
+$memoryLimit = ini_get('memory_limit') ?: 'unknown';
+$healthChecks['memory_limit'] = ['status' => 'OK', 'message' => 'Memory limit: ' . $memoryLimit];
+
+// 3. Writable application directories
+// The cache directory is part of the ARMIS runtime contract. Create it on
+// first deployment when possible so a fresh WAMP extraction does not make
+// the entire health console report ERROR merely because the directory was
+// not included in the deployment archive.
+$applicationDirectories = [
+    dirname(__DIR__) . '/logs' => 'logs',
+    dirname(__DIR__) . '/cache' => 'cache',
+    dirname(__DIR__) . '/uploads' => 'uploads',
+];
+foreach ($applicationDirectories as $path => $name) {
+    if ($name === 'cache' && !is_dir($path)) {
+        @mkdir($path, 0775, true);
+    }
+    $existsAndWritable = is_dir($path) && is_writable($path);
+    $healthChecks['writable_' . $name] = healthStatus(
+        $existsAndWritable,
+        "$name directory is writable.",
+        "$name directory is missing or not writable.",
+        'ERROR'
+    );
+}
+
+// 4. Redis: real connectivity check, with file cache fallback.
+$redisEnabled = ScalabilityConfig::redisEnabled();
+$redisExtension = class_exists('Redis');
+$redisReachable = false;
+if ($redisEnabled && $redisExtension) {
     try {
-        $redis = new Redis();
-        $redis->connect(ScalabilityConfig::REDIS_HOST, ScalabilityConfig::REDIS_PORT);
-        $healthChecks['redis'] = ['status' => 'OK', 'message' => 'Redis connection successful'];
-        $redis->close();
-    } catch (Exception $e) {
-        $healthChecks['redis'] = ['status' => 'WARNING', 'message' => 'Redis not available: ' . $e->getMessage()];
+        $r = new Redis();
+        $r->connect(ScalabilityConfig::redisHost(), ScalabilityConfig::redisPort(), 1.5);
+        if (ScalabilityConfig::redisPassword()) $r->auth(ScalabilityConfig::redisPassword());
+        $redisReachable = (bool)$r->ping();
+        $r->close();
+    } catch (Throwable $e) {
+        $redisReachable = false;
     }
-} else {
-    $healthChecks['redis'] = ['status' => 'INFO', 'message' => 'Redis extension not installed'];
 }
-
-// System load (if available)
-if (function_exists('sys_getloadavg')) {
-    $load = sys_getloadavg();
-    $healthChecks['system_load'] = [
-        'status' => $load[0] < 2.0 ? 'OK' : ($load[0] < 5.0 ? 'WARNING' : 'ERROR'),
-        'message' => 'System load: ' . number_format($load[0], 2)
-    ];
-}
-
-// Disk space
-$diskFree = disk_free_space(dirname(__DIR__));
-$diskTotal = disk_total_space(dirname(__DIR__));
-$diskUsedPercent = ($diskTotal - $diskFree) / $diskTotal * 100;
-
-$healthChecks['disk_space'] = [
-    'status' => $diskUsedPercent < 80 ? 'OK' : ($diskUsedPercent < 90 ? 'WARNING' : 'ERROR'),
-    'message' => 'Disk usage: ' . number_format($diskUsedPercent, 1) . '% (' . 
-                 number_format($diskFree / 1024 / 1024 / 1024, 1) . 'GB free)'
+$cacheBackend = ARMISCache::backend();
+$healthChecks['cache'] = [
+    'status' => $redisReachable ? 'OK' : 'INFO',
+    'message' => $redisReachable
+        ? 'Redis caching is active (' . ScalabilityConfig::redisHost() . ':' . ScalabilityConfig::redisPort() . ').'
+        : 'Redis is not active; ARMIS is using the local file-cache fallback. Enable REDIS_ENABLED=1 after installing Redis + PHP Redis.'
 ];
 
-// Overall system status
+// 5. Gzip / HTTP compression
+$gzipFunction = function_exists('ob_gzhandler');
+$gzipEnabled = ScalabilityConfig::ENABLE_GZIP_COMPRESSION && $gzipFunction;
+$healthChecks['gzip'] = healthStatus($gzipEnabled, 'PHP gzip compression is available; Apache/mod_deflate may also compress responses.', 'PHP gzip handler is unavailable. Configure Apache mod_deflate for production compression.', 'WARNING');
+
+// 6. CDN configuration
+$cdnEnabled = ScalabilityConfig::cdnEnabled() && ScalabilityConfig::cdnBaseUrl() !== '';
+$healthChecks['cdn'] = $cdnEnabled
+    ? ['status' => 'OK', 'message' => 'Static asset CDN is configured: ' . ScalabilityConfig::cdnBaseUrl()]
+    : ['status' => 'INFO', 'message' => 'CDN integration is implemented but disabled locally. Set CDN_ENABLED=1 and CDN_BASE_URL on the production host.'];
+
+// 7. Read replicas
+$replicas = ScalabilityConfig::readReplicaHosts();
+$replicaResults = [];
+foreach ($replicas as $host) {
+    try {
+        $replica = armisCreatePdo($host);
+        $replica->query('SELECT 1')->fetchColumn();
+        $replicaResults[$host] = true;
+    } catch (Throwable $e) {
+        $replicaResults[$host] = false;
+    }
+}
+$healthyReplicaCount = count(array_filter($replicaResults));
+$scalability['read_replicas'] = $replicaResults;
+$healthChecks['read_replicas'] = !$replicas
+    ? ['status' => 'INFO', 'message' => 'No read replicas configured; ARMIS safely uses the primary database.']
+    : healthStatus($healthyReplicaCount === count($replicas), "$healthyReplicaCount/" . count($replicas) . ' configured read replicas are reachable.', "$healthyReplicaCount/" . count($replicas) . ' configured read replicas are reachable. Failed replicas will automatically fall back to the primary.', 'WARNING');
+
+// 8. Load balancer readiness
+$lbEnabled = ScalabilityConfig::loadBalancerEnabled();
+$lbReady = !$lbEnabled || ($redisReachable && $redisEnabled);
+$healthChecks['load_balancer'] = $lbEnabled
+    ? healthStatus($lbReady, 'Load-balancer mode enabled and shared Redis infrastructure is reachable.', 'Load-balancer mode is enabled but shared Redis session/cache infrastructure is not ready.', 'ERROR')
+    : ['status' => 'INFO', 'message' => 'Load balancing is implemented as a deployment-ready configuration but disabled for this single WAMP instance.'];
+
+// 9. Actual DB telemetry
+$dbStats = ['staff' => null, 'active_staff' => null];
+if (isset($db) && $db instanceof PDO) {
+    try {
+        $dbStats['staff'] = (int)$db->query('SELECT COUNT(*) FROM staff')->fetchColumn();
+        $dbStats['active_staff'] = (int)$db->query("SELECT COUNT(*) FROM staff WHERE svcStatus='Active'")->fetchColumn();
+    } catch (Throwable $e) {}
+}
+
+// 10. Disk
+$root = dirname(__DIR__);
+$diskFree = @disk_free_space($root);
+$diskTotal = @disk_total_space($root);
+$diskUsedPercent = ($diskFree !== false && $diskTotal) ? (($diskTotal - $diskFree) / $diskTotal * 100) : null;
+$healthChecks['disk_space'] = $diskUsedPercent === null
+    ? ['status' => 'INFO', 'message' => 'Disk statistics unavailable.']
+    : ['status' => $diskUsedPercent < 80 ? 'OK' : ($diskUsedPercent < 90 ? 'WARNING' : 'ERROR'), 'message' => sprintf('Disk usage %.1f%%; %.1f GB free.', $diskUsedPercent, $diskFree / 1073741824)];
+
 $overallStatus = 'OK';
 foreach ($healthChecks as $check) {
-    if ($check['status'] === 'ERROR') {
-        $overallStatus = 'ERROR';
-        break;
-    } elseif ($check['status'] === 'WARNING' && $overallStatus !== 'ERROR') {
-        $overallStatus = 'WARNING';
-    }
+    if ($check['status'] === 'ERROR') { $overallStatus = 'ERROR'; break; }
+    if ($check['status'] === 'WARNING') $overallStatus = 'WARNING';
 }
 
-$pageTitle = "System Health";
-$moduleName = "System Admin";
-$moduleIcon = "heartbeat";
-$currentPage = "health";
-
+$pageTitle = 'System Health & Scalability';
+$moduleName = 'System Admin';
+$moduleIcon = 'heartbeat';
+$currentPage = 'health';
 require_once __DIR__ . '/includes/sidebar_nav.php';
-
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';
 ?>
-
-<!-- Main Content -->
 <div class="content-wrapper with-sidebar">
-    <div class="container-fluid">
-        <div class="main-content">
-            <div class="row">
-                <div class="col-12">
-                    <div class="d-flex justify-content-between align-items-center mb-4">
-                        <h1 class="section-title">
-                            <i class="fas fa-heartbeat"></i> System Health Monitor
-                        </h1>
-                        <div>
-                            <span class="badge bg-<?php echo $overallStatus === 'OK' ? 'success' : ($overallStatus === 'WARNING' ? 'warning' : 'danger'); ?> fs-6">
-                                System Status: <?php echo $overallStatus; ?>
-                            </span>
-                            <button onclick="location.reload()" class="btn btn-outline-secondary">
-                                <i class="fas fa-sync"></i> Refresh
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- System Overview -->
-            <div class="row">
-                <div class="col-lg-3 col-md-6 mb-4">
-                    <div class="card dashboard-card h-100">
-                        <div class="card-body text-center">
-                            <div class="dashboard-icon">
-                                <i class="fas fa-server text-primary fa-3x"></i>
-                            </div>
-                            <h5 class="card-title mt-3">Server Status</h5>
-                            <h3 class="text-<?php echo $overallStatus === 'OK' ? 'success' : ($overallStatus === 'WARNING' ? 'warning' : 'danger'); ?>">
-                                <?php echo $overallStatus; ?>
-                            </h3>
-                            <p class="text-muted">All systems</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="col-lg-3 col-md-6 mb-4">
-                    <div class="card dashboard-card h-100">
-                        <div class="card-body text-center">
-                            <div class="dashboard-icon">
-                                <i class="fas fa-users text-info fa-3x"></i>
-                            </div>
-                            <h5 class="card-title mt-3">Active Users</h5>
-                            <h3 class="text-info"><?php echo number_format(rand(800, 1500)); ?></h3>
-                            <p class="text-muted">Currently online</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="col-lg-3 col-md-6 mb-4">
-                    <div class="card dashboard-card h-100">
-                        <div class="card-body text-center">
-                            <div class="dashboard-icon">
-                                <i class="fas fa-memory text-warning fa-3x"></i>
-                            </div>
-                            <h5 class="card-title mt-3">Memory Usage</h5>
-                            <h3 class="text-warning"><?php echo number_format(memory_get_usage(true) / 1024 / 1024, 1); ?>MB</h3>
-                            <p class="text-muted">Current process</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="col-lg-3 col-md-6 mb-4">
-                    <div class="card dashboard-card h-100">
-                        <div class="card-body text-center">
-                            <div class="dashboard-icon">
-                                <i class="fas fa-clock text-success fa-3x"></i>
-                            </div>
-                            <h5 class="card-title mt-3">Uptime</h5>
-                            <h3 class="text-success"><?php echo gmdate('H:i:s', rand(86400, 604800)); ?></h3>
-                            <p class="text-muted">System uptime</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Health Check Results -->
-            <div class="row">
-                <div class="col-12">
-                    <div class="card dashboard-card">
-                        <div class="card-header">
-                            <h5 class="mb-0"><i class="fas fa-stethoscope"></i> Detailed Health Checks</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="table-responsive">
-                                <table class="table table-hover">
-                                    <thead>
-                                        <tr>
-                                            <th>Component</th>
-                                            <th>Status</th>
-                                            <th>Details</th>
-                                            <th>Last Checked</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php foreach ($healthChecks as $component => $check): ?>
-                                            <tr>
-                                                <td>
-                                                    <i class="fas fa-<?php 
-                                                        echo strpos($component, 'database') !== false ? 'database' :
-                                                             (strpos($component, 'php') !== false ? 'code' :
-                                                             (strpos($component, 'memory') !== false ? 'memory' :
-                                                             (strpos($component, 'disk') !== false ? 'hdd' :
-                                                             (strpos($component, 'redis') !== false ? 'server' : 'cog'))));
-                                                    ?> me-2"></i>
-                                                    <?php echo ucwords(str_replace('_', ' ', $component)); ?>
-                                                </td>
-                                                <td>
-                                                    <span class="badge bg-<?php 
-                                                        echo $check['status'] === 'OK' ? 'success' : 
-                                                             ($check['status'] === 'WARNING' ? 'warning' : 
-                                                             ($check['status'] === 'ERROR' ? 'danger' : 'info'));
-                                                    ?>">
-                                                        <?php echo $check['status']; ?>
-                                                    </span>
-                                                </td>
-                                                <td><?php echo htmlspecialchars($check['message']); ?></td>
-                                                <td><?php echo date('Y-m-d H:i:s'); ?></td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Scalability Metrics -->
-            <div class="row">
-                <div class="col-lg-6 mb-4">
-                    <div class="card dashboard-card">
-                        <div class="card-header">
-                            <h5 class="mb-0"><i class="fas fa-chart-area"></i> Performance Metrics</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <h6>Response Time</h6>
-                                    <div class="progress">
-                                        <div class="progress-bar bg-success" style="width: <?php echo rand(20, 40); ?>%"></div>
-                                    </div>
-                                    <small class="text-muted"><?php echo rand(50, 200); ?>ms average</small>
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <h6>Throughput</h6>
-                                    <div class="progress">
-                                        <div class="progress-bar bg-info" style="width: <?php echo rand(60, 85); ?>%"></div>
-                                    </div>
-                                    <small class="text-muted"><?php echo rand(500, 1200); ?> req/min</small>
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <h6>Error Rate</h6>
-                                    <div class="progress">
-                                        <div class="progress-bar bg-danger" style="width: <?php echo rand(1, 5); ?>%"></div>
-                                    </div>
-                                    <small class="text-muted"><?php echo number_format(rand(1, 50) / 100, 2); ?>% errors</small>
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <h6>Cache Hit Rate</h6>
-                                    <div class="progress">
-                                        <div class="progress-bar bg-warning" style="width: <?php echo rand(75, 95); ?>%"></div>
-                                    </div>
-                                    <small class="text-muted"><?php echo rand(75, 95); ?>% hit rate</small>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-lg-6 mb-4">
-                    <div class="card dashboard-card">
-                        <div class="card-header">
-                            <h5 class="mb-0"><i class="fas fa-shield-alt"></i> Security Status</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="list-group list-group-flush">
-                                <div class="list-group-item d-flex justify-content-between align-items-center">
-                                    SSL Certificate
-                                    <span class="badge bg-success">Valid</span>
-                                </div>
-                                <div class="list-group-item d-flex justify-content-between align-items-center">
-                                    Firewall Status
-                                    <span class="badge bg-success">Active</span>
-                                </div>
-                                <div class="list-group-item d-flex justify-content-between align-items-center">
-                                    Security Headers
-                                    <span class="badge bg-success">Configured</span>
-                                </div>
-                                <div class="list-group-item d-flex justify-content-between align-items-center">
-                                    Rate Limiting
-                                    <span class="badge bg-success">Enabled</span>
-                                </div>
-                                <div class="list-group-item d-flex justify-content-between align-items-center">
-                                    Failed Login Attempts
-                                    <span class="badge bg-warning"><?php echo rand(0, 5); ?></span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Recommendations -->
-            <div class="row">
-                <div class="col-12">
-                    <div class="card dashboard-card">
-                        <div class="card-header">
-                            <h5 class="mb-0"><i class="fas fa-lightbulb"></i> Scalability Recommendations</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <h6 class="text-success">✓ Optimizations in Place</h6>
-                                    <ul class="list-unstyled">
-                                        <li><i class="fas fa-check text-success me-2"></i> Database connection pooling</li>
-                                        <li><i class="fas fa-check text-success me-2"></i> Gzip compression enabled</li>
-                                        <li><i class="fas fa-check text-success me-2"></i> Security headers configured</li>
-                                        <li><i class="fas fa-check text-success me-2"></i> Performance monitoring active</li>
-                                    </ul>
-                                </div>
-                                <div class="col-md-6">
-                                    <h6 class="text-warning">⚠ Recommended Improvements</h6>
-                                    <ul class="list-unstyled">
-                                        <li><i class="fas fa-exclamation-triangle text-warning me-2"></i> Consider Redis caching</li>
-                                        <li><i class="fas fa-exclamation-triangle text-warning me-2"></i> Implement CDN for static assets</li>
-                                        <li><i class="fas fa-exclamation-triangle text-warning me-2"></i> Set up read replicas</li>
-                                        <li><i class="fas fa-exclamation-triangle text-warning me-2"></i> Consider load balancing</li>
-                                    </ul>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+<div class="container-fluid"><div class="main-content">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="section-title"><i class="fas fa-heartbeat"></i> System Health & Scalability</h1>
+        <div>
+            <span class="badge bg-<?php echo $overallStatus === 'OK' ? 'success' : ($overallStatus === 'WARNING' ? 'warning' : 'danger'); ?> fs-6">System: <?php echo $overallStatus; ?></span>
+            <button onclick="location.reload()" class="btn btn-outline-secondary ms-2"><i class="fas fa-sync"></i> Refresh</button>
         </div>
     </div>
-</div>
 
-<script>
-// Auto-refresh every 30 seconds
-setTimeout(function() {
-    location.reload();
-}, 30000);
-</script>
+    <div class="row">
+        <div class="col-lg-3 col-md-6 mb-4"><div class="card dashboard-card h-100"><div class="card-body text-center"><i class="fas fa-database fa-3x text-primary"></i><h5 class="mt-3">Staff Records</h5><h3><?php echo $dbStats['staff'] === null ? '—' : number_format($dbStats['staff']); ?></h3><small class="text-muted">Actual database count</small></div></div></div>
+        <div class="col-lg-3 col-md-6 mb-4"><div class="card dashboard-card h-100"><div class="card-body text-center"><i class="fas fa-user-check fa-3x text-success"></i><h5 class="mt-3">Active Staff</h5><h3><?php echo $dbStats['active_staff'] === null ? '—' : number_format($dbStats['active_staff']); ?></h3><small class="text-muted">svcStatus = Active</small></div></div></div>
+        <div class="col-lg-3 col-md-6 mb-4"><div class="card dashboard-card h-100"><div class="card-body text-center"><i class="fas fa-memory fa-3x text-warning"></i><h5 class="mt-3">Memory</h5><h3><?php echo number_format(memory_get_usage(true) / 1048576, 1); ?> MB</h3><small class="text-muted">Current PHP request</small></div></div></div>
+        <div class="col-lg-3 col-md-6 mb-4"><div class="card dashboard-card h-100"><div class="card-body text-center"><i class="fas fa-server fa-3x text-info"></i><h5 class="mt-3">Cache Backend</h5><h3><?php echo strtoupper(htmlspecialchars($cacheBackend)); ?></h3><small class="text-muted">Redis preferred, file fallback</small></div></div></div>
+    </div>
 
+    <div class="card dashboard-card mb-4"><div class="card-header"><h5 class="mb-0"><i class="fas fa-stethoscope"></i> Live Health Checks</h5></div><div class="card-body table-responsive"><table class="table table-hover align-middle"><thead><tr><th>Component</th><th>Status</th><th>Details</th></tr></thead><tbody>
+    <?php foreach ($healthChecks as $component => $check): ?>
+    <tr><td><i class="fas fa-cog me-2"></i><?php echo htmlspecialchars(ucwords(str_replace('_', ' ', $component))); ?></td><td><span class="badge bg-<?php echo $check['status']==='OK'?'success':($check['status']==='WARNING'?'warning':($check['status']==='ERROR'?'danger':'info')); ?>"><?php echo $check['status']; ?></span></td><td><?php echo htmlspecialchars($check['message']); ?></td></tr>
+    <?php endforeach; ?>
+    </tbody></table></div></div>
+
+    <div class="row">
+      <div class="col-lg-6 mb-4"><div class="card dashboard-card h-100"><div class="card-header"><h5 class="mb-0"><i class="fas fa-rocket"></i> Implemented Optimizations</h5></div><div class="card-body">
+        <ul class="list-group list-group-flush">
+          <li class="list-group-item"><i class="fas fa-check-circle text-success me-2"></i>Persistent PDO connections with primary/read-replica routing hooks</li>
+          <li class="list-group-item"><i class="fas fa-check-circle text-success me-2"></i>Redis cache integration with secure file-cache fallback</li>
+          <li class="list-group-item"><i class="fas fa-check-circle text-success me-2"></i>Gzip compression support and HTTP security headers</li>
+          <li class="list-group-item"><i class="fas fa-check-circle text-success me-2"></i>CDN asset URL integration via environment configuration</li>
+          <li class="list-group-item"><i class="fas fa-check-circle text-success me-2"></i>Performance logging with real request time and memory data</li>
+        </ul>
+      </div></div></div>
+      <div class="col-lg-6 mb-4"><div class="card dashboard-card h-100"><div class="card-header"><h5 class="mb-0"><i class="fas fa-cloud-upload-alt"></i> Production Scale Readiness</h5></div><div class="card-body">
+        <div class="alert alert-info"><strong>Local WAMP:</strong> Redis, CDN, replicas and load balancing remain optional and are intentionally not enabled until the supporting infrastructure exists.</div>
+        <ol class="mb-0">
+          <li>Install Redis server + PHP Redis extension, then set <code>REDIS_ENABLED=1</code>.</li>
+          <li>Point <code>CDN_BASE_URL</code> to the production static-asset host and enable <code>CDN_ENABLED=1</code>.</li>
+          <li>Add MySQL hosts to <code>DB_READ_REPLICAS</code>; read paths can use <code>getReadDbConnection()</code>.</li>
+          <li>Place ARMIS behind a load balancer only after shared Redis/session infrastructure is ready.</li>
+        </ol>
+      </div></div></div>
+    </div>
+
+    <div class="card dashboard-card mb-4"><div class="card-header"><h5 class="mb-0"><i class="fas fa-code"></i> Runtime Configuration</h5></div><div class="card-body"><div class="table-responsive"><table class="table table-sm"><tbody>
+      <tr><th>Redis</th><td><?php echo $redisEnabled ? 'Enabled' : 'Disabled'; ?></td><td><?php echo htmlspecialchars(ScalabilityConfig::redisHost() . ':' . ScalabilityConfig::redisPort()); ?></td></tr>
+      <tr><th>CDN</th><td><?php echo $cdnEnabled ? 'Enabled' : 'Disabled'; ?></td><td><?php echo htmlspecialchars(ScalabilityConfig::cdnBaseUrl() ?: 'Local assets'); ?></td></tr>
+      <tr><th>Read replicas</th><td><?php echo count($replicas); ?></td><td><?php echo $replicas ? htmlspecialchars(implode(', ', $replicas)) : 'Primary database only'; ?></td></tr>
+      <tr><th>Load balancer</th><td><?php echo $lbEnabled ? 'Enabled' : 'Disabled'; ?></td><td>Shared-session requirement enforced</td></tr>
+      <tr><th>Compression</th><td><?php echo $gzipEnabled ? 'Available' : 'Apache recommended'; ?></td><td>Use mod_deflate for static assets</td></tr>
+    </tbody></table></div></div></div>
+</div></div></div>
+<script>setTimeout(function(){ location.reload(); }, 30000);</script>
 <?php include dirname(__DIR__) . '/shared/footer.php'; ?>

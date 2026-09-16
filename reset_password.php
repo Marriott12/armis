@@ -6,6 +6,7 @@
 session_start();
 require_once 'shared/database_connection.php';
 require_once 'shared/email_mailer.php';
+require_once __DIR__ . '/shared/password_policy.php';
 
 // Handle password reset requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -94,19 +95,8 @@ function handlePasswordReset() {
     $confirmPassword = trim($_POST['confirm_password']);
     $errors = [];
     // Validation
-    if (empty($token)) {
-        $errors[] = 'Invalid reset token';
-    }
-    if (empty($password)) {
-        $errors[] = 'Password is required';
-    } elseif (strlen($password) < 8) {
-        $errors[] = 'Password must be at least 8 characters long';
-    } elseif (!preg_match('/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/', $password)) {
-        $errors[] = 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character';
-    }
-    if ($password !== $confirmPassword) {
-        $errors[] = 'Passwords do not match';
-    }
+    if (empty($token)) $errors[] = 'Invalid reset token';
+    foreach (armisPasswordValidationErrors($password, $confirmPassword) as $policyError) $errors[] = $policyError;
     if (empty($errors)) {
         try {
             $pdo = getDbConnection();
@@ -117,19 +107,14 @@ function handlePasswordReset() {
             if ($resetRow) {
                 if (strtotime($resetRow['expires_at']) > time()) {
                     $staffSvcNo = $resetRow['svcNo'];
-                    // Check password history (prevent reuse of last 3 passwords).
-                    // FIX: svcNo is a string, not an int.
-                    $historyStmt = $pdo->prepare('SELECT password_hash FROM staff_password_history WHERE svcNo = ? ORDER BY createdAt DESC LIMIT 3');
-                    $historyStmt->execute([$staffSvcNo]);
-                    $passwordReused = false;
-                    foreach ($historyStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                        if (password_verify($password, $row['password_hash'])) {
-                            $passwordReused = true;
-                            break;
-                        }
-                    }
-                    if ($passwordReused) {
-                        $_SESSION['error_message'] = 'You cannot reuse one of your last 3 passwords.';
+                    // Prevent reuse of the last five passwords and the current password.
+                    $currentStmt = $pdo->prepare('SELECT password FROM staff WHERE svcNo = ? LIMIT 1');
+                    $currentStmt->execute([$staffSvcNo]);
+                    $current = $currentStmt->fetch(PDO::FETCH_ASSOC);
+                    if ($current && password_verify($password, (string)$current['password'])) {
+                        $_SESSION['error_message'] = 'You cannot reuse your current password. Please choose a new password.';
+                    } elseif (armisPasswordWasUsedBefore($pdo, $staffSvcNo, $password)) {
+                        $_SESSION['error_message'] = 'Password reuse detected. Please choose a password you have not used recently. ARMIS protects the last 5 passwords.';
                     } else {
                         // Update password.
                         // FIX: `staff` has no `id`, `temp_password`,
@@ -141,18 +126,20 @@ function handlePasswordReset() {
                         // never actually complete even after everything
                         // above it was fixed.
                         $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+                        if ($hashedPassword === false) throw new RuntimeException('Unable to securely hash the new password.');
                         $now = date('Y-m-d H:i:s');
-                        $updateStmt = $pdo->prepare('UPDATE staff SET password = ?, isFirstLogin = 0, passwordChangedAt = ? WHERE svcNo = ?');
-                        $updateStmt->execute([$hashedPassword, $now, $staffSvcNo]);
-                        // Add to password history
-                        $pdo->exec('CREATE TABLE IF NOT EXISTS staff_password_history (
-                            id INT AUTO_INCREMENT PRIMARY KEY,
-                            svcNo VARCHAR(10) NOT NULL,
-                            password_hash VARCHAR(255) NOT NULL,
-                            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
-                        )');
-                        $historyInsertStmt = $pdo->prepare('INSERT INTO staff_password_history (svcNo, password_hash) VALUES (?, ?)');
-                        $historyInsertStmt->execute([$staffSvcNo, $hashedPassword]);
+                        // Ensure password-history table exists before starting the transaction.
+                        armisEnsurePasswordHistoryTable($pdo);
+                        $pdo->beginTransaction();
+                        try {
+                            armisArchiveCurrentPassword($pdo, $staffSvcNo, $current['password'] ?? null, null, 'self_service_password_reset');
+                            $updateStmt = $pdo->prepare('UPDATE staff SET password = ?, isFirstLogin = 0, passwordChangedAt = ? WHERE svcNo = ?');
+                            $updateStmt->execute([$hashedPassword, $now, $staffSvcNo]);
+                            $pdo->commit();
+                        } catch (Throwable $inner) {
+                            if ($pdo->inTransaction()) $pdo->rollBack();
+                            throw $inner;
+                        }
                         // Mark token as used
                         $markUsedStmt = $pdo->prepare('UPDATE staff_password_resets SET used = 1 WHERE id = ?');
                         $markUsedStmt->execute([$resetRow['id']]);
@@ -282,12 +269,14 @@ $pageTitle = 'Reset Password - ARMIS';
     <title><?= htmlspecialchars($pageTitle) ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-</head>
+<style>
+body{background:#f5f7fa}.reset-card{border:0;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.08);overflow:hidden}.reset-card .card-header{background:linear-gradient(135deg,#f8f9fa,#e9ecef);color:#2c3e50;border-bottom:1px solid #dee2e6}.strength-bar{height:7px;border-radius:99px;background:#e9ecef;overflow:hidden}.strength-fill{height:100%;width:0;transition:width .2s}.req{font-size:.84rem}
+</style></head>
 <body class="bg-light">
     <div class="container">
         <div class="row justify-content-center">
             <div class="col-md-6">
-                <div class="card mt-5">
+                <div class="card mt-5 reset-card">
                     <div class="card-header">
                         <h4><i class="fas fa-key"></i> Reset Password</h4>
                     </div>
@@ -330,13 +319,15 @@ $pageTitle = 'Reset Password - ARMIS';
                                 
                                 <div class="mb-3">
                                     <label for="password" class="form-label">New Password</label>
-                                    <input type="password" class="form-control" id="password" name="password" required minlength="8">
-                                    <div class="form-text">Password must be at least 8 characters and contain uppercase, lowercase, number, and special character.</div>
+                                    <div class="input-group"><input type="password" class="form-control" id="password" name="password" required minlength="12" autocomplete="new-password"><button type="button" class="btn btn-outline-secondary" onclick="toggleRP()"><i class="fas fa-eye" id="rpEye"></i></button></div>
+                                    <div class="d-flex justify-content-between mt-2"><small class="text-muted">Minimum 12 characters</small><small id="strengthLabel" class="fw-semibold text-muted">Not set</small></div><div class="strength-bar mt-1"><div class="strength-fill" id="strengthFill"></div></div>
+                                    <div class="row g-2 mt-2"><div class="col-sm-6 req" data-req="length" data-label="At least 12 characters">○ At least 12 characters</div><div class="col-sm-6 req" data-req="lower" data-label="Lowercase letter">○ Lowercase letter</div><div class="col-sm-6 req" data-req="upper" data-label="Uppercase letter">○ Uppercase letter</div><div class="col-sm-6 req" data-req="number" data-label="Number">○ Number</div><div class="col-sm-6 req" data-req="special" data-label="Special character">○ Special character</div><div class="col-sm-6 req text-success">✓ Last 5 passwords protected</div></div>
                                 </div>
                                 
                                 <div class="mb-3">
                                     <label for="confirm_password" class="form-label">Confirm New Password</label>
-                                    <input type="password" class="form-control" id="confirm_password" name="confirm_password" required>
+                                    <input type="password" class="form-control" id="confirm_password" name="confirm_password" required autocomplete="new-password">
+                                    <div id="match" class="small mt-1"></div>
                                 </div>
                                 
                                 <button type="submit" class="btn btn-primary">
@@ -355,5 +346,10 @@ $pageTitle = 'Reset Password - ARMIS';
     </div>
     
     <!-- Core JS (jQuery/Bootstrap) are loaded centrally in shared/footer.php. -->
-</body>
+<script>
+const rp=document.getElementById('password'), rc=document.getElementById('confirm_password');
+function toggleRP(){rp.type=rp.type==='password'?'text':'password';document.getElementById('rpEye').className=rp.type==='password'?'fas fa-eye':'fas fa-eye-slash';}
+function rpUpdate(){if(!rp)return;const v=rp.value,r={length:v.length>=12,lower:/[a-z]/.test(v),upper:/[A-Z]/.test(v),number:/\d/.test(v),special:/[^A-Za-z0-9]/.test(v)};Object.keys(r).forEach(k=>{const e=document.querySelector('[data-req="'+k+'"]');if(e)e.innerHTML=(r[k]?'✓':'○')+' '+e.dataset.label;});let n=Object.values(r).filter(Boolean).length;if(v.length>=16)n=Math.min(5,n+1);document.getElementById('strengthFill').style.width=([0,20,40,60,80,100][n])+'%';document.getElementById('strengthLabel').textContent=['Not set','Weak','Fair','Good','Strong','Very strong'][n];}
+rp&&rp.addEventListener('input',rpUpdate);rc&&rc.addEventListener('input',()=>{const e=document.getElementById('match');if(e)e.textContent=rc.value?(rp.value===rc.value?'Passwords match.':'Passwords do not match.'):'';});
+</script></body>
 </html>

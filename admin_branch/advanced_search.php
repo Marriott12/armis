@@ -30,9 +30,9 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
         <div class="d-flex justify-content-between align-items-center mb-4">
             <div>
                 <h1 class="h3 mb-0 text-gray-800">
-                    <i class="fas fa-search"></i> Advanced Staff Search
+                    <i class="fas fa-search"></i> Personnel Search
                 </h1>
-                <p class="text-muted">Search and filter staff records with advanced criteria</p>
+                <p class="text-muted">Search and filter personnel records</p>
             </div>
             <div class="btn-group">
                 <button type="button" class="btn btn-primary" id="searchBtn">
