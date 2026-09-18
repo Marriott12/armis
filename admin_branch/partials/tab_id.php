@@ -1,30 +1,8 @@
-<div class="tab-pane fade p-3 border rounded <?=$activeTabKey === 'id' ? 'show active' : ''?>" id="id" role="tabpanel">
+<div class="create-staff-section p-4 mb-4 border rounded-3" id="id" role="tabpanel">
     <h5 class="mb-3 text-success">
         <i class="fas fa-id-card"></i> Identification Documents
     </h5>
     
-    <!-- National Registration Card Section -->
-    <div class="card mb-4">
-        <div class="card-header bg-light">
-            <h6 class="mb-0"><i class="fas fa-id-badge"></i> National Registration Card</h6>
-        </div>
-        <div class="card-body">
-            <div class="row">
-                <div class="col-md-6 mb-3">
-                    <label class="form-label" for="nrc">NRC Number <span class="text-danger">*</span></label>
-                    <div class="input-group">
-                    </div>
-                            <!-- NRC fields removed -->
-                </div>
-                <div class="col-md-6 mb-3">
-                    <label class="form-label" for="nrc_issue_date">NRC Issue Date</label>
-                    <input type="date" name="nrc_issue_date" id="nrc_issue_date" class="form-control" 
-                           value="<?=old('nrc_issue_date')?>">
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Passport Section -->
     <div class="card mb-4">
         <div class="card-header bg-light">

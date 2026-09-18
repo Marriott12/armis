@@ -7,7 +7,14 @@
 if (!function_exists('getModuleMenu')) {
     function getModuleMenu($moduleCode) {
         $registry = __armisModuleMenuRegistry();
-        return __armisFilterMenuByAccess($registry[$moduleCode] ?? []);
+        $items = $registry[$moduleCode] ?? [];
+        foreach ($items as &$item) {
+            if (($item['page'] ?? '') === 'dashboard' && function_exists('__armisModuleDashboardUrl')) {
+                $item['url'] = __armisModuleDashboardUrl((string)$moduleCode);
+            }
+        }
+        unset($item);
+        return __armisFilterMenuByAccess($items);
     }
 }
 
@@ -35,41 +42,43 @@ if (!function_exists('__armisModuleMenuRegistry')) {
     function __armisModuleMenuRegistry() {
         return [
             'command' => [
-                ['title' => 'Dashboard',         'url' => '/Armis2/command/index.php',    'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-                ['title' => 'Branch Roster',     'url' => '/Armis2/command/roster.php',   'icon' => 'users',          'page' => 'roster'],
-                ['title' => 'Staff Profiles',    'url' => '/Armis2/command/profiles.php', 'icon' => 'id-card',        'page' => 'profiles'],
-                ['title' => 'Operational Reports','url' => '/Armis2/command/op_reports.php','icon' => 'file-alt',     'page' => 'op_reports'],
-                ['title' => 'Command Reports',   'url' => '/Armis2/command/reports.php',  'icon' => 'chart-line',     'page' => 'reports'],
+                ['title' => 'Dashboard',         'url' => '/Armis2/command/index.php',    'icon' => 'tachometer-alt', 'page' => 'dashboard', 'permission' => 'view_dashboard'],
+                ['title' => 'Branch Roster',     'url' => '/Armis2/command/roster.php',   'icon' => 'users',          'page' => 'roster', 'permission' => 'view_staff'],
+                ['title' => 'Staff Profiles',    'url' => '/Armis2/command/profiles.php', 'icon' => 'id-card',        'page' => 'profiles', 'permission' => 'view_staff'],
+                ['title' => 'Operational Reports','url' => '/Armis2/command/op_reports.php','icon' => 'file-alt',     'page' => 'op_reports', 'permission' => 'view_reports'],
+                ['title' => 'Command Reports',   'url' => '/Armis2/command/reports.php',  'icon' => 'chart-line',     'page' => 'reports', 'permission' => 'view_reports'],
                 ['title' => 'Course Records',    'url' => '/Armis2/command/courses.php',  'icon' => 'graduation-cap', 'page' => 'courses'],
             ],
             'operations' => [
-                ['title' => 'Dashboard',            'url' => '/Armis2/operations/index.php',                 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-                ['title' => 'Branch Roster',         'url' => '/Armis2/operations/roster.php',                'icon' => 'users',          'page' => 'roster'],
+                ['title' => 'Dashboard',            'url' => '/Armis2/operations/index.php',                 'icon' => 'tachometer-alt', 'page' => 'dashboard', 'permission' => 'view_dashboard'],
+                ['title' => 'Branch Roster',         'url' => '/Armis2/operations/roster.php',                'icon' => 'users',          'page' => 'roster', 'permission' => 'view_staff'],
                 ['title' => 'Mission Planning',      'url' => '/Armis2/operations/missions.php',              'icon' => 'map-marked-alt', 'page' => 'missions'],
                 ['title' => 'Deployments',           'url' => '/Armis2/operations/deployments.php',           'icon' => 'plane',          'page' => 'deployments'],
                 ['title' => 'Field Operations',      'url' => '/Armis2/operations/field.php',                 'icon' => 'crosshairs',     'page' => 'field'],
                 ['title' => 'Resource Allocation',   'url' => '/Armis2/operations/resources.php',             'icon' => 'boxes',          'page' => 'resources'],
                 ['title' => 'Personnel Assignment',  'url' => '/Armis2/operations/personnel_assignment.php',  'icon' => 'user-tag',       'page' => 'personnel_assignment'],
-                ['title' => 'Status Reports',        'url' => '/Armis2/operations/reports.php',               'icon' => 'clipboard-list', 'page' => 'reports'],
+                ['title' => 'Personnel Operations', 'url' => '/Armis2/operations/personnel_records.php', 'icon' => 'user-shield', 'page' => 'personnel_records', 'minAccess' => 'write'],
+                ['title' => 'Status Reports',        'url' => '/Armis2/operations/reports.php',               'icon' => 'clipboard-list', 'page' => 'reports', 'permission' => 'view_reports'],
                 ['title' => 'Analytics',             'url' => '/Armis2/operations/analytics_dashboard.php',   'icon' => 'chart-pie',      'page' => 'analytics'],
                 ['title' => 'Notifications Center',  'url' => '/Armis2/operations/notifications_center.php',  'icon' => 'bell',           'page' => 'notifications'],
                 ['title' => 'Audit Log',             'url' => '/Armis2/operations/audit_log.php',             'icon' => 'history',        'page' => 'audit_log', 'minAccess' => 'write'],
             ],
             'training' => [
-                ['title' => 'Dashboard',    'url' => '/Armis2/training/index.php',        'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-                ['title' => 'Branch Roster', 'url' => '/Armis2/training/roster.php',       'icon' => 'users',          'page' => 'roster'],
+                ['title' => 'Dashboard',    'url' => '/Armis2/training/index.php',        'icon' => 'tachometer-alt', 'page' => 'dashboard', 'permission' => 'view_dashboard'],
+                ['title' => 'Branch Roster', 'url' => '/Armis2/training/roster.php',       'icon' => 'users',          'page' => 'roster', 'permission' => 'view_staff'],
                 ['title' => 'Course Catalog','url' => '/Armis2/training/courses.php',      'icon' => 'book',           'page' => 'courses'],
                 ['title' => 'Training Records', 'url' => '/Armis2/training/records.php',   'icon' => 'certificate',    'page' => 'records'],
                 ['title' => 'Sessions',     'url' => '/Armis2/training/sessions.php',      'icon' => 'calendar-alt',   'page' => 'sessions'],
                 ['title' => 'Assignments',  'url' => '/Armis2/training/assignments.php',   'icon' => 'tasks',          'page' => 'assignments'],
+                ['title' => 'Education Management', 'url' => '/Armis2/training/education.php', 'icon' => 'user-graduate', 'page' => 'education', 'minAccess' => 'write'],
             ],
             'finance' => [
-                ['title' => 'Dashboard',    'url' => '/Armis2/finance/index.php',  'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-                ['title' => 'Branch Roster', 'url' => '/Armis2/finance/roster.php', 'icon' => 'users',          'page' => 'roster'],
+                ['title' => 'Dashboard',    'url' => '/Armis2/finance/index.php',  'icon' => 'tachometer-alt', 'page' => 'dashboard', 'permission' => 'view_dashboard'],
+                ['title' => 'Branch Roster', 'url' => '/Armis2/finance/roster.php', 'icon' => 'users',          'page' => 'roster', 'permission' => 'view_staff'],
             ],
             'ordinance' => [
-                ['title' => 'Dashboard',    'url' => '/Armis2/ordinance/index.php',  'icon' => 'tachometer-alt', 'page' => 'dashboard'],
-                ['title' => 'Branch Roster', 'url' => '/Armis2/ordinance/roster.php', 'icon' => 'users',          'page' => 'roster'],
+                ['title' => 'Dashboard',    'url' => '/Armis2/ordinance/index.php',  'icon' => 'tachometer-alt', 'page' => 'dashboard', 'permission' => 'view_dashboard'],
+                ['title' => 'Branch Roster', 'url' => '/Armis2/ordinance/roster.php', 'icon' => 'users',          'page' => 'roster', 'permission' => 'view_staff'],
             ],
         ];
     }

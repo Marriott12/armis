@@ -1,4 +1,4 @@
-<div class="tab-pane fade p-3 border rounded <?=$activeTabKey === 'family' ? 'show active' : ''?>" id="family" role="tabpanel">
+<div class="create-staff-section p-4 mb-4 border rounded-3" id="family" role="tabpanel">
     <h5 class="mb-3 text-success">Family Details</h5>
         <div class="row mb-3">
         <div class="col-md-4 mb-2">

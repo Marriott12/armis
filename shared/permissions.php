@@ -33,6 +33,7 @@ define('PERM_ADMIN_BRANCH_ACCESS', 'admin_branch_access');
 define('PERM_SYSTEM_SETTINGS', 'system_settings');
 define('PERM_CREATE_MEDAL', 'create_medal');
 define('PERM_MANAGE_POSTINGS', 'manage_postings');
+define('PERM_MANAGE_OPERATIONS', 'manage_operations');
 define('PERM_MANAGE_EDUCATION', 'manage_education');
 define('PERM_VIEW_DASHBOARD', 'view_dashboard');
 
@@ -57,12 +58,12 @@ function hasPermission($permission, $userRole = null) {
     if ($userRole === 'admin') return $cache[$cacheKey] = true;
 
     // Specialized branch permissions are both role- and branch-gated.
-    if ($permission === PERM_MANAGE_POSTINGS || $permission === PERM_MANAGE_EDUCATION) {
+    if ($permission === PERM_MANAGE_POSTINGS || $permission === PERM_MANAGE_EDUCATION || $permission === PERM_MANAGE_OPERATIONS) {
         $branchId = getUserBranch();
         if (!$branchId) return $cache[$cacheKey] = false;
         $branch = getBranchById($branchId);
         if (!$branch) return $cache[$cacheKey] = false;
-        if ($permission === PERM_MANAGE_POSTINGS && strtolower($branch['code']) !== 'operations') return $cache[$cacheKey] = false;
+        if (($permission === PERM_MANAGE_POSTINGS || $permission === PERM_MANAGE_OPERATIONS) && strtolower($branch['code']) !== 'operations') return $cache[$cacheKey] = false;
         if ($permission === PERM_MANAGE_EDUCATION && strtolower($branch['code']) !== 'training') return $cache[$cacheKey] = false;
     }
 

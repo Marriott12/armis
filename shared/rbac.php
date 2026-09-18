@@ -418,7 +418,12 @@ if (!function_exists('getRoleDashboardUrl')) {
         if ($userRole === 'ag') return '/Armis2/admin_branch/index.php';
         if ($roleInfo && ($roleInfo['scope'] ?? '') === 'branch') {
             $branch = getBranchById(getUserBranch());
-            if ($branch) return $branch['url_path'] ?? ('/Armis2/' . $branch['code'] . '/index.php');
+            if ($branch) {
+                $writeRoles = ['dag','ddg','cc','soi','soii','soiii'];
+                if ($userRole === 'dg') return '/Armis2/oversight_dashboard.php';
+                if (in_array(strtolower((string)$userRole), $writeRoles, true)) return '/Armis2/personnel_dashboard.php';
+                return $branch['url_path'] ?? ('/Armis2/' . $branch['code'] . '/index.php');
+            }
         }
 
         return '/Armis2/users/index.php';

@@ -1,4 +1,4 @@
-<div class="tab-pane fade p-3 border rounded <?=$activeTabKey === 'service' ? 'show active' : ''?>" id="service" role="tabpanel">
+<div class="create-staff-section p-4 mb-4 border rounded-3" id="service" role="tabpanel">
     <h5 class="mb-3 text-success">Service Details</h5>
     <div class="row mb-3">
         <input type="hidden" name="svcStatus" value="Serving">
