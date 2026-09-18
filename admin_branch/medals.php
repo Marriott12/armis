@@ -1,7 +1,10 @@
 <?php
+define('ARMIS_ADMIN_BRANCH', true);
+require_once __DIR__ . '/includes/rbac_guard.php';
+adminBranchRequireWrite();
 // Define module constants
 define('ARMIS_ADMIN_BRANCH', true);
-define('ARMIS_DEVELOPMENT', true);
+define('ARMIS_DEVELOPMENT', false);
 
 // Include admin branch authentication and database
 require_once __DIR__ . '/includes/auth.php';
@@ -46,6 +49,8 @@ function isValidHonorId($id) {
 }
 
 // --- Import Honors (CSV) ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST') { adminBranchRequireCsrf(); }
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_medals']) && Token::check($_POST['csrf'] ?? '')) {
     if (!empty($_FILES['import_file']['tmp_name'])) {
         $file = fopen($_FILES['import_file']['tmp_name'], 'r');

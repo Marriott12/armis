@@ -8,6 +8,7 @@ if (!function_exists('hasModuleAccess')) {
 // Get user's accessible modules
 $userModules = getUserModules();
 $roleInfo = getRoleInfo();
+$isSystemAdmin = strtolower((string)($_SESSION['role'] ?? '')) === 'admin';
 ?>
 <div class="sidebar position-fixed" id="sidebar" style="height: calc(100vh - 60px); overflow-y: auto; z-index: 1001;" role="navigation" aria-label="Main navigation">
     <div class="sidebar-header p-3">
@@ -150,7 +151,7 @@ $roleInfo = getRoleInfo();
                 </a>
                 <?php endif; ?>
                 
-                <?php if (in_array('admin', $userModules)): ?>
+                <?php if ($isSystemAdmin || in_array('admin', $userModules, true)): ?>
                 <a class="nav-link" href="/Armis2/admin/" role="menuitem" tabindex="0" 
                    data-search-terms="system admin administration settings">
                     <span class="nav-link-content">

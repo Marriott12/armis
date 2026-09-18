@@ -24,8 +24,8 @@
         var data = window.appointmentsServerData || {};
         var unitsData = data.unitsData || [];
         var eligibleStaff = data.eligibleStaff || [];
-        var currentRankId = data.currentRankId || '';
         var standardPositions = data.standardPositions || [];
+        var positionsData = data.positionsData || [];
         var preselectedStaff = data.preselectedStaff || [];
 
         if (typeof $.fn.DataTable === 'undefined') {
@@ -185,37 +185,6 @@
             preselectedStaff.forEach(function(svc){ if (typeof lookup[svc] !== 'undefined'){ staffTable.row(lookup[svc]).select(); } });
         }
 
-        // If server didn't provide eligibleStaff but current rank exists, try AJAX fallback
-        if ((eligibleStaff === null || eligibleStaff.length===0) && currentRankId){
-            $.ajax({ url: 'ajax_get_staff_by_rank.php', data: { rank_id: currentRankId }, type: 'GET', dataType: 'json' })
-            .done(function(resp){
-                if (Array.isArray(resp) && resp.length>0){
-                    var mapped = resp.map(function(row){
-                        return {
-                            svcNo: row.svcNo || row.service_number || row.id || '',
-                            fName: row.fName || row.first_name || '',
-                            lName: row.lName || row.last_name || '',
-                            rank_name: row.rank_name || row.rank_id || '',
-                            rank_abbr: row.rank_abbr || row.rank_name || '',
-                            unit_name: row.unit_name || '',
-                            corps: row.corps || row.corps_id || '',
-                            appt: row.appt || row.appointment || '',
-                            status: row.status || row.svcStatus || 'Active'
-                        };
-                    });
-                    staffTable.clear(); staffTable.rows.add(mapped).draw();
-                    // Keep window.eligibleStaff in sync with what's actually in the
-                    // table now, since other inline scripts (e.g. the confirm-modal
-                    // summary built in appointments.php) read from it by svcNo.
-                    window.eligibleStaff = mapped;
-                    $('#totalStaffCount').text(mapped.length);
-                }
-            })
-            .fail(function(xhr, status, err){ console.error('Failed to load staff via AJAX:', status, err); });
-        } else {
-            $('#totalStaffCount').text(staffTable.rows().count());
-        }
-
         // Select/deselect all buttons.
         // FIX: these previously called staffTable.rows().select() / .deselect()
         // with no scope, which selects EVERY row including ones hidden by an
@@ -227,50 +196,74 @@
         $('#selectAllBtn').on('click', function(){ staffTable.rows({search:'applied'}).select(); });
         $('#deselectAllBtn').on('click', function(){ staffTable.rows({search:'applied'}).deselect(); });
 
+        function escHtml(value){
+            return $('<div>').text(value == null ? '' : String(value)).html();
+        }
+
         function unitOptionsHtml(selectedUnitId){
-            var html = '<option value="">-- Select Unit --</option>';
+            var html = '<option value="">-- Select Destination Unit --</option>';
             (unitsData || []).forEach(function(u){
                 var id = u.unitID || u.unit_id || u.id || '';
                 var name = u.unitName || u.code || u.unit_name || u.name || id;
                 var sel = (String(selectedUnitId||'') === String(id)) ? ' selected' : '';
-                html += '<option value="'+id+'"'+sel+'>'+name+'</option>';
+                html += '<option value="'+escHtml(id)+'"'+sel+'>'+escHtml(name)+'</option>';
+            });
+            return html;
+        }
+
+        function positionOptionsHtml(selectedPosition){
+            var html = '<option value="">-- Select New Position --</option>';
+            (positionsData || []).forEach(function(p){
+                var id = p.apptId || '';
+                var label = p.apptType ? id + ' — ' + p.apptType : id;
+                var sel = (String(selectedPosition||'') === String(id)) ? ' selected' : '';
+                html += '<option value="'+escHtml(id)+'"'+sel+'>'+escHtml(label)+'</option>';
             });
             return html;
         }
 
         function buildStaffCard(s){
-            var svc = s.svcNo;
+            var svc = String(s.svcNo || '');
             var displayName = (toTitleCase(s.fName||'') + ' ' + toTitleCase(s.lName||'')).trim() || 'Unknown';
             var rankLabel = s.rank_abbr || s.rank_name || '';
+            var currentUnit = s.unit_name || s.unitId || 'Not assigned';
+            var currentAppt = s.appt || 'Not assigned';
 
-            var $col = $('<div class="col-md-6 col-lg-4" data-svcno="'+svc+'"></div>');
+            var $col = $('<div class="col-md-6 col-lg-4" data-svcno="'+escHtml(svc)+'"></div>');
             $col.html(
                 '<div class="card staff-post-card h-100">' +
                     '<div class="card-body">' +
                         '<div class="d-flex justify-content-between align-items-start mb-2">' +
                             '<div>' +
-                                '<span class="badge bg-primary staff-badge me-1">'+svc+'</span>' +
-                                '<strong>'+rankLabel+' '+displayName+'</strong>' +
+                                '<span class="badge bg-primary staff-badge me-1">'+escHtml(svc)+'</span>' +
+                                '<strong>'+escHtml(rankLabel)+' '+escHtml(displayName)+'</strong>' +
                             '</div>' +
                             '<i class="fa fa-times-circle text-danger remove-staff-btn" title="Deselect this staff member"></i>' +
                         '</div>' +
                         '<div class="mb-2">' +
-                            '<label class="form-label small mb-1">Unit *</label>' +
-                            '<select class="form-select form-select-sm post-unit" name="unit['+svc+']" required>' +
-                                unitOptionsHtml(s.unitId) +
+                            '<label class="form-label small mb-1"><i class="fa fa-building"></i> Current Unit</label>' +
+                            '<div class="form-control form-control-sm bg-light text-muted current-unit-display" aria-readonly="true">'+escHtml(currentUnit)+'</div>' +
+                        '</div>' +
+                        '<div class="mb-2">' +
+                            '<label class="form-label small mb-1"><i class="fa fa-arrow-right text-primary"></i> Destination Unit *</label>' +
+                            '<select class="form-select form-select-sm post-unit" name="unit['+escHtml(svc)+']" required>' +
+                                unitOptionsHtml('') +
                             '</select>' +
                         '</div>' +
                         '<div class="mb-2">' +
-                            '<label class="form-label small mb-1">Position / Appointment *</label>' +
-                            '<input type="text" class="form-control form-control-sm post-position" name="position['+svc+']" list="positionOptions" maxlength="50" placeholder="e.g. Company Commander" required>' +
+                            '<label class="form-label small mb-1"><i class="fa fa-id-badge"></i> New Position / Appointment *</label>' +
+                            '<select class="form-select form-select-sm post-position" name="position['+escHtml(svc)+']" required>' +
+                                positionOptionsHtml('') +
+                            '</select>' +
                         '</div>' +
+                        '<div class="small text-muted mb-2"><i class="fa fa-history"></i> Current Position: <strong>'+escHtml(currentAppt)+'</strong></div>' +
                         '<div class="mb-2">' +
                             '<label class="form-label small mb-1">With Powers Of <span class="text-muted">(optional)</span></label>' +
-                            '<input type="text" class="form-control form-control-sm post-powers" name="with_powers_of['+svc+']" maxlength="100" placeholder="e.g. Officer Commanding">' +
+                            '<input type="text" class="form-control form-control-sm post-powers" name="with_powers_of['+escHtml(svc)+']" maxlength="100" placeholder="e.g. Officer Commanding">' +
                         '</div>' +
                         '<div>' +
                             '<label class="form-label small mb-1">Remarks <span class="text-muted">(optional)</span></label>' +
-                            '<textarea class="form-control form-control-sm post-comment" name="comment['+svc+']" rows="2" placeholder="Any additional notes for this appointment"></textarea>' +
+                            '<textarea class="form-control form-control-sm post-comment" name="comment['+escHtml(svc)+']" rows="2" placeholder="Any additional notes for this posting"></textarea>' +
                         '</div>' +
                     '</div>' +
                 '</div>'
@@ -337,23 +330,6 @@
 
         // Expose the DataTable instance for other inline code to reuse
         window.staffTable = staffTable;
-
-        // Wire rank auto-submit
-        // NOTE: appointments.php uses id="currentRank" (not current_rank). The
-        // <select> itself only shows a loading spinner on change (see inline
-        // onchange in appointments.php) - actual submission happens here, so
-        // this listener is load-bearing, not just a resilience fallback.
-        (function(){
-            var rankSelect = document.getElementById('currentRank');
-            var rankForm = document.getElementById('rankForm');
-            if (rankSelect && rankForm) {
-                rankSelect.addEventListener('change', function(){
-                    if (this.value && this.value !== '') {
-                        rankForm.submit();
-                    }
-                });
-            }
-        })();
 
         // Wire appointment type -> end date toggle
         // NOTE: appointments.php uses id="endDate" (not end_date).

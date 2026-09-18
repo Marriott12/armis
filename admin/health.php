@@ -18,7 +18,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $role = strtolower((string)($_SESSION['role'] ?? ''));
-if (!in_array($role, ['admin', 'superadmin'], true)) {
+if (!in_array($role, ['admin'], true)) {
     http_response_code(403);
     exit('Forbidden');
 }

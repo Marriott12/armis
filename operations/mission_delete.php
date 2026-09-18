@@ -1,5 +1,6 @@
 <?php
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
+require_once dirname(__DIR__) . '/shared/csrf.php';
 require_once dirname(__DIR__) . '/shared/rbac.php';
 require_once 'operations_manager.php';
 require_once 'notifications.php';
@@ -8,7 +9,10 @@ if (!isset($_SESSION['user_id'])) {
     header('Location: ' . dirname($_SERVER['PHP_SELF']) . '/../login.php');
     exit();
 }
-requireModuleAccess('operations');
+requireModuleWriteAccess('operations');
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
+}
 $pageTitle = "Delete Mission";
 include dirname(__DIR__) . '/shared/header.php';
 include dirname(__DIR__) . '/shared/sidebar.php';

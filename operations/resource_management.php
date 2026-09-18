@@ -1,8 +1,14 @@
 <?php
+require_once dirname(__DIR__) . '/shared/module_auth.php';
+require_once dirname(__DIR__) . '/shared/csrf.php';
+bootModule(['module' => 'operations', 'page' => 'resources', 'pageTitle' => 'Operations | Resource Management', 'moduleName' => 'Operations', 'moduleIcon' => 'shield-alt']);
+requireModuleWriteAccess('operations');
 require_once dirname(__DIR__) . '/shared/header.php';
 require_once dirname(__DIR__) . '/shared/sidebar.php';
 require_once 'operations_manager.php';
 $manager = new OperationsManager();
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') { require_csrf(); }
 
 // Handle add resource
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_resource'])) {
@@ -54,6 +60,7 @@ $resources = $manager->getAllResources();
             <div class="alert alert-danger"> <?= $error ?> </div>
         <?php endif; ?>
         <form method="post" class="row g-3 mb-4">
+<?= csrf_field() ?>
             <div class="col-md-3">
                 <label for="name" class="form-label">Resource Name</label>
                 <input type="text" name="name" id="name" class="form-control" placeholder="Enter resource name" required>
@@ -88,6 +95,7 @@ $resources = $manager->getAllResources();
             <?php foreach ($resources as $r): ?>
                 <tr>
                     <form method="post" class="row g-2">
+<?= csrf_field() ?>
                         <td><input type="text" name="name" value="<?= htmlspecialchars($r['name']) ?>" class="form-control" required></td>
                         <td><input type="text" name="type" value="<?= htmlspecialchars($r['type']) ?>" class="form-control" required></td>
                         <td><input type="number" name="quantity" value="<?= htmlspecialchars($r['quantity']) ?>" class="form-control" required></td>

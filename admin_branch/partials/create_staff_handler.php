@@ -153,6 +153,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'password' => $hashedPassword,
                     'role' => 'user',
                     'accStatus' => 'Active',
+                    // Branch-scoped writers may only create personnel in their
+                    // own assigned branch. System administrators may create
+                    // unassigned records for later controlled assignment.
+                    'branch_id' => in_array(strtolower($_SESSION['role'] ?? ''), ['admin'], true)
+                        ? null
+                        : ($_SESSION['branch_id'] ?? null),
                     'createdBy' => $_SESSION['user_id'] ?? $_SESSION['userID'] ?? 1,
                     'isFirstLogin' => 1
                 ];
@@ -274,7 +280,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 require_once dirname(__DIR__) . '/shared/notifications_helper.php';
                 $newStaffName = trim(($_POST['fname'] ?? '') . ' ' . ($_POST['lname'] ?? ''));
                 notifyRoles(
-                    ['admin', 'superadmin'],
+                    ['admin'],
                     'admin_branch',
                     'staff_created',
                     'New staff record created',

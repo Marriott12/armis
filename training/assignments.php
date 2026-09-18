@@ -1,5 +1,6 @@
 
 <?php
+require_once dirname(__DIR__) . '/shared/csrf.php';
 
 // SECURITY FIX: this page previously had no authentication, no session
 // handling, and no RBAC check at all - it was reachable by anyone with
@@ -13,7 +14,7 @@ if (!isset($_SESSION['user_id'])) {
     header('Location: /Armis2/login.php?return_url=' . urlencode($_SERVER['REQUEST_URI'] ?? ''));
     exit();
 }
-requireModuleAccess('training');
+requireModuleWriteAccess('training');
 
 require_once 'training_manager.php';
 $manager = new TrainingManager();
@@ -29,6 +30,7 @@ $sidebarLinks = getModuleMenu('training');
 
 // Handle add/edit/delete
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     if (isset($_POST['add'])) {
         $manager->addAssignment([
             'personnel_id' => $_POST['personnel_id'],
@@ -93,6 +95,7 @@ require_once dirname(__DIR__) . '/shared/sidebar.php';
                         <td><?= htmlspecialchars($a['status']) ?></td>
                         <td>
                             <form method="post" style="display:inline;">
+<?= csrf_field() ?>
                                 <input type="hidden" name="assignment_id" value="<?= $a['id'] ?>">
                                 <button type="submit" name="remove_assignment" class="btn btn-danger btn-sm" onclick="return confirm('Remove this assignment?')">Remove</button>
                             </form>

@@ -5,9 +5,8 @@
  */
 
 // Start session if not already started
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+require_once dirname(dirname(__DIR__)) . '/shared/session_security.php';
+armisStartSecureSession();
 
 // --- SESSION TIMEOUT ENFORCEMENT ---
 // FIX: this used to be its own inline 20-minute check, completely
@@ -73,7 +72,7 @@ function requireAuth() {
  */
 function isAdmin() {
     $role = strtolower($_SESSION['role'] ?? '');
-    return in_array($role, ['admin', 'administrator', 'superadmin'], true);
+    return $role === 'admin';
 }
 
 /**
@@ -81,9 +80,9 @@ function isAdmin() {
  */
 function requireAdmin() {
     requireAuth();
-    if (!hasPermission(PERM_ADMIN_ACCESS)) {
-        header('HTTP/1.1 403 Forbidden');
-        die('Access denied. Administrator privileges required.');
+    if (!isAdmin()) {
+        http_response_code(403);
+        die('Access denied. System-administrator privileges required.');
     }
 }
 
@@ -131,22 +130,8 @@ function getCurrentUserMilitaryName() {
  * Initialize default session data if not present
  */
 function initializeDefaultSession() {
-    if (!isAuthenticated()) {
-        // Set default admin session for development/testing
-        $_SESSION['user_id'] = 1;
-        $_SESSION['username'] = 'admin';
-        $_SESSION['svcNo'] = 'AR001001';
-        $_SESSION['rank'] = 'Colonel';
-        $_SESSION['rank_abbr'] = 'Col';
-        $_SESSION['fname'] = 'John';
-        $_SESSION['lname'] = 'Smith';
-        $_SESSION['category'] = 'Officer';
-        $_SESSION['role'] = 'admin'; // was 'administrator' — not a seeded role code, left getRoleInfo() falling back to 'user'
-        $_SESSION['branch_id'] = null;
-        $_SESSION['unit'] = 'Headquarters Command';
-        $_SESSION['unit_name'] = 'HQ Command';
-        $_SESSION['lastLogin'] = date('Y-m-d H:i:s');
-    }
+    // Intentionally empty. ARMIS must never manufacture a privileged session.
+    // Development mode may change diagnostics, but it must not bypass authentication.
 }
 
 /**
@@ -209,7 +194,4 @@ function requireAdminAccess() {
     return requireAdmin();
 }
 
-// For development - initialize default session if no user is logged in
-if (defined('ARMIS_DEVELOPMENT') && ARMIS_DEVELOPMENT === true) {
-    initializeDefaultSession();
-}
+// SECURITY: never create a synthetic/default authenticated session.

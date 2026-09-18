@@ -1,4 +1,8 @@
 <?php
+define('ARMIS_JSON', true);
+define('ARMIS_ADMIN_BRANCH', true);
+require_once __DIR__ . '/includes/rbac_guard.php';
+adminBranchRequirePermission(PERM_VIEW_STAFF);
 /**
  * AJAX Endpoint: Get Appointment History for Staff Member
  * Returns HTML table of all appointments for a given service number
@@ -32,10 +36,10 @@ try {
     
     // Get staff basic info
     $staffStmt = $pdo->prepare("
-        SELECT s.id, s.svcNo, s.fName, s.lName, 
+        SELECT s.svcNo, s.fName, s.lName,
                r.rankId as rank_abbr, r.rankId as rank_name
         FROM staff s
-    LEFT JOIN ranks r ON s.rankId = r.rankId
+        LEFT JOIN `rank` r ON s.rankId = r.rankId
         WHERE s.svcNo = ?
         LIMIT 1
     ");
@@ -50,24 +54,24 @@ try {
     // Get appointment history with appointment type information
     $apptStmt = $pdo->prepare("
         SELECT sa.*, 
-               u.name as unit_name,
+               u.unitId as unit_name,
                at.type_name as appointment_type_name,
                at.is_temporary,
-               CASE 
+               CASE
                    WHEN sa.endDate IS NULL THEN 'Active (Permanent)'
                    WHEN sa.endDate >= CURDATE() THEN 'Active'
                    ELSE 'Ended'
                END as status,
-               CASE 
+               CASE
                    WHEN sa.endDate IS NULL OR sa.endDate >= CURDATE() THEN 1
                    ELSE 0
                END as is_current,
-               DATEDIFF(COALESCE(sa.endDate, CURDATE()), sa.appointment_date) as duration_days
+               DATEDIFF(COALESCE(sa.endDate, CURDATE()), COALESCE(sa.apptWef, CURDATE())) as duration_days
         FROM staff_appointment sa
         LEFT JOIN unit u ON sa.unitId = u.unitId
-        LEFT JOIN appointment_type at ON sa.appointment_type = at.id
+        LEFT JOIN appointment_type at ON sa.apptType = at.id
         WHERE sa.svcNo = ?
-        ORDER BY sa.appointment_date DESC, sa.createdAt DESC
+        ORDER BY sa.apptWef DESC, sa.createdAt DESC
     ");
     $apptStmt->execute([$serviceNumber]);
     $appointments = $apptStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -107,7 +111,7 @@ try {
     $rowNum = 1;
     foreach ($appointments as $appt) {
         // Calculate duration
-        $durationDays = $appt['duration_days'];
+        $durationDays = max(0, (int)$appt['duration_days']);
         $durationYears = floor($durationDays / 365);
         $durationMonths = floor(($durationDays % 365) / 30);
         $durationText = '';
@@ -149,11 +153,11 @@ try {
         }
         
         // Format dates
-        $apptDate = $appt['appointment_date'] ? date('d M Y', strtotime($appt['appointment_date'])) : 'N/A';
+        $apptDate = $appt['apptWef'] ? date('d M Y', strtotime($appt['apptWef'])) : 'N/A';
         $endDate = $appt['endDate'] ? date('d M Y', strtotime($appt['endDate'])) : '<em class="text-muted">Ongoing</em>';
         
         // Get position/role from appointment_id field
-        $position = htmlspecialchars($appt['appointment_id'] ?? 'N/A');
+        $position = htmlspecialchars($appt['apptId'] ?? 'N/A');
         
         // Get remarks (use remarks field, fallback to comment)
         $remarks = htmlspecialchars($appt['remarks'] ?? $appt['comment'] ?? '');

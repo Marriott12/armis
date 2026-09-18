@@ -1,95 +1,66 @@
 <?php
 /**
- * ARMIS Authentication Session Setup
- * Initializes proper session data for military formatting
+ * ARMIS authentication session bootstrap.
+ *
+ * SECURITY: this file MUST NOT create a fake/default authenticated session.
+ * It only starts an anonymous session and, when an authenticated account is
+ * already present, refreshes non-authoritative display data from staff.
  */
 
-// Sample authentication function - replace with actual database authentication
-function initializeUserSession($userId = null) {
-    // Sample user data - replace with actual database query
-    $sampleUsers = [
-        1 => [
-            'user_id' => 1,
-            'username' => 'admin',
-            'svcNo' => 'AR001001',
-            'rank' => 'Colonel', 
-            'rank_abbr' => 'Col',
-            'fname' => 'John',
-            'lname' => 'Smith',
-            'category' => 'Officer',
-            'role' => 'administrator',
-            'unit' => 'Headquarters Command',
-            'unit_name' => 'HQ Command',
-            'corps' => 'Army Corps of Engineers',
-            'corps_name' => 'Army Corps of Engineers',
-            'corps_abbr' => 'ACE',
-            'lastLogin' => date('Y-m-d H:i:s')
-        ],
-        2 => [
-            'user_id' => 2,
-            'username' => 'commander',
-            'svcNo' => 'AR001002',
-            'rank' => 'General',
-            'rank_abbr' => 'Gen', 
-            'fname' => 'Michael',
-            'lname' => 'Johnson',
-            'category' => 'Officer',
-            'role' => 'command',
-            'unit' => 'Headquarters Command',
-            'unit_name' => 'HQ Command',
-            'corps' => 'Infantry Corps',
-            'corps_name' => 'Infantry Corps',
-            'corps_abbr' => 'INF',
-            'lastLogin' => date('Y-m-d H:i:s')
-        ],
-        3 => [
-            'user_id' => 3,
-            'username' => 'sergeant',
-            'svcNo' => 'AR001006',
-            'rank' => 'Sergeant',
-            'rank_abbr' => 'Sgt',
-            'fname' => 'Robert',
-            'lname' => 'Miller',
-            'category' => 'NCO',
-            'role' => 'user',
-            'unit' => 'Alpha Company',
-            'unit_name' => 'Alpha Company',
-            'corps' => 'Armoured Corps',
-            'corps_name' => 'Armoured Corps',
-            'corps_abbr' => 'ARM',
-            'lastLogin' => date('Y-m-d H:i:s')
-        ]
-    ];
-    
-    // Default to user 1 if no specific user ID
-    $userData = $sampleUsers[$userId] ?? $sampleUsers[1];
-    
-    // Set session variables
-    foreach ($userData as $key => $value) {
-        $_SESSION[$key] = $value;
+require_once __DIR__ . '/session_security.php';
+armisStartSecureSession();
+
+require_once __DIR__ . '/database_connection.php';
+
+if (!function_exists('initializeUserSession')) {
+    function initializeUserSession($userId = null): bool
+    {
+        $svcNo = (string)($userId ?? ($_SESSION['svcNo'] ?? ''));
+        if ($svcNo === '') {
+            return false;
+        }
+
+        try {
+            $pdo = getDbConnection();
+            $stmt = $pdo->prepare(
+                "SELECT s.svcNo, s.username, s.role, s.branch_id, s.accStatus,
+                        s.fName, s.lName, s.officialEmail, s.corps,
+                        r.rankId AS rank_name, u.unitId AS unit_name
+                 FROM staff s
+                 LEFT JOIN `rank` r ON s.rankId = r.rankId
+                 LEFT JOIN unit u ON s.unitId = u.unitId
+                 WHERE s.svcNo = ?
+                 LIMIT 1"
+            );
+            $stmt->execute([$svcNo]);
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$user || ($user['accStatus'] ?? '') !== 'Active') {
+                return false;
+            }
+
+            // Only refresh identity data from the canonical staff record.
+            $_SESSION['user_id'] = $user['svcNo'];
+            $_SESSION['userID'] = $user['svcNo'];
+            $_SESSION['svcNo'] = $user['svcNo'];
+            $_SESSION['username'] = $user['username'] ?? '';
+            $_SESSION['role'] = $user['role'] ?? 'user';
+            $_SESSION['branch_id'] = $user['branch_id'] ?? null;
+            $_SESSION['rank'] = $user['rank_name'] ?? 'Unknown';
+            $_SESSION['name'] = trim(($user['fName'] ?? '') . ' ' . ($user['lName'] ?? ''));
+            $_SESSION['fName'] = $user['fName'] ?? '';
+            $_SESSION['lName'] = $user['lName'] ?? '';
+            $_SESSION['email'] = $user['officialEmail'] ?? '';
+            $_SESSION['unit'] = $user['unit_name'] ?? 'Unknown';
+            $_SESSION['corps'] = $user['corps'] ?? 'Unknown';
+            return true;
+        } catch (Throwable $e) {
+            error_log('ARMIS session profile refresh failed: ' . $e->getMessage());
+            return false;
+        }
     }
-    
-    // Set additional commonly used session variables
-    $_SESSION['name'] = $userData['fname'] . ' ' . $userData['lname'];
-    $_SESSION['fName'] = $userData['fname'];
-    $_SESSION['lName'] = $userData['lname'];
-    $_SESSION['svcNo'] = $userData['svcNo'];
-    
-    return true;
 }
 
-// Check if session needs initialization
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-// Initialize session if user_id exists but other data is missing
-if (isset($_SESSION['user_id']) && !isset($_SESSION['rank'])) {
+// Existing authenticated sessions may be enriched; anonymous sessions remain anonymous.
+if (isset($_SESSION['user_id']) && $_SESSION['user_id'] !== '') {
     initializeUserSession($_SESSION['user_id']);
 }
-
-// If no session at all, create a default session for demonstration
-if (!isset($_SESSION['user_id'])) {
-    initializeUserSession(1); // Default to admin user
-}
-?>

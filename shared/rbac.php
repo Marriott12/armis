@@ -33,9 +33,8 @@
  * hold the same role, but very different reach — reach follows the branch.
  */
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+require_once __DIR__ . '/session_security.php';
+armisStartSecureSession();
 
 require_once __DIR__ . '/database_connection.php';
 
@@ -183,7 +182,7 @@ if (!function_exists('hasModuleAccess')) {
         if (!isset($roles[$userRole])) return false;
         $role = $roles[$userRole];
 
-        if (in_array(strtolower($userRole), ['admin', 'administrator', 'superadmin'], true)) {
+        if (in_array(strtolower($userRole), ['admin'], true)) {
             return true;
         }
 
@@ -197,12 +196,27 @@ if (!function_exists('hasModuleAccess')) {
             }
         }
 
-        // AG (org scope by role) can view every branch's module
-        if (($role['scope'] ?? '') === 'org' && getBranchByCode($module)) {
-            return true;
+        // AG is intentionally limited to the consolidated Admin Branch view.
+        // Its reporting scope is whole-Army, but that does NOT grant direct
+        // access to every branch application.
+        if (strtolower($userRole) === 'ag') {
+            return strtolower($module) === 'admin_branch' || strtolower($module) === 'dashboard';
         }
 
         return false;
+    }
+}
+
+if (!function_exists('requireModuleWriteAccess')) {
+    /** Require module access plus a role with write access. */
+    function requireModuleWriteAccess($module, $redirectUrl = '/Armis2/unauthorized.php'): void {
+        requireModuleAccess($module, $redirectUrl);
+        $role = getRoleInfo();
+        if (!$role || ($role['access'] ?? 'none') !== 'write') {
+            http_response_code(403);
+            logAccess($module, 'write_denied', false, 'Role is read-only or has no write access.');
+            exit('Access denied. Write permission is required.');
+        }
     }
 }
 
@@ -233,7 +247,7 @@ if (!function_exists('getUserModules')) {
         $modules = $roles[$userRole]['modules'];
         $role = $roles[$userRole];
 
-        if (in_array(strtolower($userRole), ['admin', 'administrator', 'superadmin'], true)) {
+        if (in_array(strtolower($userRole), ['admin'], true)) {
             foreach (getAllBranches(true) as $b) $modules[] = $b['code'];
             return array_values(array_unique($modules));
         }
@@ -242,8 +256,9 @@ if (!function_exists('getUserModules')) {
             $branch = getBranchById($branchId);
             if ($branch) $modules[] = $branch['code'];
         }
-        if (($role['scope'] ?? '') === 'org') {
-            foreach (getAllBranches(true) as $b) $modules[] = $b['code'];
+        // AG has whole-Army reporting scope but only the Admin Branch UI.
+        if (strtolower($userRole) === 'ag') {
+            $modules[] = 'admin_branch';
         }
 
         return array_values(array_unique($modules));
@@ -260,6 +275,31 @@ if (!function_exists('hasMinimumLevel')) {
 // -----------------------------------------------------------------------
 // THE TWO CORE PERMISSION CHECKS
 // -----------------------------------------------------------------------
+if (!function_exists('canViewRecord')) {
+    /** Row-level read guard for personnel records. Target branch_id must come from the DB. */
+    function canViewRecord($recordBranchId): bool {
+        $scope = getSnapshotScope();
+        if (($scope['scope'] ?? 'none') === 'all') return true;
+        if (($scope['scope'] ?? 'none') === 'branch') {
+            return $recordBranchId !== null && (int)$scope['branch_id'] === (int)$recordBranchId;
+        }
+        return false;
+    }
+}
+
+if (!function_exists('canViewStaffRecord')) {
+    function canViewStaffRecord($svcNo): bool {
+        $role = strtolower($_SESSION['role'] ?? '');
+        if (in_array($role, ['admin'], true)) return true;
+        $pdo = getDbConnection();
+        $stmt = $pdo->prepare('SELECT branch_id FROM staff WHERE svcNo = ? LIMIT 1');
+        $stmt->execute([(string)$svcNo]);
+        $branchId = $stmt->fetchColumn();
+        if ($branchId === false) return false;
+        return canViewRecord($branchId);
+    }
+}
+
 if (!function_exists('canAlterRecord')) {
     /**
      * Row-level write guard. Call before ANY create/update/delete on a staff
@@ -271,7 +311,7 @@ if (!function_exists('canAlterRecord')) {
         $roleInfo = getRoleInfo($role);
         if (!$roleInfo) return false;
 
-        if (in_array(strtolower($role), ['admin', 'administrator', 'superadmin'], true)) return true;
+        if (in_array(strtolower($role), ['admin'], true)) return true;
 
         // AG and DG are read-only by design
         if (($roleInfo['access'] ?? '') !== 'write') return false;
@@ -291,7 +331,7 @@ if (!function_exists('canAlterRecord')) {
 if (!function_exists('canAlterStaffRecord')) {
     /** Convenience wrapper: loads the target staff row's branch_id for you. */
     function canAlterStaffRecord($svcNo) {
-        if (in_array(strtolower($_SESSION['role'] ?? ''), ['admin', 'administrator', 'superadmin'], true)) {
+        if (in_array(strtolower($_SESSION['role'] ?? ''), ['admin'], true)) {
             return true;
         }
         $pdo = getDbConnection();
@@ -315,7 +355,7 @@ if (!function_exists('getSnapshotScope')) {
         $roleInfo = getRoleInfo($role);
         if (!$roleInfo) return ['scope' => 'none'];
 
-        if (in_array(strtolower($role), ['admin', 'administrator', 'superadmin'], true)) {
+        if (in_array(strtolower($role), ['admin'], true)) {
             return ['scope' => 'all'];
         }
         if (($roleInfo['scope'] ?? '') === 'org') {
@@ -372,7 +412,7 @@ if (!function_exists('getRoleDashboardUrl')) {
         if ($userRole === null) $userRole = $_SESSION['role'] ?? 'user';
         $roleInfo = getRoleInfo($userRole);
 
-        if (in_array(strtolower($userRole), ['admin', 'administrator', 'superadmin'], true)) {
+        if (in_array(strtolower($userRole), ['admin'], true)) {
             return '/Armis2/admin/index.php';
         }
         if ($userRole === 'ag') return '/Armis2/admin_branch/index.php';
@@ -400,7 +440,7 @@ if (!function_exists('requireBranchAdmin')) {
     // to avoid a function-redeclaration collision between the two modules.
     function requireBranchAdmin() {
         $role = strtolower($_SESSION['role'] ?? 'none');
-        if (!in_array($role, ['admin', 'administrator', 'superadmin'], true)) {
+        if (!in_array($role, ['admin'], true)) {
             http_response_code(403);
             die('Forbidden: administrator access required.');
         }

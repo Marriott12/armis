@@ -26,6 +26,8 @@ $userCategory = $_SESSION['category'] ?? '';
 
 // Get user's accessible modules for dynamic navigation
 $userModules = $isLoggedIn ? (function_exists('getUserModules') ? getUserModules($userRole) : []) : [];
+$isSystemAdmin = $isLoggedIn && strtolower((string)$userRole) === 'admin';
+if ($isSystemAdmin && !in_array('admin', $userModules, true)) { $userModules[] = 'admin'; }
 
 // Get detailed user profile data from database if logged in
 $userProfileData = null;

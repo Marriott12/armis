@@ -22,6 +22,7 @@
 $sidebarLinks = [
     ['title' => 'Dashboard', 'url' => '/Armis2/admin/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
     ['title' => 'User Management', 'url' => '/Armis2/admin/users.php', 'icon' => 'users', 'page' => 'users'],
+    ['title' => 'Bulk Branch Posting', 'url' => '/Armis2/admin/bulk_branch_assignment.php', 'icon' => 'user-friends', 'page' => 'bulk_branch_assignment'],
     ['title' => 'Manage Branches', 'url' => '/Armis2/admin/branches.php', 'icon' => 'sitemap', 'page' => 'branches'],
     ['title' => 'System Settings', 'url' => '/Armis2/admin/settings.php', 'icon' => 'cogs', 'page' => 'settings'],
     ['title' => 'Database Management', 'url' => '/Armis2/admin/database.php', 'icon' => 'database', 'page' => 'database'],

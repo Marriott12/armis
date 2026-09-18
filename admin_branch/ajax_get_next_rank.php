@@ -1,4 +1,8 @@
 <?php
+define('ARMIS_JSON', true);
+define('ARMIS_ADMIN_BRANCH', true);
+require_once __DIR__ . '/includes/rbac_guard.php';
+adminBranchRequirePermission(PERM_PROMOTE_STAFF);
 /**
  * AJAX endpoint to determine the next rank based on current rank and promotion type
  * 

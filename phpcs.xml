@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<ruleset name="ARMIS">
+    <description>ARMIS PHP coding standard. Start with PSR-12; legacy files are migrated incrementally.</description>
+    <rule ref="PSR12">
+        <exclude name="PSR12.Files.FileHeader.IncorrectOrder"/>
+        <exclude name="PSR12.Files.FileHeader.SpacingAfterBlock"/>
+    </rule>
+    <file>admin_branch</file>
+    <file>admin</file>
+    <file>operations</file>
+    <file>training</file>
+    <file>users</file>
+    <file>shared</file>
+    <file>login.php</file>
+    <file>logout.php</file>
+</ruleset>

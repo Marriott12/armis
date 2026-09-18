@@ -1,5 +1,6 @@
 <?php
-session_start();
+require_once __DIR__ . '/shared/session_security.php';
+armisStartSecureSession();
 
 // Include database functions
 require_once __DIR__ . '/shared/database_connection.php';
@@ -120,6 +121,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = authenticateUser($username, $password);
         
         if ($user) {
+            // Rotate the session identifier immediately after successful
+            // credential verification to prevent session fixation.
+            if (!session_regenerate_id(true)) {
+                $error = 'Unable to establish a secure session. Please try again.';
+                armisLogLoginAttempt('login_failed', (string)$username, (string)($user['svcNo'] ?? ''), 'Authentication aborted: secure session regeneration failed.');
+                goto login_blocked;
+            }
+
             // Check if user needs to change temporary password (first-time login)
             if ($user['isFirstLogin'] == 1) {
                 // Store user info for password change

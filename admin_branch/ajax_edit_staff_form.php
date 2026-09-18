@@ -1,7 +1,15 @@
 <?php
+define('ARMIS_JSON', true);
+define('ARMIS_ADMIN_BRANCH', true);
+require_once __DIR__ . '/includes/rbac_guard.php';
+adminBranchRequirePermission(PERM_EDIT_STAFF);
 // filepath: c:\wamp64\www\Armis\users\admin_branch\ajax_edit_staff_form.php
 
-require_once '../init.php';
+require_once __DIR__ . '/includes/auth.php';
+require_once dirname(__DIR__) . '/shared/permissions.php';
+requireAuth();
+requireModuleAccess('admin_branch');
+if (!hasPermission(PERM_EDIT_STAFF)) { http_response_code(403); exit('Access denied.'); }
 
 header('Content-Type: text/html; charset=utf-8');
 
@@ -13,6 +21,7 @@ function selected($a, $b) { return $a == $b ? 'selected' : ''; }
 function checked($a, $b) { return $a == $b ? 'checked' : ''; }
 
 $svcNo = $_GET['svcNo'] ?? '';
+if ($svcNo !== '' && !canViewStaffRecord($svcNo)) { http_response_code(403); echo '<div class="alert alert-danger">Access denied for this staff record.</div>'; exit; }
 if (!$svcNo) {
     echo '<div class="alert alert-warning">No staff selected.</div>';
     exit;

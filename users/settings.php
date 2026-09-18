@@ -1,4 +1,5 @@
 <?php
+require_once dirname(__DIR__) . '/shared/csrf.php';
 // Start session if not already started
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -29,6 +30,7 @@ $errorMessage = '';
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     try {
         $profileManager = new UserProfileManager($_SESSION['user_id']);
         

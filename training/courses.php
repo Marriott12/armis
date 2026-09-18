@@ -1,4 +1,5 @@
 <?php
+require_once dirname(__DIR__) . '/shared/csrf.php';
 
 // SECURITY FIX: this page previously had no authentication, no session
 // handling, and no RBAC check at all - it was reachable by anyone with
@@ -12,7 +13,7 @@ if (!isset($_SESSION['user_id'])) {
     header('Location: /Armis2/login.php?return_url=' . urlencode($_SERVER['REQUEST_URI'] ?? ''));
     exit();
 }
-requireModuleAccess('training');
+requireModuleWriteAccess('training');
 
 require_once 'training_manager.php';
 $manager = new TrainingManager();
@@ -117,6 +118,7 @@ require_once '../shared/sidebar.php';
                         <td><?= $course['session_count'] ?? '' ?></td>
                         <td>
                             <form method="POST" style="display:inline-block">
+<?= csrf_field() ?>
                                 <input type="hidden" name="delete_id" value="<?= $course['id'] ?>">
                                 <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this course?')">Delete</button>
                             </form>
@@ -132,6 +134,7 @@ require_once '../shared/sidebar.php';
                             <div class="modal-dialog">
                                 <div class="modal-content">
                                     <form method="POST">
+<?= csrf_field() ?>
                                         <div class="modal-header">
                                             <h5 class="modal-title" id="addCourseModalLabel">Add Course</h5>
                                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -169,6 +172,7 @@ require_once '../shared/sidebar.php';
                     <div class="modal-dialog">
                         <div class="modal-content">
                             <form method="POST">
+<?= csrf_field() ?>
                                 <div class="modal-header">
                                     <h5 class="modal-title" id="editCourseModalLabel">Edit Course</h5>
                                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>

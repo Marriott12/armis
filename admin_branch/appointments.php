@@ -1,4 +1,8 @@
 <?php
+define('ARMIS_ADMIN_BRANCH', true);
+require_once __DIR__ . '/includes/rbac_guard.php';
+adminBranchRequireWrite();
+adminBranchRequirePermission(PERM_MANAGE_APPOINTMENTS);
 // Always initialize state variables up front so they exist before any
 // try/catch block below can reference them (fixes "Undefined variable" warnings).
 $selectedStaff = [];
@@ -9,10 +13,10 @@ $eligibleStaff = [];
 $appointmentsCreated = 0;
 $appointmentsEnded = 0;
 $appointedStaffRows = []; // structured data for the post-submit summary table
+$postingAuditRows = []; // committed posting changes for activity logging
 
 // Define module constants
-define('ARMIS_ADMIN_BRANCH', true);
-define('ARMIS_DEVELOPMENT', true);
+define('ARMIS_DEVELOPMENT', false);
 
 // Configure minimal error logging for this page
 ini_set('log_errors', 1);
@@ -58,211 +62,70 @@ try {
     die("Database Connection Error: " . htmlspecialchars($e->getMessage()));
 }
 
-$ranks = [];
 $units = [];
 $positions = [];
 $appointmentTypes = [];
 
-// Fetch appointment types from the (now-existing) appointment_type table.
-// NOTE: run the armis1_schema_fixes.sql migration once before this will work;
-// that migration creates appointment_type and seeds default rows.
+// Load units used for destination posting selection.
 try {
-    $appointmentTypesStmt = $pdo->query(
-        "SELECT id, type_name, description, is_temporary, default_duration_months
-         FROM appointment_type
-         ORDER BY type_name"
-    );
-    $appointmentTypes = $appointmentTypesStmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    error_log("Error fetching appointment types: " . $e->getMessage());
-    $appointmentTypes = []; // Fallback to empty array
-}
-
-// Define standard military appointment positions
-$standardPositions = [
-    'Commanding Officer',
-    'Second In Command',
-    'Operations Officer',
-    'Training Officer',
-    'Adjutant',
-    'Battalion Commander',
-    'Battalion Second In Command',
-    'Detachment Commander',
-    'Detachment Second In Command',
-    'Intelligence Officer',
-    'Logistics Officer',
-    'Regimental Medical Officer',
-    'Signals Officer',
-    'Engineer Officer',
-    'Administrative Officer',
-    'Finance Officer',
-    'Personnel Officer',
-    'Survey Officer',
-    'Transport Officer',
-    'Quartermaster',
-    'Company Commander',
-    'Platoon Commander',
-    'Section Commander',
-    'Regimental Sergeant Major',
-    'Company Sergeant Major',
-    'Platoon Sergeant',
-    'Ward Master',
-    'Drill Instructor',
-    'Weapons Instructor',
-    'Physical Training Instructor',
-    'Driver',
-    'Radio Operator',
-    'Layer',
-    'Other'
-];
-
-// Initialize session cache if not exists
-if (!isset($_SESSION['dropdown_cache'])) {
-    $_SESSION['dropdown_cache'] = [];
-}
-
-$rankCounts = [];
-
-try {
-    // Fetch dropdown data (ranks and units) with short session cache
-    $cache_key = 'ranks_data';
-    $cache_timeout = 300; // 5 minutes
-
-    if (isset($_SESSION['dropdown_cache'][$cache_key]) &&
-        time() - $_SESSION['dropdown_cache'][$cache_key]['timestamp'] < $cache_timeout) {
-        $ranks = $_SESSION['dropdown_cache'][$cache_key]['data'];
-    } else {
-        // FIX: `rank` has no `level` column - the real column is `rankIndex`.
-        $ranksStmt = $pdo->query("SELECT rankId as rankID, rankId as rankName, rankId as rankAbbr, rankIndex FROM `rank` ORDER BY rankIndex ASC");
-        $ranks = $ranksStmt->fetchAll(PDO::FETCH_OBJ);
-        $_SESSION['dropdown_cache'][$cache_key] = [
-            'data' => $ranks,
-            'timestamp' => time()
-        ];
-    }
-
-    $cache_key = 'units_data';
-    if (isset($_SESSION['dropdown_cache'][$cache_key]) &&
-        time() - $_SESSION['dropdown_cache'][$cache_key]['timestamp'] < $cache_timeout) {
-        $units = $_SESSION['dropdown_cache'][$cache_key]['data'];
-    } else {
-        // FIX: `unit` has no `code` or `location` column - the real columns
-        // are `unitId` (used as the human-readable code/name) and `unitLoc`.
-        $unitsStmt = $pdo->query("SELECT unitId as unitID, unitId as unitName, unitLoc as location FROM `unit` ORDER BY unitId ASC");
-        $units = $unitsStmt->fetchAll(PDO::FETCH_OBJ);
-        $_SESSION['dropdown_cache'][$cache_key] = [
-            'data' => $units,
-            'timestamp' => time()
-        ];
-    }
-
-    // Count total staff at each rank for display
-    $rankCountStmt = $pdo->query("SELECT rankId, COUNT(*) as count FROM staff WHERE svcStatus = 'Active' GROUP BY rankId");
-    while ($row = $rankCountStmt->fetch(PDO::FETCH_ASSOC)) {
-        $rankCounts[$row['rankId']] = $row['count'];
-    }
+    $unitsStmt = $pdo->query("SELECT unitId as unitID, unitId as unitName, unitLoc as location FROM `unit` ORDER BY unitId ASC");
+    $units = $unitsStmt->fetchAll(PDO::FETCH_OBJ);
 } catch (Exception $e) {
-    $errors[] = "Error fetching ranks or units: " . htmlspecialchars($e->getMessage());
-    error_log("Error in appointments.php fetching ranks: " . $e->getMessage());
+    error_log('APPOINTMENTS: Error fetching units - ' . $e->getMessage());
+    $errors[] = 'Error loading units: ' . htmlspecialchars($e->getMessage());
 }
 
-// Exclude Officer Cadet, Recruit, and CE ranks (Mister, Miss).
-// (A previously-computed but unused $excludedRankIds lookup was removed here -
-// the dropdown below already filters by name against $excludedRanks directly.)
-$excludedRanks = ['Officer Cadet', 'Recruit', 'Mister', 'Miss'];
+// Load available appointment/position definitions from the canonical
+// `appointment` table. The selected apptId is stored in staff.apptId and in
+// staff_appointment.apptId for the historical posting record.
+try {
+    $positionsStmt = $pdo->query("SELECT apptId, apptType FROM appointment ORDER BY apptId ASC");
+    $positions = $positionsStmt->fetchAll(PDO::FETCH_ASSOC);
+    $validPositionIds = array_fill_keys(array_map(static function ($row) { return (string)$row['apptId']; }, $positions), true);
+} catch (Exception $e) {
+    error_log('APPOINTMENTS: Error fetching appointment positions - ' . $e->getMessage());
+    $errors[] = 'Error loading appointment positions: ' . htmlspecialchars($e->getMessage());
+}
 
-// Step 1: Select current rank
-$currentRankId = $_POST['currentRank'] ?? $_GET['currentRank'] ?? '';
-$currentRank = null;
-
-if ($currentRankId) {
-    // FIX: `rank` has no `level` column - use `rankIndex`.
-    $stmt = $pdo->prepare("SELECT rankId as id, rankId as name, rankId as abbreviation, rankIndex FROM `rank` WHERE rankId = ? LIMIT 1");
-    $stmt->execute([$currentRankId]);
-    $currentRank = $stmt->fetch(PDO::FETCH_OBJ);
-
-    if ($currentRank) {
-        try {
-            $staffStmt = $pdo->prepare("
-                SELECT s.svcNo, s.fName, s.lName, s.rankId,
-                       s.attestDate, s.unitId, s.subWef, s.tempWef, s.DOB as dateOfBirth,
-                       s.corps as corps, s.svcStatus as status, s.apptId as appt,
-                       u.unitId as unit_name, r.rankIndex, r.rankId as rank_name, r.rankId as rank_abbr,
-                       COALESCE(s.subWef, s.tempWef, s.attestDate, '1900-01-01') as rank_date
-                FROM staff s
-                LEFT JOIN unit u ON s.unitId = u.unitId
-                LEFT JOIN `rank` r ON s.rankId = r.rankId
-                WHERE s.rankId = ? AND s.svcStatus = 'Active'
-                ORDER BY rank_date ASC, s.svcNo ASC
-            ");
-            $staffStmt->execute([$currentRankId]);
-            $rawStaffRows = $staffStmt->fetchAll(PDO::FETCH_OBJ);
-
-            error_log("APPOINTMENTS DEBUG: Rank=$currentRankId, Staff found=" . count($rawStaffRows));
-
-            // Normalize into a flat array of associative arrays with stable keys
-            $eligibleStaff = array_map(function ($s) {
-                return [
-                    'svcNo'      => (string)($s->svcNo ?? ''),
-                    'fName'      => (string)($s->fName ?? ''),
-                    'lName'      => (string)($s->lName ?? ''),
-                    'unitId'     => (string)($s->unitId ?? ''),
-                    'unit_name'  => $s->unit_name ?? null,
-                    'corps'      => $s->corps ?? null,
-                    'status'     => $s->status ?? 'Active',
-                    'appt'       => $s->appt ?? '',
-                    'rankId'     => $s->rankId ?? '',
-                    'rank_name'  => $s->rank_name ?? $s->rankId ?? '',
-                    'rank_abbr'  => $s->rank_abbr ?? $s->rank_name ?? '',
-                ];
-            }, $rawStaffRows);
-        } catch (Exception $e) {
-            error_log("APPOINTMENTS: Error fetching staff - " . $e->getMessage());
-            $errors[] = "Error loading staff data: " . htmlspecialchars($e->getMessage());
-        }
-    }
-
-    // Fallback: some environments have staff.rankId values not present in the
-    // `rank` table, or the rank lookup above returned no staff for another
-    // reason. Try once more directly by rankId.
-    if (empty($eligibleStaff) && !empty($currentRankId)) {
-        try {
-            $fallbackStmt = $pdo->prepare("
-                SELECT s.svcNo, s.fName, s.lName, s.rankId,
-                       r.rankId as rank_name, r.rankId as rank_abbr,
-                       u.unitId as unit_name, s.corps, s.svcStatus as status, s.apptId as appt
-                FROM staff s
-                LEFT JOIN `rank` r ON s.rankId = r.rankId
-                LEFT JOIN `unit` u ON s.unitId = u.unitId
-                WHERE s.rankId = ? AND s.svcStatus = 'Active'
-                ORDER BY COALESCE(s.subWef, s.tempWef, s.attestDate, '1900-01-01') ASC, s.svcNo ASC
-            ");
-            $fallbackStmt->execute([$currentRankId]);
-            $fbRows = $fallbackStmt->fetchAll(PDO::FETCH_ASSOC);
-
-            $eligibleStaff = array_map(function ($r) {
-                return [
-                    'svcNo'      => (string)($r['svcNo'] ?? ''),
-                    'fName'      => (string)($r['fName'] ?? ''),
-                    'lName'      => (string)($r['lName'] ?? ''),
-                    'unitId'     => (string)($r['unitId'] ?? ''),
-                    'unit_name'  => $r['unit_name'] ?? null,
-                    'corps'      => $r['corps'] ?? null,
-                    'status'     => $r['status'] ?? 'Active',
-                    'appt'       => $r['appt'] ?? '',
-                    'rankId'     => $r['rankId'] ?? '',
-                    'rank_name'  => $r['rank_name'] ?? $r['rankId'] ?? '',
-                    'rank_abbr'  => $r['rank_abbr'] ?? $r['rank_name'] ?? '',
-                ];
-            }, $fbRows);
-        } catch (Exception $e) {
-            error_log('APPOINTMENTS: Fallback staff fetch failed: ' . $e->getMessage());
-        }
-    }
+// Load all active personnel. Rank is displayed for identification only and is
+// never selected or changed as part of an appointment/posting transaction.
+try {
+    $staffStmt = $pdo->query("
+        SELECT s.svcNo, s.fName, s.mName, s.lName, s.rankId,
+               s.attestDate, s.unitId, s.subWef, s.tempWef, s.DOB as dateOfBirth,
+               s.corps, s.svcStatus as status, s.apptId as appt,
+               u.unitId as unit_name, r.rankId as rank_name, a.apptId as appt_name
+        FROM staff s
+        LEFT JOIN `unit` u ON s.unitId = u.unitId
+        LEFT JOIN `rank` r ON s.rankId = r.rankId
+        LEFT JOIN appointment a ON s.apptId = a.apptId
+        WHERE s.svcStatus = 'Active'
+        ORDER BY s.svcNo ASC
+    ");
+    $rawStaffRows = $staffStmt->fetchAll(PDO::FETCH_ASSOC);
+    $eligibleStaff = array_map(function ($s) {
+        return [
+            'svcNo' => (string)($s['svcNo'] ?? ''),
+            'fName' => (string)($s['fName'] ?? ''),
+            'lName' => (string)($s['lName'] ?? ''),
+            'unitId' => (string)($s['unitId'] ?? ''),
+            'unit_name' => $s['unit_name'] ?? null,
+            'corps' => $s['corps'] ?? null,
+            'status' => $s['status'] ?? 'Active',
+            'appt' => $s['appt_name'] ?? ($s['appt'] ?? ''),
+            'rankId' => $s['rankId'] ?? '',
+            'rank_name' => $s['rank_name'] ?? $s['rankId'] ?? '',
+            'rank_abbr' => $s['rank_name'] ?? $s['rankId'] ?? '',
+        ];
+    }, $rawStaffRows);
+} catch (Exception $e) {
+    error_log('APPOINTMENTS: Error fetching active staff - ' . $e->getMessage());
+    $errors[] = 'Error loading active personnel: ' . htmlspecialchars($e->getMessage());
 }
 
 // Step 2: Handle form submission for appointments
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
+    adminBranchRequireCsrf();
     error_log("APPOINTMENTS: Form submission received");
 
     $selectedStaff = $_POST['selected_staff'] ?? [];
@@ -363,7 +226,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
         // the same way unit is already required above.
         $positionCheck = trim($positions[$svcNo] ?? '');
         if ($positionCheck === '') {
-            $errors[] = "Please enter a position/appointment for staff member " . htmlspecialchars($svcNo) . ".";
+            $errors[] = "Please select a position/appointment for staff member " . htmlspecialchars($svcNo) . ".";
+        } else {
+            if (!isset($validPositionIds[$positionCheck])) {
+                $errors[] = "Invalid position/appointment selected for staff member " . htmlspecialchars($svcNo) . ".";
+            }
         }
 
         // FIX: the previous pattern ^([A-Z]{2}\d{6}|\d{6})$ required either a
@@ -393,12 +260,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
                 LEFT JOIN `unit` u ON sa.unitId = u.unitId
                 LEFT JOIN appointment_type at ON sa.apptType = at.id
                 WHERE sa.svcNo = ?
-                  AND (sa.endDate IS NULL OR sa.endDate >= CURDATE())
+                  AND (sa.apptWef IS NULL OR sa.apptWef <= ?)
+                  AND (sa.endDate IS NULL OR sa.endDate >= ?)
                 ORDER BY sa.apptWef DESC
             ");
 
             foreach ($selectedStaff as $svcNo) {
-                $duplicateCheckStmt->execute([$svcNo]);
+                $duplicateCheckStmt->execute([$svcNo, $apptDate, $apptDate]);
                 $existingAppts = $duplicateCheckStmt->fetchAll(PDO::FETCH_ASSOC);
 
                 if (!empty($existingAppts)) {
@@ -433,7 +301,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
         }
 
         if (empty($errors)) {
-            $selectStaffStmt = $pdo->prepare("SELECT svcNo, rankId FROM staff WHERE svcNo = ? LIMIT 1");
+            $selectStaffStmt = $pdo->prepare("SELECT svcNo, rankId, unitId, apptId, fName, lName FROM staff WHERE svcNo = ? LIMIT 1 FOR UPDATE");
             // NOTE: staff_appointment.unitId/apptId and the two audit columns
             // below (createdBy, createdAt) require the schema-fixes migration
             // - see armis1_schema_fixes_appointments.sql: it widens unitId to
@@ -452,7 +320,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
             $perStaffDuplicateStmt = $pdo->prepare("
                 SELECT COUNT(*) FROM staff_appointment
                 WHERE svcNo = ? AND apptId = ? AND unitId = ?
-                  AND (endDate IS NULL OR endDate > ?)
+                  AND (apptWef IS NULL OR apptWef <= ?)
+                  AND (endDate IS NULL OR endDate >= ?)
             ");
 
             // Lookup for display names in the post-submit summary table -
@@ -471,21 +340,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
                     $powers = trim($withPowersOf[$serviceNumber] ?? '');
                     $comment = trim($comments[$serviceNumber] ?? '');
 
-                    $appointmentPosition = $position ?: 'Not Specified';
+                    $appointmentPosition = trim($position);
                     $remarks = $comment;
-
-                    // FIX: truncate to fit staff_appointment.apptId / staff.apptId
-                    // BEFORE using the value anywhere (including the duplicate
-                    // check below) - previously the duplicate check compared the
-                    // untruncated position while the insert stored a truncated
-                    // one, so the two could silently disagree.
-                    $apptIdForAppointment = mb_substr($appointmentPosition, 0, 50);
-                    if ($apptIdForAppointment !== $appointmentPosition) {
-                        $remarks = trim(($remarks !== '' ? $remarks . ' | ' : '') . "Full position: {$appointmentPosition}");
+                    if ($appointmentPosition === '' || mb_strlen($appointmentPosition) > 30) {
+                        throw new Exception("Invalid appointment position for {$serviceNumber}. The selected appointment must be 30 characters or fewer for the current staff.apptId schema.");
                     }
                     $powers = mb_substr($powers, 0, 100);
 
-                    $perStaffDuplicateStmt->execute([$serviceNumber, $apptIdForAppointment, $unitId, date('Y-m-d')]);
+                    $perStaffDuplicateStmt->execute([$serviceNumber, $appointmentPosition, $unitId, $apptDate, $apptDate]);
                     if ($perStaffDuplicateStmt->fetchColumn() > 0) {
                         $errors[] = "Cannot appoint {$serviceNumber} to '{$appointmentPosition}' in this unit: already holding this appointment.";
                         continue;
@@ -531,7 +393,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
 
                     $insertApptStmt->execute([
                         $serviceNumber,
-                        $apptIdForAppointment,
+                        $appointmentPosition,
                         $appointmentTypeId,
                         $unitId,
                         $apptDate,
@@ -544,16 +406,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
                         $dateCreated
                     ]);
 
-                    $updateStaffStmt->execute([$unitId, $apptIdForAppointment, $serviceNumber]);
+                    $previousUnitId = (string)($staff->unitId ?? '');
+                    $previousAppointmentId = (string)($staff->apptId ?? '');
+
+                    $updateStaffStmt->execute([$unitId, $appointmentPosition, $serviceNumber]);
 
                     $appointmentsCreated++;
 
                     $staffInfo = $eligibleStaffBySvcNo[$serviceNumber] ?? null;
                     $appointedStaffRows[] = [
                         'svcNo'    => $serviceNumber,
-                        'name'     => $staffInfo ? trim(($staffInfo['fName'] ?? '') . ' ' . ($staffInfo['lName'] ?? '')) : '',
+                        'name'     => $staffInfo ? trim(($staffInfo['fName'] ?? '') . ' ' . ($staffInfo['lName'] ?? '')) : trim(($staff->fName ?? '') . ' ' . ($staff->lName ?? '')),
+                        'fromUnit' => $previousUnitId,
                         'unit'     => $unitId,
+                        'fromPosition' => $previousAppointmentId,
                         'position' => $appointmentPosition,
+                    ];
+                    $postingAuditRows[] = [
+                        'svcNo' => $serviceNumber,
+                        'name' => $staffInfo ? trim(($staffInfo['fName'] ?? '') . ' ' . ($staffInfo['lName'] ?? '')) : trim(($staff->fName ?? '') . ' ' . ($staff->lName ?? '')),
+                        'fromUnit' => $previousUnitId,
+                        'toUnit' => $unitId,
+                        'fromAppointment' => $previousAppointmentId,
+                        'toAppointment' => $appointmentPosition,
+                        'effectiveDate' => $apptDate,
                     ];
 
                     error_log(json_encode([
@@ -580,6 +456,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
                     $pdo->rollBack();
                 } else {
                     $pdo->commit();
+
+                    // Record each committed personnel movement in the canonical
+                    // activity log. This is separate from staff_appointment,
+                    // which remains the authoritative posting history.
+                    foreach ($postingAuditRows as $auditRow) {
+                        logActivity(
+                            'staff_posting_updated',
+                            sprintf(
+                                'Posting updated for %s (%s): unit %s -> %s; appointment %s -> %s; effective %s.',
+                                $auditRow['svcNo'],
+                                $auditRow['name'],
+                                $auditRow['fromUnit'] !== '' ? $auditRow['fromUnit'] : 'Unassigned',
+                                $auditRow['toUnit'],
+                                $auditRow['fromAppointment'] !== '' ? $auditRow['fromAppointment'] : 'Unassigned',
+                                $auditRow['toAppointment'],
+                                $auditRow['effectiveDate']
+                            )
+                        );
+                    }
+
                     $success = true;
                     unset($_SESSION['existing_appointments']);
 
@@ -733,8 +629,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                     <tr>
                                         <th scope="col">Service No.</th>
                                         <th scope="col">Name</th>
-                                        <th scope="col">Unit</th>
-                                        <th scope="col">Position</th>
+                                        <th scope="col">Current Unit</th>
+                                        <th scope="col">Posted To</th>
+                                        <th scope="col">New Position</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -742,6 +639,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                         <tr>
                                             <td><?= htmlspecialchars($row['svcNo']) ?></td>
                                             <td><?= htmlspecialchars($row['name']) ?></td>
+                                            <td><?= htmlspecialchars($row['fromUnit'] ?: 'Unassigned') ?></td>
                                             <td><?= htmlspecialchars($row['unit']) ?></td>
                                             <td><?= htmlspecialchars($row['position']) ?></td>
                                         </tr>
@@ -777,35 +675,9 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                 </div>
             <?php endif; ?>
 
-            <!-- Step 1: Select current rank -->
-            <form class="mb-4" id="rankForm" method="get">
-                <div class="row">
-                    <div class="col-md-6 mb-2">
-                        <label class="form-label">Current Rank for Appointment *</label>
-                        <div class="d-flex align-items-center gap-2">
-                            <select name="currentRank" id="currentRank" class="form-select" required onchange="document.getElementById('rankLoadingSpinner').classList.remove('d-none');">
-                                <option value="">Select Current Rank...</option>
-                                <?php foreach ($ranks as $r):
-                                    if (in_array($r->rankName, $excludedRanks, true)) continue;
-                                    $staffCount = $rankCounts[$r->rankID] ?? 0;
-                                    ?>
-                                    <option value="<?=htmlspecialchars($r->rankID)?>" <?=($currentRankId==$r->rankID)?'selected':''?>>
-                                        <?=htmlspecialchars($r->rankAbbr ?: $r->rankName)?> (<?=$staffCount?> Personnel)
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <span id="rankLoadingSpinner" class="spinner-border spinner-border-sm text-primary d-none" role="status" aria-hidden="true"></span>
-                        </div>
-                        <small class="text-muted">Only staff members at this rank will be available for selection.</small>
-                    </div>
-                </div>
-            </form>
-
-            <!-- Step 2: Multi-Select + Panel -->
-            <?php if ($currentRankId): ?>
+            <!-- Personnel selection: rank is displayed for identification, not selected. -->
             <form method="post" action="" id="appointmentForm">
                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                <input type="hidden" name="currentRank" value="<?=htmlspecialchars($currentRankId)?>">
                 <input type="hidden" name="appoint_staff" value="1">
                 <div class="row mb-3">
                     <div class="col-md-12">
@@ -820,12 +692,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                 </button>
                             </div>
                         </div>
-
                         <div class="alert alert-info d-flex justify-content-between align-items-center">
-                            <div>
-                                <i class="fa fa-info-circle"></i>
-                                <strong>Rank Selected:</strong> <?= htmlspecialchars($currentRank->abbreviation ?? $currentRank->name ?? '') ?>
-                            </div>
+                            <div><i class="fa fa-info-circle"></i> <strong>Posting workflow:</strong> select personnel, review the current unit, then choose the destination unit and new position.</div>
                         </div>
 
                     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -860,7 +728,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                 <!-- Shared appointment parameters (apply to every selected staff member) -->
                 <div class="card mb-3 border-primary-subtle">
                     <div class="card-header bg-light">
-                        <i class="fa fa-sliders-h"></i> Appointment Details <small class="text-muted">(applies to all selected staff)</small>
+                        <i class="fa fa-sliders-h"></i> Posting & Appointment Details <small class="text-muted">(applies to all selected staff where shown)</small>
                     </div>
                     <div class="card-body">
                         <div class="row">
@@ -893,10 +761,10 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     </div>
                 </div>
 
-                <!-- Per-staff appointment posts (unit / position / powers / remarks) -->
+                <!-- Per-staff posting details (current unit / destination unit / position / powers / remarks) -->
                 <div id="staffDetailsSection" class="mb-3" style="display:none;">
                     <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h6 class="mb-0"><i class="fa fa-user-tag"></i> Individual Posting Details
+                        <h6 class="mb-0"><i class="fa fa-route"></i> Individual Posting Details
                             <span class="badge bg-primary" id="selectedStaffBadge">0</span>
                         </h6>
                     </div>
@@ -906,7 +774,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                         <div class="card-body py-2">
                             <div class="row g-2 align-items-end">
                                 <div class="col-md-4">
-                                    <label class="form-label small mb-1"><i class="fa fa-bolt"></i> Bulk-fill Unit</label>
+                                    <label class="form-label small mb-1"><i class="fa fa-bolt"></i> Bulk-fill Destination Unit</label>
                                     <select id="bulkUnit" class="form-select form-select-sm">
                                         <option value="">-- Select Unit --</option>
                                         <?php foreach ($units as $u): ?>
@@ -915,8 +783,13 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                                     </select>
                                 </div>
                                 <div class="col-md-4">
-                                    <label class="form-label small mb-1"><i class="fa fa-bolt"></i> Bulk-fill Position</label>
-                                    <input type="text" id="bulkPosition" class="form-control form-control-sm" list="positionOptions" maxlength="50" placeholder="e.g. Company Commander">
+                                    <label class="form-label small mb-1"><i class="fa fa-bolt"></i> Bulk-fill New Position</label>
+                                    <select id="bulkPosition" class="form-select form-select-sm">
+                                        <option value="">-- Select New Position --</option>
+                                        <?php foreach ($positions as $position): ?>
+                                            <option value="<?=htmlspecialchars($position['apptId'])?>"><?=htmlspecialchars($position['apptId'])?><?=!empty($position['apptType']) ? ' — ' . htmlspecialchars($position['apptType']) : ''?></option>
+                                        <?php endforeach; ?>
+                                    </select>
                                 </div>
                                 <div class="col-md-4">
                                     <button type="button" id="applyBulkBtn" class="btn btn-sm btn-outline-primary w-100">
@@ -993,7 +866,6 @@ include dirname(__DIR__) . '/shared/sidebar.php';
                     </div>
                 </div>
             </form>
-            <?php endif; ?>
         </div>
     </div>
 </div>
@@ -1007,8 +879,8 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 window.appointmentsServerData = <?= json_encode([
     'unitsData' => $units,
     'eligibleStaff' => $eligibleStaff,
-    'currentRankId' => $currentRankId ?? '',
     'standardPositions' => $standardPositions,
+    'positionsData' => $positions,
     'preselectedStaff' => $_POST['selected_staff'] ?? []
 ], JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>;
 </script>

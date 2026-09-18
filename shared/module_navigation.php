@@ -25,7 +25,7 @@ if (!function_exists('getModuleSidebarLinks')) {
             if (function_exists('getRoleInfo') && (getRoleInfo()['access'] ?? 'none') !== 'write') {
                 $links = array_values(array_filter($links, static fn(array $link): bool => in_array($link['page'], ['dashboard', 'roster', 'reports'], true)));
             }
-            if (in_array(strtolower($_SESSION['role'] ?? ''), ['admin', 'administrator', 'superadmin'], true)) {
+            if (in_array(strtolower($_SESSION['role'] ?? ''), ['admin'], true)) {
                 $links[] = ['title' => 'Setup Database', 'url' => '/Armis2/operations/setup_database.php', 'icon' => 'database', 'page' => 'setup'];
             }
             return $links;
@@ -44,7 +44,7 @@ if (!function_exists('getModuleSidebarLinks')) {
             if (function_exists('getRoleInfo') && (getRoleInfo()['access'] ?? 'none') !== 'write') {
                 $links = array_values(array_filter($links, static fn(array $link): bool => in_array($link['page'], ['dashboard', 'roster', 'records', 'schedule', 'certifications'], true)));
             }
-            if (in_array(strtolower($_SESSION['role'] ?? ''), ['admin', 'administrator', 'superadmin'], true)) {
+            if (in_array(strtolower($_SESSION['role'] ?? ''), ['admin'], true)) {
                 $links[] = ['title' => 'Setup Database', 'url' => '/Armis2/training/setup_database.php', 'icon' => 'database', 'page' => 'setup'];
             }
             return $links;

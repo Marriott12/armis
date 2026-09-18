@@ -1,4 +1,8 @@
 <?php
+define('ARMIS_JSON', true);
+define('ARMIS_ADMIN_BRANCH', true);
+require_once __DIR__ . '/includes/rbac_guard.php';
+adminBranchRequirePermission(PERM_VIEW_STAFF);
 /**
  * Minimal Staff Search - No includes, direct database connection
  */

@@ -1,4 +1,5 @@
 <?php
+require_once dirname(__DIR__) . '/shared/csrf.php';
 require_once '../shared/session_init.php';
 require_once 'profile_manager.php';
 
@@ -15,6 +16,7 @@ $success = '';
 
 // Handle CV upload
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     if (isset($_POST['upload_cv']) && isset($_FILES['cv_file'])) {
         try {
             $result = $profileManager->uploadCV($_FILES['cv_file']);

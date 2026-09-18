@@ -31,114 +31,51 @@ define('PERM_VIEW_REPORTS', 'view_reports');
 define('PERM_ADMIN_ACCESS', 'admin_access');
 define('PERM_ADMIN_BRANCH_ACCESS', 'admin_branch_access');
 define('PERM_SYSTEM_SETTINGS', 'system_settings');
+define('PERM_CREATE_MEDAL', 'create_medal');
+define('PERM_MANAGE_POSTINGS', 'manage_postings');
+define('PERM_MANAGE_EDUCATION', 'manage_education');
+define('PERM_VIEW_DASHBOARD', 'view_dashboard');
 
 /**
- * Check if the user has a specific permission
- * 
- * @param string $permission The permission to check
- * @param string|null $userRole Optional user role, defaults to current user
- * @return bool Whether the user has the permission
+ * Check a granular action permission against the canonical role_permissions table.
+ * Module access remains governed by shared/rbac.php + roles/role_modules.
  */
 function hasPermission($permission, $userRole = null) {
-    // If no role provided, get from session
     if ($userRole === null) {
         $userRole = $_SESSION['role'] ?? '';
     }
-    
-    // Admin/administrator/admin_branch roles have all permissions
-    $adminRoles = ['admin', 'administrator', 'admin_branch'];
-    if (in_array(strtolower($userRole), $adminRoles)) {
-        return true;
-    }
-    
-    // Define permissions for each role
-    $rolePermissions = [
-        'admin' => [
-            // Admins have all permissions
-            PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_CREATE_STAFF, PERM_DELETE_STAFF,
-            PERM_PROMOTE_STAFF, PERM_MANAGE_APPOINTMENTS, PERM_ASSIGN_MEDALS,
-            PERM_VIEW_REPORTS, PERM_ADMIN_ACCESS, PERM_ADMIN_BRANCH_ACCESS, PERM_SYSTEM_SETTINGS
-        ],
-        'administrator' => [
-            // Admins have all permissions
-            PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_CREATE_STAFF, PERM_DELETE_STAFF,
-            PERM_PROMOTE_STAFF, PERM_MANAGE_APPOINTMENTS, PERM_ASSIGN_MEDALS,
-            PERM_VIEW_REPORTS, PERM_ADMIN_ACCESS, PERM_ADMIN_BRANCH_ACCESS, PERM_SYSTEM_SETTINGS
-        ],
-        'admin_branch' => [
-            // Admin Branch has all admin permissions
-            PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_CREATE_STAFF, PERM_DELETE_STAFF,
-            PERM_PROMOTE_STAFF, PERM_MANAGE_APPOINTMENTS, PERM_ASSIGN_MEDALS,
-            PERM_VIEW_REPORTS, PERM_ADMIN_ACCESS, PERM_ADMIN_BRANCH_ACCESS, PERM_SYSTEM_SETTINGS
-        ],
-        'hr_officer' => [
-            PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_CREATE_STAFF, 
-            PERM_PROMOTE_STAFF, PERM_MANAGE_APPOINTMENTS, PERM_VIEW_REPORTS,
-            PERM_ADMIN_BRANCH_ACCESS
-        ],
-        'records_officer' => [
-            PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_VIEW_REPORTS, PERM_ADMIN_BRANCH_ACCESS
-        ],
-        'commander' => [
-            PERM_VIEW_STAFF, PERM_VIEW_REPORTS, PERM_ASSIGN_MEDALS
-        ],
-        'command' => [
-            // Command role has similar permissions to commander
-            PERM_VIEW_STAFF, PERM_VIEW_REPORTS, PERM_ASSIGN_MEDALS, PERM_ADMIN_BRANCH_ACCESS
-        ],
-        'training' => [
-            // Training role can view and manage staff for training purposes
-            PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_VIEW_REPORTS, PERM_ADMIN_BRANCH_ACCESS
-        ],
-        'operations' => [
-            // Operations role can view and manage staff for operational purposes
-            PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_VIEW_REPORTS, PERM_ADMIN_BRANCH_ACCESS
-        ],
-        'staff_officer' => [
-            PERM_VIEW_STAFF, PERM_VIEW_REPORTS
-        ],
 
-        // --- Branch RBAC roles (added with the branches/roles upgrade) ---
-        // cc/soi/soii/soiii: full write actions, but ALWAYS additionally
-        // gated by canAlterRecord()/canAlterStaffRecord() at the point of
-        // write (see admin_branch/edit_staff.php, promote_staff.php,
-        // assign_medal.php) — hasPermission() alone does not know which
-        // branch a given record belongs to, only rbac.php's branch-aware
-        // functions do that check.
-        'cc' => [
-            PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_CREATE_STAFF, PERM_DELETE_STAFF,
-            PERM_PROMOTE_STAFF, PERM_MANAGE_APPOINTMENTS, PERM_ASSIGN_MEDALS, PERM_VIEW_REPORTS
-        ],
-        'soi' => [
-            PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_PROMOTE_STAFF, PERM_MANAGE_APPOINTMENTS,
-            PERM_ASSIGN_MEDALS, PERM_VIEW_REPORTS
-        ],
-        'soii' => [
-            PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_MANAGE_APPOINTMENTS, PERM_VIEW_REPORTS
-        ],
-        'soiii' => [
-            PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_VIEW_REPORTS
-        ],
-        // dg / ag: read-only oversight roles, no write permissions at all
-        'dg' => [
-            PERM_VIEW_STAFF, PERM_VIEW_REPORTS
-        ],
-        'ag' => [
-            PERM_VIEW_STAFF, PERM_VIEW_REPORTS
-        ],
+    static $cache = [];
+    $userRole = strtolower(trim((string)$userRole));
+    $permission = trim((string)$permission);
+    if ($userRole === '' || $permission === '') return false;
 
-        'user' => [
-            PERM_VIEW_STAFF
-        ]
-    ];
-    
-    // Check if the role exists and has the permission
-    if (isset($rolePermissions[$userRole]) && in_array($permission, $rolePermissions[$userRole])) {
-        return true;
+    $cacheKey = $userRole . ':' . $permission;
+    if (array_key_exists($cacheKey, $cache)) return $cache[$cacheKey];
+
+    // System administrator is the only unrestricted role.
+    if ($userRole === 'admin') return $cache[$cacheKey] = true;
+
+    // Specialized branch permissions are both role- and branch-gated.
+    if ($permission === PERM_MANAGE_POSTINGS || $permission === PERM_MANAGE_EDUCATION) {
+        $branchId = getUserBranch();
+        if (!$branchId) return $cache[$cacheKey] = false;
+        $branch = getBranchById($branchId);
+        if (!$branch) return $cache[$cacheKey] = false;
+        if ($permission === PERM_MANAGE_POSTINGS && strtolower($branch['code']) !== 'operations') return $cache[$cacheKey] = false;
+        if ($permission === PERM_MANAGE_EDUCATION && strtolower($branch['code']) !== 'training') return $cache[$cacheKey] = false;
     }
-    
-    // Default to false for undefined roles or permissions
-    return false;
+
+    try {
+        $pdo = getDbConnection();
+        $stmt = $pdo->prepare('SELECT 1 FROM role_permissions WHERE role_code = ? AND permission_code = ? LIMIT 1');
+        $stmt->execute([$userRole, $permission]);
+        return $cache[$cacheKey] = (bool)$stmt->fetchColumn();
+    } catch (Throwable $e) {
+        // Fail closed if the centralized permission policy has not been migrated.
+        error_log('ARMIS permission policy lookup failed: ' . $e->getMessage());
+        return $cache[$cacheKey] = false;
+    }
 }
 
 /**
@@ -151,39 +88,22 @@ function hasPermission($permission, $userRole = null) {
  */
 
 /**
- * Get all permissions for the current user
- * 
- * @param string|null $userRole Optional user role, defaults to current user
- * @return array Array of permission strings the user has
+ * Get all permissions for the current user from the canonical role policy.
  */
 function getUserPermissions($userRole = null) {
-    // If no role provided, get from session
-    if ($userRole === null) {
-        $userRole = $_SESSION['role'] ?? '';
+    if ($userRole === null) $userRole = $_SESSION['role'] ?? '';
+    $userRole = strtolower(trim((string)$userRole));
+    if ($userRole === '') return [];
+
+    try {
+        $pdo = getDbConnection();
+        $stmt = $pdo->prepare('SELECT permission_code FROM role_permissions WHERE role_code = ? ORDER BY permission_code');
+        $stmt->execute([$userRole]);
+        return array_values(array_map('strval', $stmt->fetchAll(PDO::FETCH_COLUMN)));
+    } catch (Throwable $e) {
+        error_log('ARMIS permission list lookup failed: ' . $e->getMessage());
+        return [];
     }
-    
-    // All available permissions
-    $allPermissions = [
-        PERM_VIEW_STAFF, PERM_EDIT_STAFF, PERM_CREATE_STAFF, PERM_DELETE_STAFF,
-        PERM_PROMOTE_STAFF, PERM_MANAGE_APPOINTMENTS, PERM_ASSIGN_MEDALS,
-        PERM_VIEW_REPORTS, PERM_ADMIN_ACCESS, PERM_ADMIN_BRANCH_ACCESS, PERM_SYSTEM_SETTINGS
-    ];
-    
-    // For admin/administrator/admin_branch, return all permissions
-    $adminRoles = ['admin', 'administrator', 'admin_branch'];
-    if (in_array(strtolower($userRole), $adminRoles)) {
-        return $allPermissions;
-    }
-    
-    // For other roles, check each permission
-    $userPermissions = [];
-    foreach ($allPermissions as $permission) {
-        if (hasPermission($permission, $userRole)) {
-            $userPermissions[] = $permission;
-        }
-    }
-    
-    return $userPermissions;
 }
 
 /**
