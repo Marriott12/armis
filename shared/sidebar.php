@@ -8,6 +8,7 @@ if (!function_exists('hasModuleAccess')) {
 // Get user's accessible modules
 $userModules = getUserModules();
 $roleInfo = getRoleInfo();
+$isSystemAdmin = strtolower((string)($_SESSION['role'] ?? '')) === 'admin';
 ?>
 <div class="sidebar position-fixed" id="sidebar" style="height: calc(100vh - 60px); overflow-y: auto; z-index: 1001;" role="navigation" aria-label="Main navigation">
     <div class="sidebar-header p-3">
@@ -139,18 +140,19 @@ $roleInfo = getRoleInfo();
             </h6>
             <div class="collapsible-content" id="systemBranches">
                 <?php if (in_array('dashboard', $userModules)): ?>
-                <a class="nav-link" href="/Armis2/" role="menuitem" tabindex="0" 
+                <?php $dashboardHomeUrl = function_exists('getRoleDashboardUrl') ? getRoleDashboardUrl() : '/Armis2/'; ?>
+                <a class="nav-link" href="<?php echo htmlspecialchars($dashboardHomeUrl); ?>" role="menuitem" tabindex="0"
                    data-search-terms="dashboard home main">
                     <span class="nav-link-content">
-                        <i class="fas fa-home me-2" aria-hidden="true"></i> Dashboard Home
+                        <i class="fas fa-home me-2" aria-hidden="true"></i> My Dashboard
                     </span>
-                    <button class="favorite-btn" data-url="/Armis2/" data-title="Dashboard Home" data-icon="home" title="Add to favorites" tabindex="-1">
+                    <button class="favorite-btn" data-url="<?php echo htmlspecialchars($dashboardHomeUrl); ?>" data-title="My Dashboard" data-icon="home" title="Add to favorites" tabindex="-1">
                         <i class="fas fa-star"></i>
                     </button>
                 </a>
                 <?php endif; ?>
                 
-                <?php if (in_array('admin', $userModules)): ?>
+                <?php if ($isSystemAdmin || in_array('admin', $userModules, true)): ?>
                 <a class="nav-link" href="/Armis2/admin/" role="menuitem" tabindex="0" 
                    data-search-terms="system admin administration settings">
                     <span class="nav-link-content">

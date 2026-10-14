@@ -45,19 +45,6 @@
       document.getElementById('childrenList').appendChild(div);
   };
 
-  window.addAcademic = function() {
-      const div = document.createElement('div');
-      div.className = 'row mb-2';
-      div.innerHTML = `
-          <div class="col-md-3 mb-2"><input type="text" name="academic_institution[]" class="form-control form-control-sm" placeholder="Institution"></div>
-          <div class="col-md-2 mb-2"><input type="month" name="academic_start[]" class="form-control form-control-sm" placeholder="Start"></div>
-          <div class="col-md-2 mb-2"><input type="month" name="academic_end[]" class="form-control form-control-sm" placeholder="End"></div>
-          <div class="col-md-3 mb-2"><input type="text" name="academic_qualification[]" class="form-control form-control-sm" placeholder="Qualification"></div>
-          <div class="col-md-2 mb-2"><button type="button" class="btn btn-danger btn-sm btn-remove-block" title="Remove"><i class="fa fa-times"></i></button></div>
-      `;
-      document.getElementById('academicList').appendChild(div);
-  };
-
   window.addProfTech = function() {
       const div = document.createElement('div');
       div.className = 'row mb-2';
@@ -201,7 +188,7 @@
             $(this).closest('.row').remove();
         });
     }
-    ['childrenList','academicList','profTechList','milCourseList','tradeGroupList','awardList','appointmentList','promotionList','languageList'].forEach(addDynamicRemoveHandler);
+    ['childrenList','profTechList','milCourseList','tradeGroupList','awardList','appointmentList','promotionList','languageList'].forEach(addDynamicRemoveHandler);
     
     // NRC input restrictions (jQuery)
     $('#nrc_part1').on('input', function() {
@@ -307,26 +294,9 @@
     window.addEventListener('DOMContentLoaded', filterRanksByCategory);
   }
 
-  // Tab Persistence
-  const allTabs = document.querySelectorAll('[data-bs-toggle="tab"]');
-  allTabs.forEach(button => {
-    button.addEventListener('shown.bs.tab', function () {
-      const tabId = this.getAttribute('id');
-      localStorage.setItem('activeTabId', tabId);
-    });
-  });
-  window.addEventListener('DOMContentLoaded', () => {
-    const activeTabId = localStorage.getItem('activeTabId');
-    if (activeTabId) {
-      const triggerTab = document.getElementById(activeTabId);
-      if (triggerTab) {
-        const tab = new bootstrap.Tab(triggerTab);
-        tab.show();
-      }
-    }
-  });
+  // Tab navigation has been removed; the registration form is a single continuous workflow.
+  // Scroll to top on long-form registration
 
-  // Scroll to top on tab click
   var scrollBtn = document.getElementById('scrollBtn');
   if (scrollBtn) {
     window.addEventListener("scroll", () => {

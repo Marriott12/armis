@@ -68,7 +68,7 @@ if (isset($_GET['search'])) {
     $courses = $manager->getAllCourses();
 }
 // Fetch institutions for dropdown
-$institutions = $manager->getDb()->query('SELECT id, name, type, location, createdAt FROM institutions')->fetchAll(PDO::FETCH_ASSOC);
+$institutions = $manager->getDb()->query('SELECT instId AS id, instId AS name, instType AS type, instLoc AS location, dateCreated AS createdAt FROM institution ORDER BY instId')->fetchAll(PDO::FETCH_ASSOC);
 
 
 require_once '../shared/header.php';

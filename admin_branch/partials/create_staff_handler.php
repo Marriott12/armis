@@ -57,6 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'district' => 'District',
             'religion' => 'Religion',
             'village' => 'Village',
+            'dateOfEnlistment' => 'Date of Enlistment',
             // Only fields present in the staff table
         ];
 
@@ -194,7 +195,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $insertData['corps'] = trim($_POST['corps'] ?? $_POST['corpsId']);
                 }
                 if (!empty($_POST['apptId'])) $insertData['apptId'] = trim($_POST['apptId']);
-                if (!empty($_POST['attestDate'])) $insertData['attestDate'] = $_POST['attestDate'];
+                // The create form labels the service start date as Date of Enlistment;
+                // staff stores this canonical date in attestDate.
+                if (!empty($_POST['dateOfEnlistment'])) $insertData['attestDate'] = $_POST['dateOfEnlistment'];
+                elseif (!empty($_POST['attestDate'])) $insertData['attestDate'] = $_POST['attestDate'];
                 if (!empty($_POST['intake'])) $insertData['intake'] = trim($_POST['intake']);
                 if (!empty($_POST['trade'])) $insertData['trade'] = trim($_POST['trade']);
                 if (!empty($_POST['profession'])) $insertData['profession'] = trim($_POST['profession']);

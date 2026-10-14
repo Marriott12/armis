@@ -51,9 +51,30 @@ if (!$__branch) {
 }
 
 $__scope = getSnapshotScope();
-// Safety net: if a role with no relationship to this branch somehow reaches
-// here (shouldn't happen - requireModuleAccess() already gated it), bounce.
-if ($__scope['scope'] === 'none') {
+$__roleInfo = getRoleInfo();
+
+// -----------------------------------------------------------------------
+// ROSTER SCOPE IS ALWAYS THE MODULE'S BRANCH
+// -----------------------------------------------------------------------
+// A roster is a branch-local view. The URL/module being opened determines
+// which branch roster is displayed; it must never silently fall back to the
+// caller's generic/org-wide snapshot scope. This is especially important for
+// administrators: /command/roster.php means Command personnel only, not the
+// whole Army. Admin Branch remains the deliberate whole-Army exception.
+$__targetBranchId = (int)($__branch['id'] ?? 0);
+$__isAdminBranchRoster = strtolower($__branchCode) === 'admin_branch' || !empty($__branch['is_org_wide']);
+if ($__targetBranchId <= 0) {
+    header('Location: /Armis2/unauthorized.php?from=' . urlencode($__branchCode));
+    exit();
+}
+
+// Non-admin users must be posted to the same branch as the roster they are
+// opening. requireModuleAccess() normally enforces this, but this explicit
+// check prevents a future navigation/RBAC regression from leaking roster data.
+$__role = strtolower($_SESSION['role'] ?? '');
+$__userBranchId = getUserBranch();
+if ($__role !== 'admin' && !$__isAdminBranchRoster && (int)$__userBranchId !== $__targetBranchId) {
+    logAccess($__branchCode, 'roster_scope_denied', false, "Attempted access to a roster outside the user\'s posted branch.");
     header('Location: /Armis2/unauthorized.php?from=' . urlencode($__branchCode));
     exit();
 }
@@ -68,10 +89,15 @@ if (!in_array($__reportType, ['all', 'officer', 'nco', 'ce'], true)) $__reportTy
 
 $pdo = getDbConnection();
 
-// Whole-Army (org-wide branch, e.g. Admin Branch) vs single-branch roster
+// Whole-Army Admin Branch roster vs every other branch-local roster.
+// IMPORTANT: non-Admin Branch rosters are always filtered by the branch
+// represented by the current module, even when the current user is an admin.
 $__rosterConditions = [];
-$__rosterParams = $__scope['scope'] === 'branch' ? ['branch_id' => $__scope['branch_id']] : [];
-$__rosterConditions = $__scope['scope'] === 'branch' ? ['s.branch_id = :branch_id'] : [];
+$__rosterParams = [];
+if (!$__isAdminBranchRoster) {
+    $__rosterConditions[] = 's.branch_id = :roster_branch_id';
+    $__rosterParams['roster_branch_id'] = $__targetBranchId;
+}
 if ($__statusFilter !== '') { $__rosterConditions[] = 's.svcStatus = :status'; $__rosterParams['status'] = $__statusFilter; }
 if ($__reportType === 'officer') $__rosterConditions[] = 'r.rankIndex BETWEEN ' . RANK_OFFICER_MIN . ' AND ' . RANK_OFFICER_CADET;
 if ($__reportType === 'nco') $__rosterConditions[] = 'r.rankIndex BETWEEN ' . RANK_NCO_MIN . ' AND ' . RANK_RECRUIT;

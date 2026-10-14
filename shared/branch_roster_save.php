@@ -38,6 +38,26 @@ if ($svcNo === '' || !in_array($newStatus, ['Active', 'Retired', 'Deceased', 'AW
 
 $pdo = getDbConnection();
 
+// The submitted module must resolve to a real branch. This prevents a
+// client from using a different module name while attempting a cross-branch
+// roster update. Admin remains the only unrestricted role.
+$branchStmt = $pdo->prepare("SELECT id, code, is_org_wide FROM branches WHERE code = :code LIMIT 1");
+$branchStmt->execute(['code' => $module]);
+$targetBranch = $branchStmt->fetch(PDO::FETCH_ASSOC);
+if (!$targetBranch) {
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'message' => 'Invalid roster branch.']);
+    exit();
+}
+
+$role = strtolower($_SESSION['role'] ?? '');
+if ($role !== 'admin' && empty($targetBranch['is_org_wide']) && (int)getUserBranch() !== (int)$targetBranch['id']) {
+    http_response_code(403);
+    logAccess($module, 'roster_edit_denied', false, 'Attempted update outside posted branch.');
+    echo json_encode(['ok' => false, 'message' => 'You can only update personnel attached to your posted branch.']);
+    exit();
+}
+
 $stmt = $pdo->prepare("SELECT svcNo, branch_id, svcStatus FROM staff WHERE svcNo = :svcNo");
 $stmt->execute(['svcNo' => $svcNo]);
 $before = $stmt->fetch();
@@ -45,6 +65,15 @@ $before = $stmt->fetch();
 if (!$before) {
     http_response_code(404);
     echo json_encode(['ok' => false, 'message' => 'Staff record not found.']);
+    exit();
+}
+
+// The record itself must belong to the roster branch. This is the final
+// server-side row-level guard, independent of whatever the browser submits.
+if (empty($targetBranch['is_org_wide']) && (int)$before['branch_id'] !== (int)$targetBranch['id']) {
+    http_response_code(403);
+    logAccess($module, 'roster_edit_denied', false, 'Record does not belong to requested roster branch.');
+    echo json_encode(['ok' => false, 'message' => 'That personnel record is not attached to this branch.']);
     exit();
 }
 

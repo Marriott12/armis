@@ -135,7 +135,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_FILES['csv_file'])) {
             'category' => 'Category',
             'rankID' => 'Rank',
             'nrc' => 'NRC',
-            'blood_group' => 'Blood Group'
+            'blood_group' => 'Blood Group',
+            'dateOfEnlistment' => 'Date of Enlistment'
         ];
         
         foreach ($required_fields as $field => $label) {
@@ -297,32 +298,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_FILES['csv_file'])) {
             require_once __DIR__ . '/partials/create_staff_handler.php';
         }
 
-        // Map validation errors to the tab that contains the offending
-        // field, so the tab-nav badges (see create_staff_tabs.php) and the
-        // initial "which tab opens by default" logic actually reflect
-        // where the problem is - $tabErrors was previously declared but
-        // never populated anywhere, so every tab's error badge/highlight
-        // was permanently dead.
-        if (!empty($form_errors)) {
-            $fieldToTab = [
-                'csrf' => 'personal',
-                'svcNo' => 'personal', 'category' => 'personal', 'rankID' => 'personal',
-                'lname' => 'personal', 'fname' => 'personal', 'nrc' => 'personal',
-                'email' => 'personal', 'phone' => 'personal', 'gender' => 'personal',
-                'DOB' => 'personal', 'blood_group' => 'personal', 'province' => 'personal',
-                'district' => 'personal', 'religion' => 'personal', 'village' => 'personal',
-                'unitID' => 'service', 'corps' => 'service', 'dateOfEnlistment' => 'service',
-                'trade' => 'service',
-                'marital' => 'family', 'nok' => 'family', 'nok_nrc' => 'family',
-                'nok_relationship' => 'family', 'nok_tel' => 'family', 'nok_email' => 'family',
-                'alt_nok' => 'family', 'alt_nok_nrc' => 'family', 'alt_nok_relationship' => 'family',
-                'alt_nok_tel' => 'family', 'altnok_email' => 'family',
-            ];
-            foreach ($form_errors as $field => $message) {
-                $tabKey = $fieldToTab[$field] ?? 'personal';
-                $tabErrors[$tabKey] = true;
-            }
-        }
+        // The form is now a single continuous core-personnel workflow; legacy tab error mapping is no longer required.
     }
 }
 
@@ -1090,29 +1066,76 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 
                         <form id="createStaffForm" method="post" action="<?=htmlspecialchars($_SERVER["PHP_SELF"]);?>" autocomplete="off" novalidate aria-labelledby="formTitle">
                             <input type="hidden" name="csrf" value="<?=htmlspecialchars($csrfToken)?>">
-                            <?php require 'partials/create_staff_tabs.php'; ?>
-                            <div class="tab-content" id="staffTabContent">
-                                <?php require 'partials/tab_personal.php'; ?>
-                                <?php require 'partials/tab_service.php'; ?>
-                                <?php require 'partials/tab_family.php'; ?>
-                                <?php require 'partials/tab_academic.php'; ?>
-                                <?php require 'partials/tab_honours.php'; ?>
-                                <?php require 'partials/tab_id.php'; ?>
-                                <?php require 'partials/tab_residence.php'; ?>
-                                <?php require 'partials/tab_language.php'; ?>
-                            </div>
-                            
-                                <div class="d-flex justify-content-between align-items-center mt-4" aria-label="Form Actions">
-                               
-                                <div>
-                                    <button type="button" class="btn btn-outline-info me-2" id="validateFormBtn" title="Check for errors before submitting">
-                                        <i class="fa fa-check-circle"></i> Validate Form
-                                    </button>
-                                    <button type="submit" class="btn btn-armis-primary px-4 py-2" id="submitBtn" title="Submit the staff registration form">
-                                        <i class="fa fa-user-plus"></i> Register Staff
-                                    </button>
+                            <style>
+                                .create-staff-form-shell{max-width:1180px;margin:0 auto}
+                                .cs-card{background:#fff;border:1px solid #e3e8ef;border-radius:14px;box-shadow:0 3px 14px rgba(24,39,75,.05);margin-bottom:18px;overflow:hidden}
+                                .cs-card-header{padding:15px 20px;border-bottom:1px solid #e9edf2;display:flex;align-items:center;justify-content:space-between;gap:12px}
+                                .cs-card-header h5{margin:0;font-size:1rem;font-weight:700}
+                                .cs-card-body{padding:20px}
+                                .cs-number{width:30px;height:30px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#eef4ff;color:#0d6efd;font-weight:700;margin-right:9px}
+                                .cs-label{font-weight:600;font-size:.88rem;margin-bottom:6px}
+                                .cs-required{color:#dc3545}
+                                .cs-help{font-size:.76rem;color:#6c757d;margin-top:4px}
+                                .cs-identity{background:#f8fafc;border:1px solid #e8edf3;border-radius:10px;padding:12px 14px;margin-bottom:18px}
+                                .cs-actions{position:sticky;bottom:0;z-index:30;background:rgba(255,255,255,.97);border-top:1px solid #dfe5eb;padding:13px 0;backdrop-filter:blur(7px)}
+                                .cs-actions-inner{max-width:1180px;margin:auto;display:flex;justify-content:space-between;align-items:center;gap:12px}
+                                @media(max-width:767.98px){.cs-card-body{padding:15px}.cs-actions-inner{flex-direction:column;align-items:stretch}.cs-actions-inner .btn{width:100%}}
+                            </style>
+                            <div class="create-staff-form-shell">
+                                <div class="alert alert-info border-0 shadow-sm mb-4" role="note">
+                                    <div class="d-flex align-items-start gap-2">
+                                        <i class="fa fa-info-circle mt-1"></i>
+                                        <div><strong>New Personnel Registration</strong><div class="small mt-1">Capture the core personnel record only. Family, education, operations, deployments, awards and other extended records can be completed later in their responsible modules.</div></div>
+                                    </div>
+                                </div>
+
+                                <div class="cs-card">
+                                    <div class="cs-card-header"><h5><span class="cs-number">1</span>Identity &amp; Personal Details</h5><span class="text-muted small">Core identification</span></div>
+                                    <div class="cs-card-body">
+                                        <div class="row g-3">
+                                            <div class="col-md-3"><label class="cs-label" for="svcNo">Service Number <span class="cs-required">*</span></label><input type="text" name="svcNo" id="svcNo" class="form-control" required maxlength="20" inputmode="numeric" pattern="[0-9]+" value="<?=old('svcNo')?>"><div class="cs-help">Numbers only.</div></div>
+                                            <div class="col-md-2"><label class="cs-label" for="prefix">Prefix</label><select name="prefix" id="prefix" class="form-select"><option value="">None</option><?php foreach($prefixOptions as $p): ?><option value="<?=htmlspecialchars($p)?>" <?=old('prefix')===$p?'selected':''?>><?=htmlspecialchars($p)?></option><?php endforeach; ?></select></div>
+                                            <div class="col-md-3"><label class="cs-label" for="fname">Forname(s) <span class="cs-required">*</span></label><input type="text" name="fname" id="fname" class="form-control" required maxlength="100" value="<?=old('fname')?>"></div>
+                                            <div class="col-md-4"><label class="cs-label" for="lname">Surname <span class="cs-required">*</span></label><input type="text" name="lname" id="lname" class="form-control" required maxlength="100" value="<?=old('lname')?>"></div>
+
+                                            <div class="col-md-4"><label class="cs-label" for="nrc">NRC Number <span class="cs-required">*</span></label><input type="text" name="nrc" id="nrc" class="form-control <?=hasError('nrc')?'is-invalid':''?>" required maxlength="11" placeholder="123456/78/1" pattern="[0-9]{6}/[0-9]{2}/1" value="<?=old('nrc')?>"><?php if(hasError('nrc')):?><div class="invalid-feedback"><?=getError('nrc')?></div><?php endif; ?><div class="cs-help">Format: 123456/78/1</div></div>
+                                            <div class="col-md-4"><label class="cs-label" for="DOB">Date of Birth <span class="cs-required">*</span></label><input type="date" name="DOB" id="DOB" class="form-control" required value="<?=old('DOB')?>" min="1900-01-01" max="<?=date('Y-m-d',strtotime('-18 years'))?>"></div>
+                                            <div class="col-md-2"><label class="cs-label" for="gender">Gender <span class="cs-required">*</span></label><select name="gender" id="gender" class="form-select" required><option value="">Select</option><option value="Male" <?=old('gender')==='Male'?'selected':''?>>Male</option><option value="Female" <?=old('gender')==='Female'?'selected':''?>>Female</option></select></div>
+                                            <div class="col-md-2"><label class="cs-label" for="blood_group">Blood Group <span class="cs-required">*</span></label><select name="blood_group" id="blood_group" class="form-select" required><option value="">Select</option><?php foreach(['A+','A-','B+','B-','AB+','AB-','O+','O-'] as $bg): ?><option value="<?=$bg?>" <?=old('blood_group')===$bg?'selected':''?>><?=$bg?></option><?php endforeach; ?></select></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="cs-card">
+                                    <div class="cs-card-header"><h5><span class="cs-number">2</span>Service Details</h5><span class="text-muted small">Current service classification</span></div>
+                                    <div class="cs-card-body">
+                                        <div class="cs-identity"><i class="fa fa-info-circle text-primary me-1"></i> The appointment/posting is managed separately through <strong>Personnel Posting &amp; Appointments</strong>. This form records the initial unit only.</div>
+                                        <div class="row g-3">
+                                            <div class="col-md-4"><label class="cs-label" for="categorySelect">Category <span class="cs-required">*</span></label><select name="category" id="categorySelect" class="form-select" required><option value="">Select Category</option><option value="Officer" <?=old('category')==='Officer'?'selected':''?>>Officer</option><option value="Non-Commissioned Officer" <?=old('category')==='Non-Commissioned Officer'?'selected':''?>>Non-Commissioned Officer</option><option value="Civilian Employee" <?=old('category')==='Civilian Employee'?'selected':''?>>Civilian Employee</option></select></div>
+                                            <div class="col-md-4"><label class="cs-label" for="rankSelect">Rank <span class="cs-required">*</span></label><select name="rankID" id="rankSelect" class="form-select" required><option value="">Select Rank</option><?php $rankOptionsByCategory=[]; foreach($ranks as $rank){$cat=trim($rank->category??''); if(strtolower($cat)==='nco'||strtolower($cat)==='enlisted')$cat='Non-Commissioned Officer'; if(strtolower($cat)==='ce'||strtolower($cat)==='civilian')$cat='Civilian Employee'; $rankOptionsByCategory[$cat][]=$rank;} foreach($rankOptionsByCategory as $cat=>$opts): ?><optgroup label="<?=htmlspecialchars($cat)?>" data-category="<?=htmlspecialchars($cat)?>"><?php foreach($opts as $rank): ?><option value="<?=htmlspecialchars($rank->rankID)?>" data-rankindex="<?=htmlspecialchars($rank->rankIndex??$rank->level??'')?>" data-category="<?=htmlspecialchars($rank->category??'')?>" <?=old('rankID')==$rank->rankID?'selected':''?>><?=htmlspecialchars($rank->rankName)?></option><?php endforeach; ?></optgroup><?php endforeach; ?><optgroup label="Civilian Employee" data-category="Civilian Employee"><option value="mr" <?=old('rankID')==='mr'?'selected':''?>>Mr</option><option value="ms" <?=old('rankID')==='ms'?'selected':''?>>Ms</option></optgroup></select><div id="rank-info" class="cs-help"></div></div>
+                                            <div class="col-md-4"><label class="cs-label" for="unitID">Unit <span class="cs-required">*</span></label><select name="unitID" id="unitID" class="form-select" required><option value="">Select Unit</option><?php foreach($units as $unit): ?><option value="<?=htmlspecialchars($unit->unitID)?>" <?=old('unitID')==$unit->unitID?'selected':''?>><?=htmlspecialchars($unit->unitID)?><?php if(!empty($unit->unitLoc)): ?> — <?=htmlspecialchars($unit->unitLoc)?><?php endif; ?></option><?php endforeach; ?></select><div class="cs-help">Initial/current unit. Posting changes are handled separately.</div></div>
+                                            <div class="col-md-4"><label class="cs-label" for="corps">Corps</label><select name="corps" id="corps" class="form-select"><option value="">Select Corps</option><?php foreach($corps as $corp): ?><option value="<?=htmlspecialchars($corp->corpsName??$corp->corps??'')?>" <?=old('corps')===($corp->corpsName??$corp->corps??'')?'selected':''?>><?=htmlspecialchars($corp->corpsName??$corp->corps??'')?></option><?php endforeach; ?></select></div>
+                                            <div class="col-md-4"><label class="cs-label" for="dateOfEnlistment">Date of Enlistment <span class="cs-required">*</span></label><input type="date" name="dateOfEnlistment" id="dateOfEnlistment" class="form-control" required value="<?=old('dateOfEnlistment')?>"></div>
+                                            <div class="col-md-4"><label class="cs-label" for="trade">Trade / Specialisation</label><input type="text" name="trade" id="trade" class="form-control" maxlength="50" value="<?=old('trade')?>" placeholder="Optional"></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="cs-card">
+                                    <div class="cs-card-header"><h5><span class="cs-number">3</span>Contact &amp; Origin</h5><span class="text-muted small">Core contact information</span></div>
+                                    <div class="cs-card-body">
+                                        <div class="row g-3">
+                                            <div class="col-md-6"><label class="cs-label" for="email">Official Email <span class="cs-required">*</span></label><input type="email" name="email" id="email" class="form-control <?=hasError('email')?'is-invalid':''?>" required maxlength="100" value="<?=old('email')?>" placeholder="name@example.com"><?php if(hasError('email')):?><div class="invalid-feedback"><?=getError('email')?></div><?php endif; ?></div>
+                                            <div class="col-md-6"><label class="cs-label" for="phone">Phone Number <span class="cs-required">*</span></label><input type="tel" name="phone" id="phone" class="form-control <?=hasError('phone')?'is-invalid':''?>" required maxlength="20" value="<?=old('phone')?>" placeholder="+260 97X XXX XXX"><?php if(hasError('phone')):?><div class="invalid-feedback"><?=getError('phone')?></div><?php endif; ?></div>
+                                            <div class="col-md-4"><label class="cs-label" for="province">Province <span class="cs-required">*</span></label><select name="province" id="province" class="form-select" required><option value="">Select Province</option><?php foreach($provinceOptions as $province): ?><option value="<?=htmlspecialchars($province)?>" <?=old('province')===$province?'selected':''?>><?=htmlspecialchars($province)?></option><?php endforeach; ?></select></div>
+                                            <div class="col-md-4"><label class="cs-label" for="district">District <span class="cs-required">*</span></label><select name="district" id="district" class="form-select" required><option value="">Select District</option><?php if(!empty(old('province')) && !empty($provinceDistricts[old('province')])) foreach($provinceDistricts[old('province')] as $district): ?><option value="<?=htmlspecialchars($district)?>" <?=old('district')===$district?'selected':''?>><?=htmlspecialchars($district)?></option><?php endforeach; ?></select></div>
+                                            <div class="col-md-4"><label class="cs-label" for="religion">Religion <span class="cs-required">*</span></label><select name="religion" id="religion" class="form-select" required><option value="">Select Religion</option><?php foreach($religionOptions as $religion): ?><option value="<?=htmlspecialchars($religion)?>" <?=old('religion')===$religion?'selected':''?>><?=htmlspecialchars($religion)?></option><?php endforeach; ?></select></div>
+                                            <div class="col-md-6"><label class="cs-label" for="village">Village / Home Area <span class="cs-required">*</span></label><input type="text" name="village" id="village" class="form-control" required maxlength="100" value="<?=old('village')?>"></div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
+                            <div class="cs-actions"><div class="cs-actions-inner"><div class="small text-muted"><i class="fa fa-asterisk text-danger"></i> Required fields &nbsp;•&nbsp; Other personnel details can be completed after registration.</div><div class="d-flex gap-2"><button type="button" class="btn btn-outline-info" id="validateFormBtn"><i class="fa fa-check-circle"></i> Validate</button><button type="submit" class="btn btn-armis-primary px-4" id="submitBtn"><i class="fa fa-user-plus"></i> Register Staff</button></div></div></div>
                         </form>
                     </div>
                 </div>    <!-- Validation Summary Modal -->

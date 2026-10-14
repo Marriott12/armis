@@ -44,8 +44,10 @@ $sidebarLinks = [
     ['title' => 'Dashboard', 'url' => '/Armis2/admin_branch/index.php', 'icon' => 'tachometer-alt', 'page' => 'dashboard'],
 ];
 
-if (hasPermission(PERM_VIEW_STAFF)) {
+if (hasPermission(PERM_EDIT_STAFF)) {
     $sidebarLinks[] = ['title' => 'Staff Management', 'url' => '/Armis2/admin_branch/edit_staff.php', 'icon' => 'users', 'page' => 'staff'];
+}
+if (hasPermission(PERM_VIEW_STAFF)) {
     $sidebarLinks[] = ['title' => 'Search Personnel', 'url' => '/Armis2/admin_branch/advanced_search.php', 'icon' => 'search', 'page' => 'search'];
 }
 
