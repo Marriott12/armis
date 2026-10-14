@@ -1,4 +1,7 @@
 <?php
+define('ARMIS_ADMIN_BRANCH', true);
+require_once __DIR__ . '/includes/rbac_guard.php';
+adminBranchRequirePermission(PERM_VIEW_REPORTS);
 // Define module constants
 define('ARMIS_ADMIN_BRANCH', true);
 

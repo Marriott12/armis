@@ -1,4 +1,8 @@
 <?php
+define('ARMIS_JSON', true);
+define('ARMIS_ADMIN_BRANCH', true);
+require_once __DIR__ . '/includes/rbac_guard.php';
+adminBranchRequirePermission(PERM_EDIT_STAFF);
 /**
  * AJAX File Upload Handler for ARMIS
  * Handles document uploads for staff creation
@@ -7,6 +11,8 @@
 define('ARMIS_ADMIN_BRANCH', true);
 require_once dirname(__DIR__) . '/shared/file_upload_handler.php';
 require_once dirname(__DIR__) . '/admin_branch/includes/auth.php';
+require_once dirname(__DIR__) . '/shared/csrf.php';
+require_once dirname(__DIR__) . '/shared/permissions.php';
 
 // Set JSON response headers
 header('Content-Type: application/json');
@@ -19,6 +25,7 @@ if (!isLoggedIn()) {
 }
 
 // Handle POST requests only
+if ($_SERVER['REQUEST_METHOD'] === 'POST') { require_csrf(); }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     echo json_encode(['success' => false, 'message' => 'Method not allowed']);
@@ -27,6 +34,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 try {
     $action = $_POST['action'] ?? '';
+    if (in_array($action, ['upload_document','delete_document'], true) && !hasPermission(PERM_EDIT_STAFF)) {
+        throw new Exception('You do not have permission to modify staff documents.');
+    }
+    if ($action === 'upload_document' && (string)($_POST['svcNo'] ?? '') !== '' && !canAlterStaffRecord((string)$_POST['svcNo'])) {
+        throw new Exception('This staff record is outside your authorized branch.');
+    }
     
     switch ($action) {
         case 'upload_document':

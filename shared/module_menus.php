@@ -15,7 +15,7 @@ if (!function_exists('__armisFilterMenuByAccess')) {
     function __armisFilterMenuByAccess(array $items) {
         $roleInfo = function_exists('getRoleInfo') ? getRoleInfo() : null;
         $canWrite = ($roleInfo && (($roleInfo['access'] ?? '') === 'write'))
-            || in_array(strtolower($_SESSION['role'] ?? ''), ['admin', 'administrator', 'superadmin'], true);
+            || in_array(strtolower($_SESSION['role'] ?? ''), ['admin'], true);
         $out = [];
         foreach ($items as $item) {
             if (isset($item['children'])) {

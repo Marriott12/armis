@@ -1,4 +1,8 @@
 <?php
+define('ARMIS_JSON', true);
+define('ARMIS_ADMIN_BRANCH', true);
+require_once __DIR__ . '/includes/rbac_guard.php';
+adminBranchRequirePermission(PERM_VIEW_STAFF);
 /**
  * AJAX Endpoint for DataTables - Get Staff by Rank
  * Returns staff members at a specific rank in DataTables format

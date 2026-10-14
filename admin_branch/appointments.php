@@ -1,4 +1,8 @@
 <?php
+define('ARMIS_ADMIN_BRANCH', true);
+require_once __DIR__ . '/includes/rbac_guard.php';
+adminBranchRequireWrite();
+adminBranchRequirePermission(PERM_MANAGE_APPOINTMENTS);
 // Always initialize state variables up front so they exist before any
 // try/catch block below can reference them (fixes "Undefined variable" warnings).
 $selectedStaff = [];
@@ -12,7 +16,7 @@ $appointedStaffRows = []; // structured data for the post-submit summary table
 
 // Define module constants
 define('ARMIS_ADMIN_BRANCH', true);
-define('ARMIS_DEVELOPMENT', true);
+define('ARMIS_DEVELOPMENT', false);
 
 // Configure minimal error logging for this page
 ini_set('log_errors', 1);
@@ -263,6 +267,7 @@ if ($currentRankId) {
 
 // Step 2: Handle form submission for appointments
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['appoint_staff'])) {
+    adminBranchRequireCsrf();
     error_log("APPOINTMENTS: Form submission received");
 
     $selectedStaff = $_POST['selected_staff'] ?? [];

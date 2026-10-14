@@ -1,4 +1,8 @@
 <?php
+define('ARMIS_JSON', true);
+define('ARMIS_ADMIN_BRANCH', true);
+require_once __DIR__ . '/includes/rbac_guard.php';
+adminBranchRequirePermission(PERM_VIEW_STAFF);
 /**
  * AJAX Endpoint: Get Appointment History for Staff Member
  * Returns HTML table of all appointments for a given service number

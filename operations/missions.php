@@ -1,4 +1,5 @@
 <?php
+require_once dirname(__DIR__) . '/shared/csrf.php';
 // Start session if not already started
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -16,7 +17,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 // Check if user has access to operations module
-requireModuleAccess('operations');
+requireModuleWriteAccess('operations');
 
 $pageTitle = "Operations | Missions";
 $moduleName = "Operations";
@@ -32,6 +33,7 @@ try {
     $operationsManager = new OperationsManager($_SESSION['user_id']);
     // Handle form submissions
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        require_csrf();
         $missionName = trim($_POST['mission_name'] ?? '');
         $missionCode = trim($_POST['mission_code'] ?? '');
         $description = trim($_POST['description'] ?? '');
@@ -154,6 +156,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
         <div class="card-header">Add New Mission</div>
         <div class="card-body">
             <form method="POST" action="">
+<?= csrf_field() ?>
                 <div class="row">
                     <div class="col-md-6">
                         <label for="mission_name" class="form-label">Mission Name</label>
@@ -227,6 +230,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
         <div class="card-header">Edit Mission</div>
         <div class="card-body">
             <form method="POST" action="">
+<?= csrf_field() ?>
                 <input type="hidden" name="edit_id" value="<?= $editMission['mission_id'] ?>">
                 <div class="row">
                     <div class="col-md-6">
@@ -333,6 +337,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
         <div class="card-header bg-danger text-white">Delete Mission</div>
         <div class="card-body">
             <form method="POST" action="">
+<?= csrf_field() ?>
                 <input type="hidden" name="delete_id" value="<?= $deleteMission['mission_id'] ?>">
                 <p>Are you sure you want to delete the mission <strong><?= htmlspecialchars($deleteMission['mission_name']) ?></strong>?</p>
                 <div class="mt-3 text-end">

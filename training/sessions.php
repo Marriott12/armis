@@ -1,4 +1,5 @@
 <?php
+require_once dirname(__DIR__) . '/shared/csrf.php';
 
 // SECURITY FIX: this page previously had no authentication, no session
 // handling, and no RBAC check at all - it was reachable by anyone with
@@ -12,13 +13,14 @@ if (!isset($_SESSION['user_id'])) {
     header('Location: /Armis2/login.php?return_url=' . urlencode($_SERVER['REQUEST_URI'] ?? ''));
     exit();
 }
-requireModuleAccess('training');
+requireModuleWriteAccess('training');
 
 // List, add, edit, delete training sessions
 require_once 'training_manager.php';
 $manager = new TrainingManager();
 // Handle add/edit/delete
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     if (isset($_POST['add'])) {
         $manager->addSession([
             'course_id' => $_POST['course_id'],
@@ -75,6 +77,7 @@ $courses = $manager->getAllCourses();
                     <td><?= $session['assigned_count'] ?></td>
                     <td>
                         <form method="POST" style="display:inline-block">
+<?= csrf_field() ?>
                             <input type="hidden" name="delete_id" value="<?= $session['id'] ?>">
                             <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this session?')">Delete</button>
                         </form>
@@ -86,6 +89,7 @@ $courses = $manager->getAllCourses();
     </table>
     <h3 class="mt-4">Add Session</h3>
     <form method="POST" class="mb-4">
+<?= csrf_field() ?>
         <div class="mb-2">
             <select name="course_id" class="form-select" required>
                 <option value="">Select Course</option>
@@ -102,6 +106,7 @@ $courses = $manager->getAllCourses();
     <div id="editForm" style="display:none;">
         <h3>Edit Session</h3>
         <form method="POST">
+<?= csrf_field() ?>
             <input type="hidden" name="edit_id" id="edit_id">
             <div class="mb-2">
                 <select name="course_id" id="edit_course_id" class="form-select" required>

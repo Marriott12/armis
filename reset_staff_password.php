@@ -8,11 +8,15 @@
  * 2. Via CLI: php reset_staff_password.php --service-number=108458
  */
 
-// Start session
-session_start();
+// Start secure session
+require_once __DIR__ . '/shared/session_security.php';
+armisStartSecureSession();
 
 // Database connection
 require_once __DIR__ . '/shared/database_connection.php';
+require_once __DIR__ . '/admin_branch/includes/auth.php';
+require_once __DIR__ . '/shared/csrf.php';
+require_once __DIR__ . '/shared/permissions.php';
 
 // Check if running from CLI
 $isCLI = php_sapi_name() === 'cli';
@@ -129,6 +133,8 @@ if ($isCLI) {
     exit;
     
     // === WEB MODE ===
+requireAdmin();
+if ($_SERVER['REQUEST_METHOD'] === 'POST') { require_csrf(); }
     
     // Simple authentication check (must be logged in as admin)
     if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
@@ -300,6 +306,7 @@ if ($isCLI) {
                     <?php else: ?>
                         
                         <form method="POST" action="">
+<?= csrf_field() ?>
                             <div class="mb-3">
                                 <label for="svcNo" class="form-label">
                                     <i class="fas fa-id-badge"></i> Staff Service Number <span class="text-danger">*</span>

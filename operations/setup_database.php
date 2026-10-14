@@ -14,7 +14,7 @@ $message = '';
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
-    if (!in_array(strtolower($_SESSION['role'] ?? ''), ['admin', 'administrator', 'superadmin'], true)) {
+    if (!in_array(strtolower($_SESSION['role'] ?? ''), ['admin'], true)) {
         http_response_code(403);
         $error = 'Only system administrators can apply database migrations.';
     } else {
@@ -38,6 +38,6 @@ include dirname(__DIR__) . '/shared/sidebar.php';
   <?php if ($message): ?><div class="alert alert-success" role="status"><?= htmlspecialchars($message) ?></div><?php endif; ?>
   <?php if ($error): ?><div class="alert alert-danger" role="alert"><?= htmlspecialchars($error) ?></div><?php endif; ?>
   <p class="text-muted">Creates the required Operations mission, deployment, resource, personnel, reporting, and activity-log tables. Existing tables and records are retained.</p>
-  <?php if (in_array(strtolower($_SESSION['role'] ?? ''), ['admin', 'administrator', 'superadmin'], true)): ?><form method="post"><?= csrf_field() ?><button class="btn btn-primary" type="submit"><i class="fas fa-database"></i> Set Up Operations Database</button></form><?php else: ?><div class="alert alert-info">Ask a system administrator to run the database setup.</div><?php endif; ?>
+  <?php if (in_array(strtolower($_SESSION['role'] ?? ''), ['admin'], true)): ?><form method="post"><?= csrf_field() ?><button class="btn btn-primary" type="submit"><i class="fas fa-database"></i> Set Up Operations Database</button></form><?php else: ?><div class="alert alert-info">Ask a system administrator to run the database setup.</div><?php endif; ?>
 </div></div></div>
 <?php include dirname(__DIR__) . '/shared/footer.php'; ?>

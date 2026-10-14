@@ -10,16 +10,18 @@ require_once dirname(__DIR__) . '/shared/military_formatting.php';
 
 // Include RBAC compatibility layer
 require_once dirname(__DIR__) . '/shared/rbac_compat.php';
+require_once dirname(__DIR__) . '/shared/permissions.php';
 
 // Include database functions for user profile data
 require_once dirname(__DIR__) . '/shared/database_connection.php';
 
 // Check if user is logged in
 $isLoggedIn = isset($_SESSION['user_id']);
-$userName = $_SESSION['name'] ?? 'User';
+$userName = $_SESSION['name'] ?? '';
 $userRank = $_SESSION['rank'] ?? '';
 $userRankAbbr = $_SESSION['rank_abbr'] ?? '';
 $userFirstName = $_SESSION['fName'] ?? ($_SESSION['fname'] ?? '');
+$userMiddleName = $_SESSION['mName'] ?? ($_SESSION['mname'] ?? '');
 $userLastName = $_SESSION['lName'] ?? ($_SESSION['lname'] ?? '');
 $userRole = $_SESSION['role'] ?? '';
 $userCategory = $_SESSION['category'] ?? '';
@@ -35,6 +37,7 @@ if ($isLoggedIn && isset($_SESSION['user_id']) && function_exists('getUserProfil
         // Update session with fresh database data
         $_SESSION['rank'] = $userProfileData['rank_name'] ?? $userRank;
         $_SESSION['rank_abbr'] = $userProfileData['rank_abbr'] ?? $userRankAbbr;
+        $_SESSION['category'] = $userProfileData['category'] ?? $userCategory;
         $_SESSION['unit'] = $userProfileData['unit_name'] ?? ($_SESSION['unit'] ?? 'Unknown');
         $_SESSION['svcNo'] = $userProfileData['svcNo'] ?? ($_SESSION['svcNo'] ?? '');
         $_SESSION['email'] = $userProfileData['email'] ?? ($_SESSION['email'] ?? '');
@@ -43,13 +46,24 @@ if ($isLoggedIn && isset($_SESSION['user_id']) && function_exists('getUserProfil
         $userRank = $_SESSION['rank'];
         $userRankAbbr = $_SESSION['rank_abbr'];
         $userFirstName = $userProfileData['fName'] ?? $userFirstName;
+        $userMiddleName = $userProfileData['mName'] ?? $userMiddleName;
         $userLastName = $userProfileData['lName'] ?? $userLastName;
+        $_SESSION['mName'] = $userMiddleName;
     }
 }
 
-$formattedUserName = function_exists('formatMilitaryName')
-    ? formatMilitaryName($userRank, $userRankAbbr, $userFirstName, $userLastName, $userCategory)
-    : htmlspecialchars(trim($userRank . ' ' . $userFirstName . ' ' . $userLastName));
+// Header identity: include the middle-name initial when a middle name exists.
+$formattedUserName = '';
+if ($isLoggedIn) {
+    $formattedUserName = formatMilitaryName(
+        $userRank,
+        $userRankAbbr,
+        $userFirstName,
+        $userLastName,
+        $userCategory,
+        $userMiddleName
+    );
+}
 
 if (empty($moduleStylesheet) && ($moduleName ?? '') === 'Operations') {
     $moduleStylesheet = '/Armis2/operations/module.css';
@@ -57,7 +71,7 @@ if (empty($moduleStylesheet) && ($moduleName ?? '') === 'Operations') {
 
 // Set performance headers with fallback for REQUEST_TIME_FLOAT
 $startTime = $_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true);
-header('X-Powered-By: ARMIS v1.0');
+header('X-Powered-By: Army Resource Management Information System');
 header('X-Response-Time: ' . (microtime(true) - $startTime));
 ?>
 <!DOCTYPE html>
@@ -66,8 +80,8 @@ header('X-Response-Time: ' . (microtime(true) - $startTime));
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Army Resource Management Information System - Comprehensive military resource management platform">
-    <meta name="keywords" content="ARMIS, Army, Resource Management, Military, Administration">
-    <meta name="author" content="ARMIS Development Team">
+    <meta name="keywords" content="Army, Resource Management, Military, Administration">
+    <meta name="author" content="Army Resource Management Information System Development Team">
     <meta name="robots" content="noindex, nofollow">
 
     <!-- Performance optimizations -->
@@ -86,7 +100,7 @@ header('X-Response-Time: ' . (microtime(true) - $startTime));
     <link rel="preconnect" href="https://cdn.jsdelivr.net">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com">
 
-    <title><?php echo isset($pageTitle) ? htmlspecialchars($pageTitle) . ' | ARMIS' : 'ARMIS - Army Resource Management Information System'; ?></title>
+    <title><?php echo isset($pageTitle) ? htmlspecialchars($pageTitle) . ' | Army Resource Management Information System' : 'Army Resource Management Information System'; ?></title>
 
     <!-- Critical CSS - inline for performance -->
     <style>
@@ -144,9 +158,13 @@ header('X-Response-Time: ' . (microtime(true) - $startTime));
                 display: inline !important;
             }
         }
-        .dropdown-menu {
-            max-height: 400px;
-            overflow-y: auto;
+        .dropdown-menu { max-height: 400px; overflow-y: auto; }
+        .navbar-custom .nav-link { white-space: nowrap; }
+        .navbar-custom .badge { font-size: .72rem; letter-spacing: .2px; }
+        @media (max-width: 991.98px) {
+            .navbar-custom { padding: .45rem .75rem; }
+            .navbar-custom .navbar-collapse { padding-top: .5rem; }
+            .navbar-custom .navbar-nav { gap: .15rem; }
         }
         .page-loader {
             position: fixed;
@@ -206,247 +224,159 @@ header('X-Response-Time: ' . (microtime(true) - $startTime));
     <div class="page-loader">
         <div class="text-center">
             <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Loading ARMIS...</span>
+                <span class="visually-hidden">Loading...</span>
             </div>
         </div>
     </div>
 
-    <!-- Navigation Header -->
-    <nav class="navbar navbar-expand-lg navbar-dark navbar-custom fixed-top">
+    <!-- Navigation Header: fully session- and permission-driven. Anonymous users see only Login. -->
+    <nav class="navbar navbar-expand-lg navbar-dark navbar-custom fixed-top" aria-label="Main navigation">
         <div class="container-fluid">
-            <a class="navbar-brand d-flex align-items-center" href="/Armis2/">
-                <img src="/Armis2/logo.png" alt="ARMIS Logo" height="30" class="me-2" onerror="this.style.display='none'">
+            <a class="navbar-brand d-flex align-items-center" href="<?= $isLoggedIn ? htmlspecialchars(getRoleDashboardUrl(), ENT_QUOTES) : '/Armis2/login.php' ?>">
+                <img src="/Armis2/logo.png" alt="Army Resource Management Information System" height="30" class="me-2" onerror="this.style.display='none'">
                 <span class="system-title">Army Resource Management Information System</span>
-                <!--<span class="system-title-short">ARMIS</span>-->
             </a>
+
             <?php if ($isLoggedIn): ?>
-            <button class="btn btn-outline-light d-sm-none me-2" type="button" onclick="toggleSidebar()">
-                <i class="fas fa-bars"></i>
-            </button>
-            <?php endif; ?>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <?php if ($isLoggedIn): ?>
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                            <i class="fas fa-th-large"></i> Modules
-                        </a>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <?php
-                            // Module configs
-                            $moduleConfigs = [
-                                'admin' => [
-                                    'title' => 'System Admin',
-                                    'icon' => 'user-shield',
-                                    'color' => 'primary',
-                                    'url' => '/Armis2/admin/index.php',
-                                    'category' => 'System Management'
-                                ],
-                                'admin_branch' => [
-                                    'title' => 'Admin Branch',
-                                    'icon' => 'users-cog',
-                                    'color' => 'success',
-                                    'url' => '/Armis2/admin_branch/index.php',
-                                    'category' => 'System Management'
-                                ],
-                                'command' => [
-                                    'title' => 'Command',
-                                    'icon' => 'chess-king',
-                                    'color' => 'warning',
-                                    'url' => '/Armis2/command/index.php',
-                                    'category' => 'Operations'
-                                ],
-                                'operations' => [
-                                    'title' => 'Operations',
-                                    'icon' => 'map-marked-alt',
-                                    'color' => 'danger',
-                                    'url' => '/Armis2/operations/index.php',
-                                    'category' => 'Operations'
-                                ],
-                                'training' => [
-                                    'title' => 'Training',
-                                    'icon' => 'graduation-cap',
-                                    'color' => 'info',
-                                    'url' => '/Armis2/training/index.php',
-                                    'category' => 'Resources'
-                                ],
-                                'finance' => [
-                                    'title' => 'Finance',
-                                    'icon' => 'dollar-sign',
-                                    'color' => 'secondary',
-                                    'url' => '/Armis2/finance/index.php',
-                                    'category' => 'Resources'
-                                ],
-                                'ordinance' => [
-                                    'title' => 'Ordinance',
-                                    'icon' => 'tools',
-                                    'color' => 'dark',
-                                    'url' => '/Armis2/ordinance/index.php',
-                                    'category' => 'Resources'
-                                ]
-                            ];
-                            // Group modules by category
-                            $groupedModules = [];
-                            foreach ($userModules as $module) {
-                                if (isset($moduleConfigs[$module])) {
-                                    $config = $moduleConfigs[$module];
-                                    $groupedModules[$config['category']][] = array_merge($config, ['module' => $module]);
-                                }
-                            }
-                            // Display grouped modules or fallback message
-                            if (!empty($groupedModules)) {
-                                foreach ($groupedModules as $category => $modules): ?>
-                                    <li><h6 class="dropdown-header">
-                                        <i class="fas fa-<?php echo $category === 'System Management' ? 'cogs' : ($category === 'Operations' ? 'chess-king' : 'tools'); ?>"></i>
-                                        <?php echo htmlspecialchars($category); ?>
-                                    </h6></li>
-                                    <?php foreach ($modules as $module): ?>
-                                        <li><a class="dropdown-item" href="<?php echo htmlspecialchars($module['url']); ?>">
-                                            <i class="fas fa-<?php echo htmlspecialchars($module['icon']); ?> text-<?php echo htmlspecialchars($module['color']); ?>"></i>
-                                            <?php echo htmlspecialchars($module['title']); ?>
-                                        </a></li>
-                                    <?php endforeach; ?>
-                                    <?php if ($category !== array_key_last($groupedModules)): ?>
-                                        <li><hr class="dropdown-divider"></li>
-                                    <?php endif; ?>
-                                <?php endforeach;
-                            } else { ?>
-                                <li>
-                                    <span class="dropdown-item text-muted">
-                                        <i class="fas fa-info-circle"></i> No modules assigned to your account.
-                                    </span>
-                                </li>
-                            <?php } ?>
-                        </ul>
-                    </li>
-                    <!-- Notification bell — real, DB-backed, polls
-                         shared/notifications_api.php. Replaces the
-                         previously-disabled notification system. -->
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle position-relative" href="#" role="button" data-bs-toggle="dropdown" id="notificationBellToggle">
-                            <i class="fas fa-bell"></i>
-                            <span id="notificationBadge" class="badge rounded-pill bg-danger position-absolute" style="top:0; right:0; font-size:0.6rem; display:none;">0</span>
-                        </a>
-                        <div class="dropdown-menu dropdown-menu-end p-0" id="notificationDropdown" style="width:340px; max-height:420px; overflow-y:auto;">
-                            <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
-                                <strong>Notifications</strong>
-                                <button type="button" class="btn btn-link btn-sm p-0" id="markAllReadBtn">Mark all read</button>
-                            </div>
-                            <div id="notificationList">
-                                <div class="text-center text-muted py-3">Loading...</div>
-                            </div>
-                        </div>
-                    </li>
-                    <?php if (function_exists('hasModuleAccess') && (hasModuleAccess('admin_branch') || hasModuleAccess('admin'))): ?>
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                                <i class="fas fa-chart-line"></i> Reports
+                <?php
+                $currentBranch = function_exists('getUserBranchInfo') ? getUserBranchInfo() : null;
+                $roleLabel = function_exists('getRoleDisplayLabel') ? getRoleDisplayLabel($userRole) : strtoupper((string)$userRole);
+                $landingUrl = function_exists('getRoleDashboardUrl') ? getRoleDashboardUrl($userRole) : '/Armis2/users/index.php';
+                $canViewReports = function_exists('hasPermission') && hasPermission(PERM_VIEW_REPORTS);
+                $hasModuleLinks = !empty($userModules);
+                $reportLinks = [];
+                if ($canViewReports) {
+                    if (function_exists('hasModuleAccess') && hasModuleAccess('admin_branch')) {
+                        $reportLinks = [
+                            ['title'=>'Seniority Roll','url'=>'/Armis2/admin_branch/reports_seniority.php','icon'=>'list-ol'],
+                            ['title'=>'By Rank','url'=>'/Armis2/admin_branch/reports_rank.php','icon'=>'medal'],
+                            ['title'=>'Unit Reports','url'=>'/Armis2/admin_branch/reports_units.php','icon'=>'building'],
+                            ['title'=>'Corps Reports','url'=>'/Armis2/admin_branch/reports_corps.php','icon'=>'shield-alt'],
+                        ];
+                    } elseif ($currentBranch) {
+                        $branchCode = strtolower((string)$currentBranch['code']);
+                        $branchReportMap = [
+                            'command' => '/Armis2/command/reports.php',
+                            'operations' => '/Armis2/operations/reports.php',
+                            'training' => '/Armis2/training/index.php',
+                            'finance' => '/Armis2/finance/reports.php',
+                        ];
+                        if (isset($branchReportMap[$branchCode])) {
+                            $reportLinks[] = ['title'=>'Branch Reports','url'=>$branchReportMap[$branchCode],'icon'=>'chart-line'];
+                        }
+                    }
+                }
+                ?>
+                <button class="btn btn-outline-light d-lg-none me-2" type="button" onclick="toggleSidebar()" aria-label="Toggle sidebar">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav align-items-lg-center ms-auto justify-content-end">
+                        <li class="nav-item">
+                            <a class="nav-link" href="<?= htmlspecialchars($landingUrl, ENT_QUOTES) ?>" title="Main dashboard">
+                                <i class="fas fa-home"></i><span class="d-none d-xl-inline ms-1">Dashboard</span>
                             </a>
-                            <ul class="dropdown-menu dropdown-menu-end">
-                                <li><a class="dropdown-item" href="/Armis2/admin_branch/reports_seniority.php">
-                                    <i class="fas fa-list-ol"></i> Seniority Roll
-                                </a></li>
-                                <li><a class="dropdown-item" href="/Armis2/admin_branch/reports_rank.php">
-                                    <i class="fas fa-medal"></i> By Rank
-                                </a></li>
-                                <li><a class="dropdown-item" href="/Armis2/admin_branch/reports_units.php">
-                                    <i class="fas fa-building"></i> Unit Reports
-                                </a></li>
-                                <li><a class="dropdown-item" href="/Armis2/admin_branch/reports_corps.php">
-                                    <i class="fas fa-shield-alt"></i> Corps Reports
-                                </a></li>
-                                <?php if (hasModuleAccess('admin')): ?>
+                        </li>
+                        <?php if ($hasModuleLinks): ?>
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-th-large"></i> <span class="d-none d-md-inline">Modules</span>
+                            </a>
+                            <ul class="dropdown-menu">
+                                <?php
+                                $moduleConfigs = [
+                                    'admin'=>['title'=>'System Admin','icon'=>'user-shield','url'=>'/Armis2/admin/index.php','category'=>'System Management'],
+                                    'admin_branch'=>['title'=>'Admin Branch','icon'=>'users-cog','url'=>'/Armis2/admin_branch/index.php','category'=>'System Management'],
+                                    'command'=>['title'=>'Command','icon'=>'chess-king','url'=>'/Armis2/command/index.php','category'=>'Branches'],
+                                    'operations'=>['title'=>'Operations','icon'=>'map-marked-alt','url'=>'/Armis2/operations/index.php','category'=>'Branches'],
+                                    'training'=>['title'=>'Training','icon'=>'graduation-cap','url'=>'/Armis2/training/index.php','category'=>'Branches'],
+                                    'finance'=>['title'=>'Finance','icon'=>'dollar-sign','url'=>'/Armis2/finance/index.php','category'=>'Branches'],
+                                    'ordinance'=>['title'=>'Ordinance','icon'=>'tools','url'=>'/Armis2/ordinance/index.php','category'=>'Branches'],
+                                    'users'=>['title'=>'User Account','icon'=>'user-cog','url'=>'/Armis2/users/index.php','category'=>'Account'],
+                                ];
+                                $groupedModules=[];
+                                foreach ($userModules as $module) {
+                                    if (!isset($moduleConfigs[$module])) continue;
+                                    $cfg=$moduleConfigs[$module];
+                                    $groupedModules[$cfg['category']][] = array_merge($cfg,['module'=>$module]);
+                                }
+                                foreach ($groupedModules as $category=>$modules): ?>
+                                    <li><h6 class="dropdown-header"><?= htmlspecialchars($category) ?></h6></li>
+                                    <?php foreach ($modules as $module): ?>
+                                        <li><a class="dropdown-item" href="<?= htmlspecialchars($module['url'], ENT_QUOTES) ?>"><i class="fas fa-<?= htmlspecialchars($module['icon']) ?> me-2"></i><?= htmlspecialchars($module['title']) ?></a></li>
+                                    <?php endforeach; ?>
+                                <?php endforeach; ?>
+                            </ul>
+                        </li>
+                        <?php endif; ?>
+                        <?php if (!empty($reportLinks)): ?>
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-chart-line"></i> <span class="d-none d-md-inline">Reports</span>
+                            </a>
+                            <ul class="dropdown-menu">
+                                <?php foreach ($reportLinks as $report): ?>
+                                    <li><a class="dropdown-item" href="<?= htmlspecialchars($report['url'], ENT_QUOTES) ?>"><i class="fas fa-<?= htmlspecialchars($report['icon']) ?> me-2"></i><?= htmlspecialchars($report['title']) ?></a></li>
+                                <?php endforeach; ?>
+                                <?php if ($userRole === 'admin'): ?>
                                     <li><hr class="dropdown-divider"></li>
-                                    <li><a class="dropdown-item" href="/Armis2/admin/health.php">
-                                        <i class="fas fa-heartbeat"></i> System Health
-                                    </a></li>
+                                    <li><a class="dropdown-item" href="/Armis2/admin/health.php"><i class="fas fa-heartbeat me-2"></i>System Health</a></li>
                                 <?php endif; ?>
                             </ul>
                         </li>
-                    <?php endif; ?>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                            <i class="fas fa-user-circle"></i>
-                            <span class="d-none d-md-inline"><?php echo htmlspecialchars($formattedUserName); ?></span>
-                            <span class="d-md-none">Account</span>
-                        </a>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <li><h6 class="dropdown-header">
-                                <i class="fas fa-id-badge"></i> <?php echo htmlspecialchars($formattedUserName); ?><br>
-                                <small class="text-muted">
-                                    <?php echo htmlspecialchars(ucfirst($userRole)); ?>
-                                    <?php if (!empty($_SESSION['svcNo'])): ?>
-                                        | SVC: <?php echo htmlspecialchars($_SESSION['svcNo']); ?>
-                                    <?php endif; ?>
-                                </small>
-                                <?php if ($userProfileData): ?>
-                                    <br><small class="text-muted">
-                                        <?php if (!empty($_SESSION['unit'])): ?>
-                                            📍 <?php echo htmlspecialchars($_SESSION['unit']); ?>
-                                        <?php endif; ?>
-                                        <?php if (!empty($_SESSION['corps']) && $_SESSION['corps'] !== $_SESSION['unit']): ?>
-                                            | <?php echo htmlspecialchars($_SESSION['corps']); ?>
-                                        <?php endif; ?>
-                                    </small>
-                                    <?php if (!empty($userProfileData['lastLogin']) && $userProfileData['lastLogin'] !== '0000-00-00 00:00:00'): ?>
-                                        <br><small class="text-muted">
-                                            🕒 Last Login: <?php echo date('M j, Y g:i A', strtotime($userProfileData['lastLogin'])); ?>
-                                        </small>
-                                    <?php endif; ?>
-                                <?php endif; ?>
-                            </h6></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="/Armis2/users/index.php">
-                                <i class="fas fa-user-edit"></i> My Profile
-                                <?php if ($userProfileData && !empty($userProfileData['email'])): ?>
-                                    <small class="d-block text-muted">✉️ <?php echo htmlspecialchars($userProfileData['email']); ?></small>
-                                <?php endif; ?>
-                            </a></li>
-                            <?php if ($userProfileData && !empty($userProfileData['tel'])): ?>
-                                <li><a class="dropdown-item" href="tel:<?php echo htmlspecialchars($userProfileData['tel']); ?>">
-                                    <i class="fas fa-phone"></i> Contact: <?php echo htmlspecialchars($userProfileData['tel']); ?>
-                                </a></li>
-                            <?php endif; ?>
-                            <li><a class="dropdown-item" href="/Armis2/users/index.php">
-                                <i class="fas fa-id-card"></i> Account Details
-                                <?php if ($userProfileData && !empty($userProfileData['attestDate'])): ?>
-                                    <small class="d-block text-muted">📅 Enlisted: <?php echo date('M j, Y', strtotime($userProfileData['attestDate'])); ?></small>
-                                <?php endif; ?>
-                            </a></li>
-                            <li><a class="dropdown-item" href="/Armis2/users/settings.php">
-                                <i class="fas fa-cog"></i> Settings & Preferences
-                            </a></li>
-                            <?php if ($userProfileData && !empty($userProfileData['nok'])): ?>
+                        <?php endif; ?>
+                    </ul>
+
+                    <ul class="navbar-nav align-items-lg-center">
+                        <?php if ($currentBranch): ?>
+                        <li class="nav-item d-none d-xl-block me-2">
+                            <span class="badge rounded-pill bg-light text-dark border" title="Posted branch">
+                                <i class="fas fa-sitemap me-1"></i><?= htmlspecialchars($currentBranch['name']) ?>
+                            </span>
+                        </li>
+                        <?php endif; ?>
+                        <li class="nav-item d-none d-md-block me-1">
+                            <span class="badge rounded-pill bg-warning text-dark" title="Role">
+                                <?= htmlspecialchars($roleLabel) ?>
+                            </span>
+                        </li>
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle position-relative" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false" id="notificationBellToggle" title="Notifications">
+                                <i class="fas fa-bell"></i>
+                                <span id="notificationBadge" class="badge rounded-pill bg-danger position-absolute" style="top:0;right:0;font-size:.6rem;display:none;">0</span>
+                            </a>
+                            <div class="dropdown-menu dropdown-menu-end p-0" id="notificationDropdown" style="width:340px;max-height:420px;overflow-y:auto;">
+                                <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom"><strong>Notifications</strong><button type="button" class="btn btn-link btn-sm p-0" id="markAllReadBtn">Mark all read</button></div>
+                                <div id="notificationList"><div class="text-center text-muted py-3">Loading...</div></div>
+                            </div>
+                        </li>
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-user-circle"></i>
+                                <span class="d-none d-md-inline"><?= htmlspecialchars(trim($formattedUserName) ?: $roleLabel) ?></span>
+                                <span class="d-md-none"><?= htmlspecialchars($roleLabel ?: 'Account') ?></span>
+                            </a>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><h6 class="dropdown-header"><i class="fas fa-id-badge me-1"></i><?= htmlspecialchars(trim($formattedUserName) ?: $roleLabel) ?><br><small class="text-muted"><?= htmlspecialchars($roleLabel) ?><?php if (!empty($_SESSION['svcNo'])): ?> | SVC: <?= htmlspecialchars($_SESSION['svcNo']) ?><?php endif; ?></small></h6></li>
                                 <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item text-warning" href="tel:<?php echo htmlspecialchars($userProfileData['nokTel'] ?? ''); ?>">
-                                    <i class="fas fa-exclamation-triangle"></i> Emergency Contact
-                                    <small class="d-block text-muted"><?php echo htmlspecialchars($userProfileData['nok']); ?>
-                                    <?php if (!empty($userProfileData['nokTel'])): ?>
-                                        - <?php echo htmlspecialchars($userProfileData['nokTel']); ?>
-                                    <?php endif; ?>
-                                    </small>
-                                </a></li>
-                            <?php endif; ?>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item text-danger" href="/Armis2/logout.php">
-                                <i class="fas fa-sign-out-alt"></i> Logout
-                            </a></li>
-                        </ul>
-                    </li>
-                </ul>
-                <?php else: ?>
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="/Armis2/login.php">
-                            <i class="fas fa-sign-in-alt"></i> Login
-                        </a>
-                    </li>
-                </ul>
-                <?php endif; ?>
-            </div>
+                                <li><a class="dropdown-item" href="/Armis2/users/index.php"><i class="fas fa-user-edit me-2"></i>My Profile</a></li>
+                                <li><a class="dropdown-item" href="/Armis2/users/settings.php"><i class="fas fa-cog me-2"></i>Settings & Preferences</a></li>
+                                <li><a class="dropdown-item" href="/Armis2/users/cv_download.php"><i class="fas fa-download me-2"></i>Download CV</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item text-danger" href="/Armis2/logout.php"><i class="fas fa-sign-out-alt me-2"></i>Logout</a></li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+            <?php else: ?>
+                <div>
+                    <a class="btn btn-outline-light btn-sm" href="/Armis2/login.php"><i class="fas fa-sign-in-alt me-1"></i>Login</a>
+                </div>
+            <?php endif; ?>
         </div>
     </nav>
     <!-- This padding ensures content is never hidden by the fixed navbar. Remove any duplicate padding. -->

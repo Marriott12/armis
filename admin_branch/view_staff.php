@@ -1,6 +1,9 @@
 <?php
 define('ARMIS_ADMIN_BRANCH', true);
-define('ARMIS_DEVELOPMENT', true);
+require_once __DIR__ . '/includes/rbac_guard.php';
+adminBranchRequirePermission(PERM_VIEW_STAFF);
+define('ARMIS_ADMIN_BRANCH', true);
+define('ARMIS_DEVELOPMENT', false);
 
 require_once dirname(__DIR__) . '/shared/database_connection.php';
 require_once dirname(__DIR__) . '/shared/rank_levels.php';

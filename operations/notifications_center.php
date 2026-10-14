@@ -1,4 +1,5 @@
 <?php
+require_once dirname(__DIR__) . '/shared/csrf.php';
 require_once dirname(__DIR__) . '/shared/header.php';
 require_once dirname(__DIR__) . '/shared/sidebar.php';
 require_once 'operations_manager.php';
@@ -7,6 +8,7 @@ $userId = $_SESSION['user_id'] ?? 1;
 
 // Mark as read
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_read'])) {
+    require_csrf();
     $manager->markNotificationRead($_POST['notification_id']);
 }
 

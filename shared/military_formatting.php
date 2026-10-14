@@ -14,43 +14,46 @@
  * @param string $category Personnel category (Officer, NCO, Enlisted)
  * @return string Formatted military name
  */
-function formatMilitaryName($rank, $rankAbbr = '', $firstName = '', $lastName = '', $category = '') {
-    if (empty($firstName) || empty($lastName)) {
-        return trim($rank . ' ' . $firstName . ' ' . $lastName);
-    }
-    
-    // Get first initials from first name(s)
-    $firstInitials = '';
-    $names = explode(' ', trim($firstName));
-    foreach ($names as $name) {
-        if (!empty($name)) {
-            $firstInitials .= strtoupper(substr($name, 0, 1)) . ' ';
+function formatMilitaryName($rank, $rankAbbr = '', $firstName = '', $lastName = '', $category = '', $middleName = '') {
+    $rank = trim((string)$rank);
+    $rankAbbr = trim((string)$rankAbbr);
+    $firstName = trim((string)$firstName);
+    $middleName = trim((string)$middleName);
+    $lastName = trim((string)$lastName);
+    $category = trim((string)$category);
+
+    $displayRank = $rankAbbr !== '' ? $rankAbbr : $rank;
+    $displayRank = trim($displayRank);
+
+    $initials = [];
+    foreach (preg_split('/\s+/', trim($firstName . ' ' . $middleName)) as $name) {
+        if ($name !== '') {
+            $initials[] = strtoupper(substr($name, 0, 1));
         }
     }
-    
-    // Use rank abbreviation if available, otherwise full rank
-    $displayRank = !empty($rankAbbr) ? $rankAbbr : $rank;
-    
-    // Define officer ranks (typically higher in hierarchy)
-    $officerRanks = [
-        // Full names
-        'General', 'Brigadier General', 'Colonel', 'Lieutenant Colonel', 
-        'Major', 'Captain', 'Lieutenant', 'Second Lieutenant',
-        // Abbreviations
-        'Gen', 'Brig Gen', 'Col', 'Lt Col', 'Maj', 'Capt', 'Lt', '2Lt'
-    ];
-    
-    $isOfficer = in_array($rank, $officerRanks) || 
-                 in_array($rankAbbr, $officerRanks) || 
-                 strtolower($category) === 'officer';
-    
-    if ($isOfficer) {
-        // Officers: Rank + First Name Initials + Last Name
-        return $displayRank . ' ' . $firstInitials . ' ' . $lastName;
-    } else {
-        // NCOs and Enlisted: Rank + Last Name + First Name Initials
-        return $displayRank . ' ' . $lastName . ' ' . $firstInitials;
+    $initialsText = implode(' ', $initials);
+
+    // Military naming convention used by the application:
+    // commissioned Officers and WOI: Rank + initials + surname.
+    // All other personnel: Rank + surname + initials.
+    $rankKey = strtoupper(preg_replace('/[^A-Z0-9]/', '', $displayRank));
+    $fullRankKey = strtolower(preg_replace('/\s+/', ' ', $rank));
+    $isOfficer = strtolower($category) === 'officer' || isOfficerRank($rank) || isOfficerRank($rankAbbr);
+    $isWOI = in_array($rankKey, ['WOI', 'WO1'], true)
+        || in_array($fullRankKey, ['warrant officer class 1', 'warrant officer i', 'warrant officer 1'], true);
+
+    if ($displayRank === '') {
+        return trim($isOfficer || $isWOI ? $initialsText . ' ' . $lastName : $lastName . ' ' . $initialsText);
     }
+    if ($lastName === '') {
+        return trim($displayRank . ' ' . $initialsText);
+    }
+
+    if ($isOfficer || $isWOI) {
+        return trim($displayRank . ' ' . $initialsText . ' ' . $lastName);
+    }
+
+    return trim($displayRank . ' ' . $lastName . ' ' . $initialsText);
 }
 
 /**
@@ -62,6 +65,8 @@ function formatMilitaryName($rank, $rankAbbr = '', $firstName = '', $lastName = 
 function getRankAbbreviation($fullRank) {
     $rankMappings = [
         'General' => 'Gen',
+        'Lieutenant General' => 'Lt Gen',
+        'Major General' => 'Maj Gen',
         'Brigadier General' => 'Brig Gen', 
         'Colonel' => 'Col',
         'Lieutenant Colonel' => 'Lt Col',
@@ -69,14 +74,12 @@ function getRankAbbreviation($fullRank) {
         'Captain' => 'Capt',
         'Lieutenant' => 'Lt',
         'Second Lieutenant' => '2Lt',
-        'Sergeant Major' => 'SM',
-        'Warrant Officer Class 1' => 'WO1',
-        'Warrant Officer Class 2' => 'WO2',
+        'Warrant Officer Class 1' => 'WOI',
+        'Warrant Officer Class 2' => 'WOII',
         'Staff Sergeant' => 'SSgt',
         'Sergeant' => 'Sgt',
         'Corporal' => 'Cpl',
         'Lance Corporal' => 'LCpl',
-        'Private First Class' => 'PFC',
         'Private' => 'Pvt'
     ];
     
@@ -91,9 +94,9 @@ function getRankAbbreviation($fullRank) {
  */
 function isOfficerRank($rank) {
     $officerRanks = [
-        'General', 'Brigadier General', 'Colonel', 'Lieutenant Colonel', 
+        'General', 'Lieutenant General', 'Major General', 'Brigadier General', 'Colonel', 'Lieutenant Colonel',
         'Major', 'Captain', 'Lieutenant', 'Second Lieutenant',
-        'Gen', 'Brig Gen', 'Col', 'Lt Col', 'Maj', 'Capt', 'Lt', '2Lt'
+        'Gen', 'Lt Gen', 'Maj Gen', 'Brig Gen', 'Col', 'Lt Col', 'Maj', 'Capt', 'Lt', '2Lt'
     ];
     
     return in_array($rank, $officerRanks);

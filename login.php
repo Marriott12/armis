@@ -1,5 +1,6 @@
 <?php
-session_start();
+require_once __DIR__ . '/shared/session_security.php';
+armisStartSecureSession();
 
 // Include database functions
 require_once __DIR__ . '/shared/database_connection.php';
@@ -120,6 +121,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = authenticateUser($username, $password);
         
         if ($user) {
+            // Rotate the session identifier immediately after successful
+            // credential verification to prevent session fixation.
+            if (!session_regenerate_id(true)) {
+                $error = 'Unable to establish a secure session. Please try again.';
+                armisLogLoginAttempt('login_failed', (string)$username, (string)($user['svcNo'] ?? ''), 'Authentication aborted: secure session regeneration failed.');
+                goto login_blocked;
+            }
+
             // Check if user needs to change temporary password (first-time login)
             if ($user['isFirstLogin'] == 1) {
                 // Store user info for password change
@@ -187,21 +196,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['restore_state'] = true;
             }
             
-            // For admin role, always go directly to admin dashboard
-            if ($user['role'] === 'admin') {
-                // If there's a return URL and it's valid, use it
-                if ($returnUrl && isValidReturnUrl($returnUrl)) {
-                    $dashboardUrl = $returnUrl;
-                } else {
-                    $dashboardUrl = '/Armis2/admin/index.php';
-                }
-            } else {
-                // Get role-specific dashboard URL using centralized function
-                if ($returnUrl && isValidReturnUrl($returnUrl)) {
-                    $dashboardUrl = $returnUrl;
-                } else {
-                    $dashboardUrl = getRoleDashboardUrl($user['role']);
-                }
+            // Landing is always determined centrally from canonical role + branch.
+            // A valid return URL may be restored only when explicitly requested by
+            // an already-authorized workflow; ordinary login always starts at the
+            // user's main branch dashboard.
+            $dashboardUrl = getRoleDashboardUrl($user['role']);
+            if ($returnUrl && isValidReturnUrl($returnUrl) && !empty($_SESSION['restore_state'])) {
+                $dashboardUrl = $returnUrl;
             }
             
             armisLogLoginAttempt(

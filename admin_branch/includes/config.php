@@ -10,7 +10,7 @@ const ADMIN_BRANCH_NAME = 'Admin Branch Management System';
 
 // Development/Production Settings
 if (!defined('ARMIS_DEVELOPMENT')) {
-    define('ARMIS_DEVELOPMENT', true); // Set to false in production
+    define('ARMIS_DEVELOPMENT', false); // Set to false in production
 }
 
 // Paths

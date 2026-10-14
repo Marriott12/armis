@@ -1,5 +1,17 @@
 <?php
+define('ARMIS_JSON', true);
+define('ARMIS_ADMIN_BRANCH', true);
+require_once __DIR__ . '/includes/rbac_guard.php';
+adminBranchRequireAnyPermission([PERM_CREATE_STAFF, PERM_EDIT_STAFF]);
 // AJAX endpoint for real-time duplicate NRC and email check
+require_once dirname(__DIR__) . '/includes/auth.php';
+require_once dirname(__DIR__, 2) . '/shared/csrf.php';
+require_once dirname(__DIR__, 2) . '/shared/permissions.php';
+requireAuth();
+requireModuleAccess('admin_branch');
+if (!hasPermission(PERM_CREATE_STAFF)) { http_response_code(403); echo json_encode(['error'=>'Access denied']); exit; }
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); exit; }
+require_csrf();
 require_once dirname(__DIR__, 2) . '/shared/database_connection.php';
 header('Content-Type: application/json');
 

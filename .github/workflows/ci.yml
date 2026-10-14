@@ -1,0 +1,30 @@
+name: ARMIS CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_mysql
+          coverage: none
+      - name: Validate Composer
+        run: composer validate --strict
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+      - name: PHP syntax check
+        run: |
+          find . -type f -name '*.php' -not -path './vendor/*' -not -path './.git/*' -print0 |
+            xargs -0 -n1 php -l
+      - name: PHPCS
+        run: vendor/bin/phpcs --standard=phpcs.xml --ignore='*/vendor/*'
+      - name: PHPUnit
+        run: vendor/bin/phpunit --configuration phpunit.xml.dist
+      - name: Composer audit
+        run: composer audit --no-interaction

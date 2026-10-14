@@ -179,6 +179,7 @@ if (isset($_GET['svcNo'])) {
 
 // Handle deletion post: CSRF + (remove staff) + Log + Error safe
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_svcNo'])) {
+    if (!isAdmin()) { http_response_code(403); exit('Only the System Administrator may delete staff records.'); }
     $svcNo = $_POST['delete_svcNo'];
     $reason = $_POST['delete_reason'] ?? null;
     $csrf = $_POST['csrf_token'] ?? '';
@@ -286,7 +287,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_svcNo'])) {
                     // since they already know).
                     require_once dirname(__DIR__) . '/shared/notifications_helper.php';
                     notifyRoles(
-                        ['admin', 'superadmin'],
+                        ['admin'],
                         'admin_branch',
                         'staff_deleted',
                         'Staff record deleted',

@@ -1,7 +1,7 @@
 <?php
 // Define module constants
 define('ARMIS_ADMIN_BRANCH', true);
-define('ARMIS_DEVELOPMENT', true); // Set to false in production
+define('ARMIS_DEVELOPMENT', false); // Set to false in production
 
 // Include admin branch authentication and database
 require_once __DIR__ . '/includes/auth.php';
@@ -101,58 +101,14 @@ try {
     }
 } catch (Exception $e) {
     error_log("Dashboard initialization error: " . $e->getMessage());
-    // Use default data if database fails
+    // SECURITY/DATA INTEGRITY: never display fabricated dashboard figures.
     $dashboardData = [
-        'kpi' => [
-            'total_personnel' => 310,
-            'active_personnel' => 245,
-            'new_recruits' => 18,
-            'on_leave_training' => 47,
-            'performance_avg' => 88.5,
-            'trends' => [
-                'total_personnel' => 5.2,
-                'active_personnel' => 2.1,
-                'new_recruits' => -3.8,
-                'performance_avg' => 1.2
-            ]
-        ],
-        'personnel_distribution' => [
-            'active' => 245,
-            'leave' => 15,
-            'training' => 32,
-            'deployed' => 18
-        ],
-        'recruitment_trends' => [
-            'labels' => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-            'data' => [12, 19, 15, 25, 22, 18]
-        ],
-        'performance_metrics' => [
-            'labels' => ['Q1', 'Q2', 'Q3', 'Q4'],
-            'data' => [85, 88, 92, 89]
-        ],
-        'recent_activities' => [],
-        'enhanced_personnel' => [
-            'military' => [
-                'total' => 0, 'active' => 0, 'officers' => 0, 'ncos' => 0, 'cont' => 0,
-                'by_gender' => ['male' => 0, 'female' => 0],
-                'officers_by_gender' => ['male' => 0, 'female' => 0],
-                'ncos_by_gender' => ['male' => 0, 'female' => 0],
-                'cont_by_gender' => ['male' => 0, 'female' => 0],
-                'recruit_officers' => 0, 'recruit_ncos' => 0,
-                'recruit_officers_by_gender' => ['male' => 0, 'female' => 0],
-                'recruit_ncos_by_gender' => ['male' => 0, 'female' => 0]
-            ],
-            'civilian' => [
-                'total' => 0, 'active' => 0,
-                'by_gender' => ['male' => 0, 'female' => 0],
-                'current_by_gender' => ['male' => 0, 'female' => 0]
-            ]
-        ],
-        'analytics' => [
-            'officer_rank_distribution' => ['labels' => [], 'male' => [], 'female' => [], 'total' => []],
-            'soldier_rank_distribution' => ['labels' => [], 'male' => [], 'female' => [], 'total' => []]
-        ]
+        'kpi' => ['total_personnel'=>0,'active_personnel'=>0,'new_recruits'=>0,'on_leave_training'=>0,'performance_avg'=>0,'trends'=>[]],
+        'personnel_distribution' => [], 'recruitment_trends'=>[], 'performance_metrics'=>[],
+        'recent_activities'=>[], 'enhanced_personnel'=>[], 'analytics'=>[],
+        'error' => 'Dashboard data is temporarily unavailable.'
     ];
+
 }
 
 $pageTitle = "Admin Branch";

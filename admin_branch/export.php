@@ -1,4 +1,7 @@
 <?php
+define('ARMIS_ADMIN_BRANCH', true);
+require_once __DIR__ . '/includes/rbac_guard.php';
+adminBranchRequirePermission(PERM_VIEW_REPORTS);
 /**
  * Dashboard Export Functions
  * Generate various reports from dashboard data
@@ -12,6 +15,8 @@ require_once 'includes/dashboard_service.php';
 
 // Require authentication
 requireAuth();
+requireModuleAccess('admin_branch');
+if (!hasPermission(PERM_VIEW_REPORTS)) { http_response_code(403); exit('Access denied.'); }
 
 $action = $_GET['action'] ?? '';
 $format = $_GET['format'] ?? 'csv';

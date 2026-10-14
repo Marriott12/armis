@@ -22,9 +22,8 @@
  * require_csrf() checks the header too, so either works.
  */
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+require_once __DIR__ . '/session_security.php';
+armisStartSecureSession();
 
 if (!function_exists('csrf_token')) {
     /**

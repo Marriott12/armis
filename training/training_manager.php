@@ -6,11 +6,26 @@ class TrainingManager {
         require_once dirname(__DIR__) . '/shared/database_connection.php';
         $this->db = getDbConnection();
     }
+
+    /** Return true when a training table exists; keeps the dashboard usable before the optional training migration is run. */
+    private function tableExists(string $table): bool {
+        static $cache = [];
+        if (array_key_exists($table, $cache)) return $cache[$table];
+        $allowed = ['courses', 'training_sessions', 'training_assignments'];
+        if (!in_array($table, $allowed, true)) return false;
+        $stmt = $this->db->prepare('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?');
+        $stmt->execute([$table]);
+        return $cache[$table] = ((int)$stmt->fetchColumn() > 0);
+    }
+
+    public function isSchemaReady(): bool {
+        return $this->tableExists('courses') && $this->tableExists('training_sessions') && $this->tableExists('training_assignments');
+    }
     // Dashboard stats
     public function getDashboardStats() {
-    $courses = $this->db->query('SELECT COUNT(*) FROM courses')->fetchColumn();
-        $sessions = $this->db->query('SELECT COUNT(*) FROM training_sessions')->fetchColumn();
-        $assignments = $this->db->query('SELECT COUNT(*) FROM training_assignments')->fetchColumn();
+        $courses = $this->tableExists('courses') ? $this->db->query('SELECT COUNT(*) FROM courses')->fetchColumn() : 0;
+        $sessions = $this->tableExists('training_sessions') ? $this->db->query('SELECT COUNT(*) FROM training_sessions')->fetchColumn() : 0;
+        $assignments = $this->tableExists('training_assignments') ? $this->db->query('SELECT COUNT(*) FROM training_assignments')->fetchColumn() : 0;
         return [
             'total_courses' => $courses,
             'total_sessions' => $sessions,
@@ -20,10 +35,10 @@ class TrainingManager {
 
     public function getDashboardSummary(): array {
         $summary = $this->getDashboardStats();
-        $summary['completed_assignments'] = (int) $this->db->query("SELECT COUNT(*) FROM training_assignments WHERE LOWER(status) = 'completed'")->fetchColumn();
-        $summary['pending_assignments'] = (int) $this->db->query("SELECT COUNT(*) FROM training_assignments WHERE LOWER(status) IN ('assigned', 'in progress', 'in_progress')")->fetchColumn();
-        $summary['assigned_personnel'] = (int) $this->db->query('SELECT COUNT(DISTINCT personnel_id) FROM training_assignments')->fetchColumn();
-        $summary['upcoming_sessions'] = (int) $this->db->query('SELECT COUNT(*) FROM training_sessions WHERE date >= CURDATE()')->fetchColumn();
+        $summary['completed_assignments'] = $this->tableExists('training_assignments') ? (int) $this->db->query("SELECT COUNT(*) FROM training_assignments WHERE LOWER(status) = 'completed'")->fetchColumn() : 0;
+        $summary['pending_assignments'] = $this->tableExists('training_assignments') ? (int) $this->db->query("SELECT COUNT(*) FROM training_assignments WHERE LOWER(status) IN ('assigned', 'in progress', 'in_progress')")->fetchColumn() : 0;
+        $summary['assigned_personnel'] = $this->tableExists('training_assignments') ? (int) $this->db->query('SELECT COUNT(DISTINCT personnel_id) FROM training_assignments')->fetchColumn() : 0;
+        $summary['upcoming_sessions'] = $this->tableExists('training_sessions') ? (int) $this->db->query('SELECT COUNT(*) FROM training_sessions WHERE date >= CURDATE()')->fetchColumn() : 0;
         $summary['completion_rate'] = $summary['total_assignments'] > 0
             ? (int) round(($summary['completed_assignments'] / $summary['total_assignments']) * 100)
             : 0;
@@ -31,7 +46,9 @@ class TrainingManager {
     }
     // Courses CRUD
     public function getAllCourses() {
-    $stmt = $this->db->query('SELECT c.*, (SELECT COUNT(*) FROM training_sessions s WHERE s.course_id = c.id) as session_count FROM courses c');
+        if (!$this->tableExists('courses')) return [];
+        $sessionCount = $this->tableExists('training_sessions') ? '(SELECT COUNT(*) FROM training_sessions s WHERE s.course_id = c.id)' : '0';
+        $stmt = $this->db->query('SELECT c.*, ' . $sessionCount . ' as session_count FROM courses c');
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
     public function getCourse($id) {
@@ -53,7 +70,11 @@ class TrainingManager {
     }
     // Sessions CRUD
     public function getAllSessions() {
-    $stmt = $this->db->query('SELECT s.*, c.name as course_name, (SELECT COUNT(*) FROM training_assignments a WHERE a.session_id = s.id) as assigned_count FROM training_sessions s LEFT JOIN courses c ON s.course_id = c.id');
+        if (!$this->tableExists('training_sessions')) return [];
+        $courseJoin = $this->tableExists('courses') ? 'LEFT JOIN courses c ON s.course_id = c.id' : '';
+        $courseName = $this->tableExists('courses') ? 'c.name as course_name' : "'' as course_name";
+        $assignmentCount = $this->tableExists('training_assignments') ? '(SELECT COUNT(*) FROM training_assignments a WHERE a.session_id = s.id)' : '0';
+        $stmt = $this->db->query('SELECT s.*, ' . $courseName . ', ' . $assignmentCount . ' as assigned_count FROM training_sessions s ' . $courseJoin);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
     public function getSession($id) {
@@ -75,7 +96,12 @@ class TrainingManager {
     }
     // Assignments CRUD
     public function getAllAssignments() {
-    $stmt = $this->db->query('SELECT a.*, CONCAT_WS(" ", s.rankId, s.fName, s.mName, s.lName) as personnel_name, c.name as course_name, ts.title as session_title FROM training_assignments a LEFT JOIN staff s ON a.personnel_id COLLATE utf8mb4_0900_ai_ci = s.svcNo LEFT JOIN courses c ON a.course_id = c.id LEFT JOIN training_sessions ts ON a.session_id = ts.id');
+        if (!$this->tableExists('training_assignments')) return [];
+        $courseJoin = $this->tableExists('courses') ? 'LEFT JOIN courses c ON a.course_id = c.id' : '';
+        $courseName = $this->tableExists('courses') ? 'c.name as course_name' : "'' as course_name";
+        $sessionJoin = $this->tableExists('training_sessions') ? 'LEFT JOIN training_sessions ts ON a.session_id = ts.id' : '';
+        $sessionName = $this->tableExists('training_sessions') ? 'ts.title as session_title' : "'' as session_title";
+        $stmt = $this->db->query('SELECT a.*, CONCAT_WS(" ", s.rankId, s.fName, s.mName, s.lName) as personnel_name, ' . $courseName . ', ' . $sessionName . ' FROM training_assignments a LEFT JOIN staff s ON a.personnel_id COLLATE utf8mb4_0900_ai_ci = s.svcNo ' . $courseJoin . ' ' . $sessionJoin);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
     public function getAssignment($id) {

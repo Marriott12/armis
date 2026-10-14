@@ -1,4 +1,8 @@
 <?php
+define('ARMIS_JSON', true);
+define('ARMIS_ADMIN_BRANCH', true);
+require_once __DIR__ . '/includes/rbac_guard.php';
+adminBranchRequirePermission(PERM_VIEW_REPORTS);
 /**
  * Admin Branch Dashboard API
  * AJAX endpoint for dynamic dashboard data
@@ -6,7 +10,7 @@
 
 // Define module constants
 define('ARMIS_ADMIN_BRANCH', true);
-define('ARMIS_DEVELOPMENT', true);
+define('ARMIS_DEVELOPMENT', false);
 
 // Include required files
 require_once dirname(__DIR__) . '/config.php';

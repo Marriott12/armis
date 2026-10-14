@@ -1,7 +1,7 @@
 <?php
 // Define module constants
 define('ARMIS_ADMIN_BRANCH', true);
-define('ARMIS_DEVELOPMENT', true); // Set to false in production
+define('ARMIS_DEVELOPMENT', false); // Set to false in production
 
 // Include admin branch authentication and database
 require_once __DIR__ . '/includes/auth.php';

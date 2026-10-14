@@ -105,7 +105,12 @@ function authenticateUser($username, $password)
     $stmt->execute([$username, $username]);
     $user = $stmt->fetch();
     if (!$user) return false;
-    if (!isset($user['password'])) return false;
+
+    // Authentication is valid only for an active account. Password validity
+    // must never override administrative suspension/inactivation.
+    if (($user['accStatus'] ?? '') !== 'Active') return false;
+    if (!isset($user['password']) || $user['password'] === '') return false;
+
     return password_verify($password, $user['password']) ? $user : false;
 }
 

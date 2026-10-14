@@ -1,4 +1,5 @@
 <?php
+require_once dirname(__DIR__) . '/shared/csrf.php';
 /**
  * Mobile-Enhanced Personal Information Form
  * Optimized for mobile devices with touch-friendly interface
@@ -20,6 +21,7 @@ $contactInfo = $profileManager->getContactInfo();
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     $result = ['success' => false, 'message' => ''];
     
     try {

@@ -3,13 +3,16 @@
  * ARMIS Password Reset and First Login Handler
  */
 
-session_start();
+require_once __DIR__ . '/shared/session_security.php';
+armisStartSecureSession();
+require_once __DIR__ . '/shared/csrf.php';
 require_once 'shared/database_connection.php';
 require_once 'shared/email_mailer.php';
 require_once __DIR__ . '/shared/password_policy.php';
 
 // Handle password reset requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    require_csrf();
     
     if ($_POST['action'] === 'request_reset') {
         handlePasswordResetRequest();
@@ -299,6 +302,7 @@ body{background:#f5f7fa}.reset-card{border:0;border-radius:12px;box-shadow:0 4px
                         <?php if (empty($token)): ?>
                             <!-- Request Reset Form -->
                             <form method="post">
+<?= csrf_field() ?>
                                 <input type="hidden" name="action" value="request_reset">
                                 <div class="mb-3">
                                     <label for="email" class="form-label">Email Address</label>
@@ -314,6 +318,7 @@ body{background:#f5f7fa}.reset-card{border:0;border-radius:12px;box-shadow:0 4px
                         <?php else: ?>
                             <!-- Reset Password Form -->
                             <form method="post">
+<?= csrf_field() ?>
                                 <input type="hidden" name="action" value="reset_password">
                                 <input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>">
                                 

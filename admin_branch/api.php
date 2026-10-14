@@ -1,4 +1,8 @@
 <?php
+define('ARMIS_JSON', true);
+define('ARMIS_ADMIN_BRANCH', true);
+require_once __DIR__ . '/includes/rbac_guard.php';
+adminBranchRequirePermission(PERM_VIEW_REPORTS);
 /**
  * ARMIS Admin Branch Dashboard API - Enhanced with Database Analytics
  * Provides JSON data for dashboard widgets and AJAX requests using enhanced database schema
@@ -6,7 +10,7 @@
 
 // Define module constants
 define('ARMIS_ADMIN_BRANCH', true);
-define('ARMIS_DEVELOPMENT', true);
+define('ARMIS_DEVELOPMENT', false);
 
 // Include admin branch authentication and database
 require_once __DIR__ . '/includes/auth.php';

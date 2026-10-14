@@ -1,4 +1,5 @@
 <?php
+require_once dirname(__DIR__) . '/shared/csrf.php';
 // Start session if not already started
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -19,7 +20,10 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 // Check if user has access to operations module
-requireModuleAccess('operations');
+requireModuleWriteAccess('operations');
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
+}
 
 $pageTitle = "Operations | Deployments";
 $moduleName = "Operations";

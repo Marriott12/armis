@@ -1,18 +1,12 @@
 <?php
-// Clear dashboard cache
-session_start();
-
-// Require login — this only touches the caller's own session data, but
-// there's no reason to let an unauthenticated request hit it at all.
-if (!isset($_SESSION['user_id'])) {
-    http_response_code(403);
-    die("Not authenticated.\n");
+define('ARMIS_ADMIN_BRANCH', true);
+define('ARMIS_JSON', false);
+require_once __DIR__ . '/includes/rbac_guard.php';
+adminBranchRequirePermission(PERM_SYSTEM_SETTINGS);
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    header('Allow: POST'); http_response_code(405); exit("POST required.\n");
 }
-
-// Clear any cached dashboard data from session
-unset($_SESSION['dashboard_cache']);
-unset($_SESSION['period_filter']);
-
-echo "Dashboard cache cleared!\n";
-echo "Session ID: " . session_id() . "\n";
-echo "Please refresh the admin_branch dashboard page.\n";
+adminBranchRequireCsrf();
+unset($_SESSION['dashboard_cache'], $_SESSION['period_filter'], $_SESSION['dropdown_cache']);
+logActivity('admin_branch_cache_clear', 'Dashboard/session cache cleared');
+echo "Dashboard cache cleared successfully.\n";

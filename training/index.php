@@ -36,6 +36,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
 
 require_once 'training_manager.php';
 $trainingManager = new TrainingManager();
+$trainingSchemaReady = $trainingManager->isSchemaReady();
 
 // Fetch dashboard stats
 $stats = $trainingManager->getDashboardStats();
@@ -48,6 +49,14 @@ $assignments = $trainingManager->getAllAssignments();
 <div class="content-wrapper with-sidebar">
     <div class="container-fluid">
         <div class="main-content">
+            <?php if (!$trainingSchemaReady): ?>
+                <div class="alert alert-warning d-flex align-items-start gap-3" role="alert">
+                    <i class="fas fa-database fa-lg mt-1"></i>
+                    <div><strong>Training database is not initialized.</strong><br>
+                    The Training module is available, but its course/session/assignment tables have not been created yet. A system administrator can run <a href="setup_database.php" class="alert-link">Training Database Setup</a>.
+                    </div>
+                </div>
+            <?php endif; ?>
             <div class="row">
                 <div class="col-12">
                     <div class="d-flex justify-content-between align-items-center mb-4">

@@ -1,4 +1,9 @@
 <?php
+define('ARMIS_ADMIN_BRANCH', true);
+require_once __DIR__ . '/includes/rbac_guard.php';
+adminBranchRequireWrite();
+adminBranchRequirePermission(PERM_MANAGE_APPOINTMENTS);
+require_once dirname(__DIR__) . '/shared/csrf.php';
 // Define module constants
 define('ARMIS_ADMIN_BRANCH', true);
 
@@ -24,6 +29,7 @@ $pdo = getDbConnection();
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     if (isset($_POST['add_type'])) {
         // Add new appointment type
         $name = trim($_POST['name'] ?? '');
@@ -215,6 +221,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
     <div class="modal-dialog">
         <div class="modal-content">
             <form method="post" action="">
+<?= csrf_field() ?>
                 <div class="modal-header bg-primary text-white">
                     <h5 class="modal-title" id="addTypeModalLabel">Add Appointment Type</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -251,6 +258,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
     <div class="modal-dialog">
         <div class="modal-content">
             <form method="post" action="">
+<?= csrf_field() ?>
                 <input type="hidden" id="edit_id" name="id">
                 <div class="modal-header bg-primary text-white">
                     <h5 class="modal-title" id="editTypeModalLabel">Edit Appointment Type</h5>
@@ -288,6 +296,7 @@ include dirname(__DIR__) . '/shared/sidebar.php';
     <div class="modal-dialog">
         <div class="modal-content">
             <form method="post" action="">
+<?= csrf_field() ?>
                 <input type="hidden" id="delete_id" name="id">
                 <div class="modal-header bg-danger text-white">
                     <h5 class="modal-title" id="deleteTypeModalLabel">Delete Appointment Type</h5>
